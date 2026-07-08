@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+
+# Dependencies / build tools
+node_modules/
+.wrangler/
+.dev.vars
+.env
+.env.*
+*.log
+
+# Old exported zip bundles
+*.zip
+
+# Codex/staging scratch folders
+.*-staging/
+.ai-action-approval-staging/
+.ai-model-staging/
+.ai-privacy-staging/
+.follow-up-draft-staging/
+.mock-ai-qg-staging/
+.person-briefing-staging/
+.prayer-steward-staging/
+
+# Cloudflare generated bundle
+_worker.bundle
