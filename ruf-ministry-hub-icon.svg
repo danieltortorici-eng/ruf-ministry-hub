@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="RUF Ministry Hub icon">
+  <rect width="512" height="512" rx="112" fill="#202731"/>
+  <circle cx="256" cy="256" r="176" fill="#f7f8fb" opacity="0.96"/>
+  <path d="M152 182c0-24 20-44 44-44h120c48 0 86 38 86 86 0 34-20 64-49 78l57 76h-70l-49-66h-77v66h-62V182zm62 76h96c18 0 32-14 32-32s-14-32-32-32h-96v64z" fill="#2f6f63"/>
+  <path d="M142 394h228" stroke="#b45f3a" stroke-width="22" stroke-linecap="round"/>
+</svg>
