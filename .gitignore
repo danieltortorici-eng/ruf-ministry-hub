@@ -24,3 +24,6 @@ node_modules/
 
 # Cloudflare generated bundle
 _worker.bundle
+
+# Old standalone build folders
+ruf-ministry-hub-profile-action-sheets/
