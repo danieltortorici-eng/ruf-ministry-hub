@@ -1105,7 +1105,7 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.08-offline-cache-hardening";
+    const APP_VERSION = "2026.07.08-offline-cache-hardening-local-agents";
     const CALM_MODE_KEY = "ruf_ministry_hub_calm_mode";
     const SETTINGS_KEY = "ruf_ministry_hub_settings_v1";
     const COPY_KEY = "ruf_ministry_hub_custom_copy_v1";
@@ -3858,8 +3858,9 @@
 	            <button class="button" data-action="person-add-followup" data-id="${person.id}">Add Follow-Up Task</button>
 	            <button class="button" data-action="person-pin" data-id="${person.id}">${pinned ? "Unpin Person" : "Pin Person"}</button>
 	            <button class="button" data-action="person-followed-up" data-id="${person.id}">Mark Followed Up</button>
+            <button class="button" data-action="person-briefing" data-id="${person.id}">Copy Local Briefing</button>
             ${settings.inlineEditing ? `<button class="button" data-action="person-edit-field" data-id="${person.id}" data-field="name" data-label="Name">Edit Name</button>` : ""}
-            <button class="button terra" data-action="person-copy-draft" data-id="${person.id}">Copy Text Draft</button>
+            <button class="button terra" data-action="person-copy-draft" data-id="${person.id}">Copy Text Drafts</button>
           </div>
         </section>
         <div class="grid two">
@@ -4054,6 +4055,7 @@
               </div>
               <span class="pill green">${answeredReady} answered</span>
               <span class="pill gray">${archivedCount} archived</span>
+              <button class="button small" data-action="prayer-steward">Copy Prayer Steward Audit</button>
             </div>
           </div>
         </section>
@@ -4831,6 +4833,7 @@
       if (action === "person-add-meeting") quickAddMeeting(id);
       if (action === "person-add-prayer") quickAddPrayer(id);
       if (action === "person-add-followup") quickAddFollowUp(id);
+      if (action === "person-briefing") copyPersonBriefing(id);
       if (action === "person-copy-draft") copyTextDraft(id);
       if (action === "person-remove-photo") removePersonPhoto(id);
       if (action === "meeting-add-prayer") addPrayerFromMeeting(id);
@@ -4845,6 +4848,7 @@
         view.prayerFilter = button.dataset.filter;
         render();
       }
+      if (action === "prayer-steward") copyPrayerStewardAudit();
       if (action === "prayer-toggle-more") toggleExpanded("expandedPrayerIds", id);
       if (action === "prayer-answered") markPrayerAnswered(id);
       if (action === "prayer-note") addAnsweredNote(id);
@@ -5649,15 +5653,163 @@
       render();
     }
 
-    function copyTextDraft(personId) {
-      const person = personById(personId);
-      if (!person) return;
-      const draft = `Hey ${person.name.split(" ")[0]}, I was thinking of you today and wanted to check in. How are you doing?`;
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(draft).then(() => showToast("Text draft copied."));
+    function copyTextToClipboardOrPrompt(title, text, toastMessage) {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(() => showToast(toastMessage)).catch(() => window.prompt(title, text));
       } else {
-        window.prompt("Text draft:", draft);
+        window.prompt(title, text);
       }
+    }
+
+    function latestForPerson(collection, personId, dateField, limit = 3) {
+      return db[collection]
+        .filter(item => item.relatedPersonId === personId)
+        .slice()
+        .sort((a, b) => String(b[dateField] || b.createdAt || "").localeCompare(String(a[dateField] || a.createdAt || "")))
+        .slice(0, limit);
+    }
+
+    function activePrayerForPerson(personId) {
+      return db.prayerRequests
+        .filter(prayer => prayer.relatedPersonId === personId && prayer.status !== "Archived")
+        .slice()
+        .sort((a, b) => String(b.followUpDate || b.dateAdded || "").localeCompare(String(a.followUpDate || a.dateAdded || "")));
+    }
+
+    function openTasksForPerson(personId) {
+      return db.tasks
+        .filter(task => task.relatedPersonId === personId && task.status !== "Done / Archived")
+        .slice()
+        .sort((a, b) => String(a.dueDate || "9999-12-31").localeCompare(String(b.dueDate || "9999-12-31")));
+    }
+
+    function firstName(person) {
+      return String(person?.name || "").trim().split(/\s+/)[0] || "there";
+    }
+
+    function safeLine(value, fallback = "Not set") {
+      const text = String(value || "").replace(/\s+/g, " ").trim();
+      return text || fallback;
+    }
+
+    function buildPersonBriefing(personId) {
+      const person = personById(personId);
+      if (!person) return "";
+      const meetings = latestForPerson("meetingNotes", personId, "meetingDate", 3);
+      const notes = latestForPerson("notes", personId, "noteDate", 3);
+      const prayers = activePrayerForPerson(personId).slice(0, 4);
+      const tasks = openTasksForPerson(personId).slice(0, 4);
+      const sensitiveCount = meetings.filter(item => item.sensitiveFlag).length
+        + notes.filter(item => item.sensitiveFlag).length
+        + prayers.filter(item => item.sensitivityLevel === "Sensitive").length;
+      const lines = [
+        `RUF Ministry Hub — Local Briefing for ${person.name}`,
+        `Generated: ${dateTimeLabel(nowISO())}`,
+        "",
+        "Snapshot",
+        `- Type/status: ${safeLine(person.personType)} / ${safeLine(person.status)}`,
+        `- Care level: ${safeLine(person.careLevel)}`,
+        `- Preferred contact: ${safeLine(person.preferredContactMethod)}`,
+        `- Last meaningful interaction: ${dateLabel(person.lastMeaningfulInteraction)}`,
+        `- Next follow-up: ${dateLabel(person.nextFollowUpDate)}`,
+        `- Follow-up reason: ${safeLine(person.followUpReason)}`,
+        "",
+        "Remember",
+        `- RUF involvement: ${safeLine(person.rufInvolvement)}`,
+        `- Group/context: ${safeLine([person.classYear, person.fraternitySorority, person.major, person.hometown].filter(Boolean).join(" • "))}`,
+        "",
+        "Recent meetings",
+        ...(meetings.length ? meetings.map(meeting => `- ${dateLabel(meeting.meetingDate)}: ${safeLine(meeting.whatWeTalkedAbout).slice(0, 180)}`) : ["- None recorded yet."]),
+        "",
+        "Recent notes",
+        ...(notes.length ? notes.map(note => `- ${dateLabel(note.noteDate)}: ${safeLine(note.content).slice(0, 180)}`) : ["- None recorded yet."]),
+        "",
+        "Prayer",
+        ...(prayers.length ? prayers.map(prayer => `- ${prayer.status} (${dateLabel(prayer.dateAdded)}): ${safeLine(prayer.request).slice(0, 180)}`) : ["- No open prayer requests recorded."]),
+        "",
+        "Follow-ups",
+        ...(tasks.length ? tasks.map(task => `- Due ${dateLabel(task.dueDate)}: ${safeLine(task.title)}`) : ["- No open follow-up tasks recorded."]),
+        "",
+        "Good questions to ask",
+        `- How have you been since we last connected?`,
+        prayers[0] ? `- How can I keep praying about ${safeLine(prayers[0].request).replace(/[.?!]+$/, "").toLowerCase()}?` : `- What would be helpful to pray for this week?`,
+        tasks[0] ? `- I had a note to follow up about: ${safeLine(tasks[0].title).replace(/[.?!]+$/, "")}. How is that going?` : `- Is there a next step I can help you take?`,
+        "",
+        "Care cautions",
+        sensitiveCount ? `- ${sensitiveCount} sensitive item${sensitiveCount === 1 ? "" : "s"} connected. Review carefully before sharing anything.` : "- No sensitive items flagged in the visible profile data.",
+        "- This briefing is generated locally from saved app data. Review it pastorally before acting."
+      ];
+      return lines.join("\n");
+    }
+
+    function copyPersonBriefing(personId) {
+      const briefing = buildPersonBriefing(personId);
+      if (!briefing) return;
+      copyTextToClipboardOrPrompt("Person briefing:", briefing, "Local briefing copied.");
+    }
+
+    function buildFollowUpDrafts(personId) {
+      const person = personById(personId);
+      if (!person) return "";
+      const name = firstName(person);
+      const prayers = activePrayerForPerson(personId);
+      const tasks = openTasksForPerson(personId);
+      const latestMeeting = latestForPerson("meetingNotes", personId, "meetingDate", 1)[0];
+      const prayerPhrase = prayers[0] ? safeLine(prayers[0].request).replace(/[.?!]+$/, "") : "you";
+      const taskPhrase = tasks[0] ? safeLine(tasks[0].title).replace(/[.?!]+$/, "") : safeLine(person.followUpReason, "how you are doing");
+      const meetingPhrase = latestMeeting ? safeLine(latestMeeting.whatToRemember || latestMeeting.whatWeTalkedAbout).replace(/[.?!]+$/, "") : "our last conversation";
+      return [
+        `Follow-up drafts for ${person.name}`,
+        "",
+        "Casual",
+        `Hey ${name}, I was thinking about ${taskPhrase.toLowerCase()}. How are you doing?`,
+        "",
+        "Pastoral",
+        `Hey ${name}, I prayed for ${prayerPhrase.toLowerCase()} today. No pressure to respond in detail, but I’d love to hear how you’re doing when you have a minute.`,
+        "",
+        "Short",
+        `Hey ${name}, just checking in after ${meetingPhrase.toLowerCase()}. How are you?`,
+        "",
+        "Review before sending. These were drafted locally from saved app data."
+      ].join("\n");
+    }
+
+    function copyTextDraft(personId) {
+      const drafts = buildFollowUpDrafts(personId);
+      if (!drafts) return;
+      copyTextToClipboardOrPrompt("Text drafts:", drafts, "Text draft options copied.");
+    }
+
+    function copyPrayerStewardAudit() {
+      const today = startOfToday();
+      const staleCutoff = new Date(today.getTime() - 30 * 86400000);
+      const overdue = db.prayerRequests.filter(prayer => prayer.status !== "Archived" && prayer.followUpDate && new Date(prayer.followUpDate + "T00:00:00") < today);
+      const stale = db.prayerRequests.filter(prayer => prayer.status === "Active" && prayer.dateAdded && new Date(prayer.dateAdded + "T00:00:00") < staleCutoff);
+      const answered = db.prayerRequests.filter(prayer => prayer.status === "Answered");
+      const sensitive = db.prayerRequests.filter(prayer => prayer.status !== "Archived" && prayer.sensitivityLevel === "Sensitive");
+      const unlinked = db.prayerRequests.filter(prayer => prayer.status !== "Archived" && !personById(prayer.relatedPersonId));
+      const personName = prayer => personById(prayer.relatedPersonId)?.name || "Unlinked person";
+      const group = (label, items, renderItem) => [
+        `${label} (${items.length})`,
+        ...(items.length ? items.slice(0, 12).map(renderItem) : ["- None"])
+      ].join("\n");
+      const audit = [
+        "RUF Ministry Hub — Prayer Steward Audit",
+        `Generated: ${dateTimeLabel(nowISO())}`,
+        "",
+        group("Overdue follow-ups", overdue, prayer => `- ${personName(prayer)} — follow up was ${dateLabel(prayer.followUpDate)}: ${safeLine(prayer.request).slice(0, 150)}`),
+        "",
+        group("Active requests older than 30 days", stale, prayer => `- ${personName(prayer)} — added ${dateLabel(prayer.dateAdded)}: ${safeLine(prayer.request).slice(0, 150)}`),
+        "",
+        group("Answered requests ready to review/archive", answered, prayer => `- ${personName(prayer)} — answered ${dateLabel(prayer.answeredAt || prayer.updatedAt?.slice(0, 10))}: ${safeLine(prayer.request).slice(0, 150)}`),
+        "",
+        group("Sensitive open requests", sensitive, prayer => `- ${personName(prayer)} — ${prayer.shareableStatus}: ${safeLine(prayer.request).slice(0, 150)}`),
+        "",
+        group("Unlinked open requests", unlinked, prayer => `- Added ${dateLabel(prayer.dateAdded)}: ${safeLine(prayer.request).slice(0, 150)}`),
+        "",
+        "Next faithful step: review overdue follow-ups first, then archive answered requests when appropriate."
+      ].join("\n");
+      copyTextToClipboardOrPrompt("Prayer Steward Audit:", audit, "Prayer Steward audit copied.");
     }
 
     function addPrayerFromMeeting(meetingId) {

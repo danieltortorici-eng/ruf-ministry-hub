@@ -1,0 +1,12 @@
+{
+  "name": "ruf-ministry-hub-hotfix",
+  "version": "2026.07.08-offline-cache-hardening-local-agents",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run check:app && npm run audit:assets && npm run audit:secrets",
+    "check:app": "node check-app-syntax.mjs && node --check ruf-ministry-hub-sw.js",
+    "audit:assets": "node audit-assets.mjs",
+    "audit:secrets": "node audit-secrets.mjs"
+  }
+}

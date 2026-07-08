@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "ruf-ministry-hub-";
-const CACHE_NAME = "ruf-ministry-hub-v31-offline-cache-hardening";
+const CACHE_NAME = "ruf-ministry-hub-v32-offline-cache-hardening-local-agents";
 const APP_SHELL = "ruf-ministry-hub.html";
 const ASSETS = [
   "./",
