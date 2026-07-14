@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "ruf-ministry-hub-";
-const CACHE_NAME = "ruf-ministry-hub-v32-offline-cache-hardening-local-agents";
+const CACHE_NAME = "ruf-ministry-hub-v32-ai-review-card-stability";
 const APP_SHELL = "ruf-ministry-hub.html";
 const ASSETS = [
   "./",

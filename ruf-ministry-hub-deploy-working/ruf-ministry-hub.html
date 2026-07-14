@@ -1163,7 +1163,7 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.08-offline-cache-hardening-local-agents";
+    const APP_VERSION = "2026.07.13-ai-review-card-stability";
     const CALM_MODE_KEY = "ruf_ministry_hub_calm_mode";
     const SETTINGS_KEY = "ruf_ministry_hub_settings_v1";
     const COPY_KEY = "ruf_ministry_hub_custom_copy_v1";
@@ -4691,7 +4691,7 @@
     }
 
     function aiProposalFilterMatches(proposal, filter) {
-      if (filter === "Approved") return proposal.status === "approved";
+      if (filter === "Approved") return proposal.status === "approved" || proposal.status === "partiallyApproved";
       if (filter === "Rejected") return proposal.status === "rejected";
       if (filter === "Archived") return proposal.status === "archived";
       if (filter === "High Sensitivity") return proposal.sensitivityRisk === "high";
@@ -4713,7 +4713,7 @@
     }
 
     function aiProposalStatusTone(status) {
-      if (status === "approved") return "green";
+      if (status === "approved" || status === "partiallyApproved") return "green";
       if (status === "rejected" || status === "archived") return "gray";
       if (status === "edited") return "violet";
       return "gold";
@@ -6216,7 +6216,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const proposals = filteredAiProposals();
       const counts = {
         Pending: (db.aiProposals || []).filter(item => item.status === "pending" || item.status === "edited").length,
-        Approved: (db.aiProposals || []).filter(item => item.status === "approved").length,
+        Approved: (db.aiProposals || []).filter(item => item.status === "approved" || item.status === "partiallyApproved").length,
         Rejected: (db.aiProposals || []).filter(item => item.status === "rejected").length,
         Archived: (db.aiProposals || []).filter(item => item.status === "archived").length,
         "High Sensitivity": (db.aiProposals || []).filter(item => item.sensitivityRisk === "high").length,
@@ -6254,6 +6254,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const focused = view.aiReviewFocusId === proposal.id;
       const canExecute = aiProposalCanExecute(proposal);
       const executableCount = actions.filter(aiActionIsExecutable).length;
+      const actionSelection = aiCurrentActionSelection(proposal);
+      const selectedActionCount = actions.filter((action, index) =>
+        aiActionIsExecutable(action) && actionSelection.selectedActionIds.includes(aiActionId(action, index))
+      ).length;
+      const skippedActionCount = executableCount - selectedActionCount;
       return `
         <article class="item compact focus-card ${focused ? "important" : ""}">
           <div class="item-title-row">
@@ -6289,6 +6294,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           </div>
           <div class="field">
             <label>Proposed actions</label>
+            ${executableCount ? `<div class="meta">${selectedActionCount} selected · ${skippedActionCount} skipped. Your choices are saved on this device before final approval.</div>` : ""}
             ${actions.length ? `<div class="settings-list">${actions.map((action, index) => renderAiProposalActionRow(proposal, action, index)).join("")}</div>` : `<div class="meta">No proposed action beyond review.</div>`}
           </div>
           ${timestampLine(proposal)}
@@ -6487,6 +6493,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function aiActionSummary(action = {}) {
+      const type = aiActionType(action);
+      if (type === "createPrayerRequest") return action.request || action.content || action.text || action.body || action.title || action.label || "";
+      if (type === "createMeetingNote") return action.summary || action.content || action.whatWeTalkedAbout || action.body || action.title || action.label || "";
+      if (type === "createNote") return action.content || action.draft || action.summary || action.body || action.title || action.label || "";
+      if (type === "createFollowUpTask") return action.title || action.task || action.label || action.body || action.content || "";
+      if (type === "createPerson") return action.name || action.personName || action.label || action.title || "";
       return action.label || action.title || action.summary || action.request || action.content || action.task || action.name || "";
     }
 
@@ -6499,10 +6511,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         ? proposal.result.actionReview
         : null;
       const transient = proposal?.id && view.aiActionSelections ? view.aiActionSelections[proposal.id] : null;
-      const source = transient || review || {};
+      const completedReview = proposal && (Array.isArray(proposal.selectedActionIds) || Array.isArray(proposal.skippedActionIds))
+        ? { selectedActionIds: proposal.selectedActionIds, skippedActionIds: proposal.skippedActionIds }
+        : null;
+      const source = transient || review || completedReview || {};
       return {
-        selectedActionIds: Array.isArray(source.selectedActionIds) ? source.selectedActionIds.map(String) : [],
-        skippedActionIds: Array.isArray(source.skippedActionIds) ? source.skippedActionIds.map(String) : []
+        selectedActionIds: Array.from(new Set(Array.isArray(source.selectedActionIds) ? source.selectedActionIds.map(String) : [])),
+        skippedActionIds: Array.from(new Set(Array.isArray(source.skippedActionIds) ? source.skippedActionIds.map(String) : []))
       };
     }
 
@@ -6525,6 +6540,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const actions = Array.isArray(proposal?.proposedActions) ? proposal.proposedActions : [];
       const review = aiActionReviewState(proposal);
       if (review.selectedActionIds.length || review.skippedActionIds.length) return review;
+      if (!aiProposalCanExecute(proposal)) return review;
       return aiActionSelectionFromIndexes(
         proposal,
         actions.map((action, index) => aiActionIsExecutable(action) ? index : -1).filter(index => index >= 0)
@@ -6532,10 +6548,33 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function aiActionIsSelected(proposal, action, index) {
-      if (!aiProposalCanExecute(proposal) || !aiActionIsExecutable(action)) return false;
+      if (!aiActionIsExecutable(action)) return false;
       const actionId = aiActionId(action, index);
       const selection = aiCurrentActionSelection(proposal);
       return selection.selectedActionIds.includes(actionId) && !selection.skippedActionIds.includes(actionId);
+    }
+
+    function storeAiActionSelection(proposal, nextSelection) {
+      if (!proposal) return false;
+      const selectedActionIds = Array.from(new Set((nextSelection?.selectedActionIds || []).map(String)));
+      const selectedSet = new Set(selectedActionIds);
+      const skippedActionIds = Array.from(new Set((nextSelection?.skippedActionIds || []).map(String)))
+        .filter(actionId => !selectedSet.has(actionId));
+      const actionReview = { selectedActionIds, skippedActionIds };
+      const timestamp = nowISO();
+      view.aiActionSelections = {
+        ...(view.aiActionSelections || {}),
+        [proposal.id]: actionReview
+      };
+      proposal.result = proposal.result && typeof proposal.result === "object" ? proposal.result : {};
+      proposal.result.actionReview = {
+        ...actionReview,
+        updatedAt: timestamp,
+        persistedLocally: true
+      };
+      proposal.updatedAt = timestamp;
+      saveData();
+      return true;
     }
 
     function persistAiActionSelection(proposalId, actionId, checked) {
@@ -6550,18 +6589,40 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         })
         .filter(index => index >= 0);
       const nextSelection = aiActionSelectionFromIndexes(proposal, actionIndexes);
-      view.aiActionSelections = {
-        ...(view.aiActionSelections || {}),
-        [proposal.id]: nextSelection
-      };
-      proposal.result = proposal.result && typeof proposal.result === "object" ? proposal.result : {};
-      proposal.result.actionReview = {
-        ...nextSelection,
-        updatedAt: nowISO(),
-        persistedLocally: true
-      };
-      proposal.updatedAt = nowISO();
-      saveData();
+      storeAiActionSelection(proposal, nextSelection);
+    }
+
+    function aiActionEditableFields(action = {}) {
+      const type = aiActionType(action);
+      if (type === "createNote") return [
+        { field: "content", label: "Note", kind: "textarea", value: aiActionText(action, ["content", "draft", "summary", "body", "title"]) }
+      ];
+      if (type === "createMeetingNote") return [
+        { field: "summary", label: "Meeting summary", kind: "textarea", value: aiActionText(action, ["summary", "content", "whatWeTalkedAbout", "body", "title"]) },
+        { field: "whatToRemember", label: "What to remember", kind: "textarea", value: action.whatToRemember || "" },
+        { field: "meetingDate", label: "Meeting date", kind: "date", value: action.meetingDate || action.date || "" }
+      ];
+      if (type === "createPrayerRequest") return [
+        { field: "request", label: "Prayer request", kind: "textarea", value: aiActionText(action, ["request", "content", "text", "body", "title"]) },
+        { field: "followUpDate", label: "Follow-up date", kind: "date", value: action.followUpDate || "" }
+      ];
+      if (type === "createFollowUpTask") return [
+        { field: "title", label: "Follow-up task", kind: "textarea", value: aiActionText(action, ["title", "task", "label", "body", "content"]) },
+        { field: "dueDate", label: "Due date", kind: "date", value: action.dueDate || action.followUpDate || action.date || "" }
+      ];
+      if (type === "createPerson") return [
+        { field: "name", label: "Person name", kind: "text", value: action.name || action.personName || "" },
+        { field: "phone", label: "Phone", kind: "text", value: action.phone || "" }
+      ];
+      if (type === "updatePerson") return [
+        { field: "lastMeaningfulInteraction", label: "Last meaningful interaction", kind: "date", value: action.lastMeaningfulInteraction || action.updates?.lastMeaningfulInteraction || "" },
+        { field: "nextFollowUpDate", label: "Next follow-up date", kind: "date", value: action.nextFollowUpDate || action.updates?.nextFollowUpDate || "" },
+        { field: "followUpReason", label: "Follow-up reason", kind: "textarea", value: action.followUpReason || action.updates?.followUpReason || "" }
+      ];
+      if (type === "markSensitive") return [];
+      return [
+        { field: "label", label: "Review wording", kind: "textarea", value: aiActionSummary(action) }
+      ];
     }
 
     function renderAiProposalActionRow(proposal, action, index) {
@@ -6571,13 +6632,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const actionId = aiActionId(action, index);
       const checked = aiActionIsSelected(proposal, action, index);
       const summary = aiActionSummary(action);
+      const editable = aiProposalCanExecute(proposal) && aiActionEditableFields(action).length;
       return `
         <div class="notice">
           <label class="check">
-            <input type="checkbox" data-ai-action-select="${escapeHtml(proposal.id)}" data-action-index="${index}" data-action-id="${escapeHtml(actionId)}" ${canSelect && checked ? "checked" : ""} ${canSelect ? "" : "disabled"}>
+            <input type="checkbox" data-ai-action-select="${escapeHtml(proposal.id)}" data-action-index="${index}" data-action-id="${escapeHtml(actionId)}" ${checked ? "checked" : ""} ${canSelect ? "" : "disabled"}>
             <span><strong>${escapeHtml(labelFromCamel(type))}</strong>${summary ? ` - ${escapeHtml(summary)}` : ""}</span>
           </label>
           <div class="meta">${executable ? "Can be saved locally after final confirmation." : "Review only in this build. No sending, merging, texting, or donor update execution yet."}</div>
+          ${editable ? `<div class="action-row"><button class="button small" data-action="ai-action-edit" data-id="${escapeHtml(proposal.id)}" data-action-index="${index}">Edit action</button></div>` : ""}
         </div>
       `;
     }
@@ -9324,6 +9387,43 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
+    function renderAiActionEditSheet(sheet) {
+      const proposal = aiProposalById(sheet?.proposalId);
+      const action = proposal?.proposedActions?.[Number(sheet?.actionIndex)];
+      if (!proposal || !action || !aiProposalCanExecute(proposal)) return "";
+      const fields = aiActionEditableFields(action);
+      if (!fields.length) return "";
+      const controls = fields.map(spec => {
+        const id = `sheet-ai-action-${spec.field}`;
+        const value = escapeHtml(spec.value || "");
+        const control = spec.kind === "textarea"
+          ? `<textarea class="textarea small" id="${id}">${value}</textarea>`
+          : `<input class="input" id="${id}" type="${spec.kind === "date" ? "date" : "text"}" value="${value}">`;
+        return sheetField(spec.label, control);
+      }).join("");
+      return `
+        <div class="sheet-backdrop" data-action="sheet-close">
+          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="ai-action-edit-title" data-sheet-panel>
+            <div class="sheet-head">
+              <div>
+                <h2 id="ai-action-edit-title">Edit ${escapeHtml(labelFromCamel(aiActionType(action)))}</h2>
+                <p class="page-kicker">Adjust this local draft before deciding whether to approve it.</p>
+              </div>
+              <button class="button small" data-action="sheet-close" aria-label="Close">Close</button>
+            </div>
+            <div class="sheet-form">
+              <div class="notice secure">This edits only the AI review card. No ministry record is created or changed until final approval.</div>
+              ${controls}
+            </div>
+            <div class="sheet-actions">
+              <button class="button" data-action="sheet-close">Cancel</button>
+              <button class="button primary" data-action="ai-action-edit-save">Save Draft Changes</button>
+            </div>
+          </section>
+        </div>
+      `;
+    }
+
     function renderCreatePersonSheet() {
       const typeOptions = ["Student", "Donor", "Staff", "Alumni", "Parent", "Other"]
         .map(option => `<option ${option === "Student" ? "selected" : ""}>${option}</option>`).join("");
@@ -9468,6 +9568,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (view.sheet.type === "security") return renderSecuritySheet(view.sheet);
       if (view.sheet.type === "merge-person") return renderMergePersonSheet(view.sheet);
       if (view.sheet.type === "edit-field") return renderEditFieldSheet(view.sheet);
+      if (view.sheet.type === "ai-action-edit") return renderAiActionEditSheet(view.sheet);
       if (view.sheet.type === "create-person") return renderCreatePersonSheet();
       if (view.sheet.type === "donor-update-builder") return renderDonorUpdateBuilderSheet(view.sheet);
       if (view.sheet.type === "ai-gate") return renderAiGateSheet(view.sheet);
@@ -9941,10 +10042,60 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       recordUndo(sheet.target === "person" ? "profile edit" : "record edit");
       record[sheet.field] = value.trim();
+      if (sheet.collection === "aiProposals" && aiProposalCanExecute(record)) record.status = "edited";
       record.updatedAt = nowISO();
       saveData();
       view.sheet = null;
-      showToast(sheet.target === "person" ? "Profile updated." : "Updated.");
+      showToast(sheet.target === "person" ? "Profile updated." : sheet.collection === "aiProposals" ? "AI review draft updated. No records were changed." : "Updated.");
+      render();
+    }
+
+    function openAiActionEditSheet(proposalId, actionIndex) {
+      const proposal = aiProposalById(proposalId);
+      const index = Number(actionIndex);
+      const action = proposal?.proposedActions?.[index];
+      if (!proposal || !action || !aiProposalCanExecute(proposal) || !aiActionEditableFields(action).length) {
+        showToast("That AI action cannot be edited here.");
+        return;
+      }
+      view.sheet = { type: "ai-action-edit", proposalId, actionIndex: index };
+      view.aiReviewFocusId = proposalId;
+      render();
+    }
+
+    function submitAiActionEditSheet() {
+      const sheet = view.sheet;
+      const proposal = aiProposalById(sheet?.proposalId);
+      const actionIndex = Number(sheet?.actionIndex);
+      const action = proposal?.proposedActions?.[actionIndex];
+      if (!proposal || !action || !aiProposalCanExecute(proposal)) {
+        closeSheet();
+        return;
+      }
+      const fields = aiActionEditableFields(action);
+      if (!fields.length) {
+        closeSheet();
+        return;
+      }
+      const selection = aiCurrentActionSelection(proposal);
+      recordUndo("AI proposal action edit");
+      for (const spec of fields) {
+        const value = document.getElementById(`sheet-ai-action-${spec.field}`)?.value.trim() || "";
+        if (aiActionType(action) === "updatePerson") {
+          action.updates = action.updates && typeof action.updates === "object" ? action.updates : {};
+          action.updates[spec.field] = value;
+        } else {
+          action[spec.field] = value;
+        }
+      }
+      proposal.status = "edited";
+      proposal.result = proposal.result && typeof proposal.result === "object" ? proposal.result : {};
+      proposal.result.editedActionIds = Array.from(new Set([...(proposal.result.editedActionIds || []), aiActionId(action, actionIndex)]));
+      proposal.result.lastActionEditAt = nowISO();
+      storeAiActionSelection(proposal, selection);
+      view.sheet = null;
+      view.aiReviewFocusId = proposal.id;
+      showToast("AI action draft updated. No ministry records were changed.");
       render();
     }
 
@@ -10161,10 +10312,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       if (mode === "all") {
         const selection = aiActionSelectionFromIndexes(proposal, actionIndexes);
-        view.aiActionSelections = {
-          ...(view.aiActionSelections || {}),
-          [proposal.id]: selection
-        };
+        storeAiActionSelection(proposal, selection);
       }
       view.screen = "aiConfirmActions";
       view.aiConfirmProposalId = proposalId;
@@ -10733,6 +10881,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         submitEditFieldSheet();
         return;
       }
+      if (action === "ai-action-edit-save") {
+        submitAiActionEditSheet();
+        return;
+      }
       if (action === "create-person-sheet-save") {
         submitCreatePersonSheet();
         return;
@@ -10800,6 +10952,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         view.aiReviewFilter = button.dataset.filter || "Pending";
         render();
       }
+      if (action === "ai-action-edit") openAiActionEditSheet(id, button.dataset.actionIndex);
       if (action === "ai-proposal-approve-selected") openAiActionConfirmSheet(id, "selected");
       if (action === "ai-proposal-approve-all") openAiActionConfirmSheet(id, "all");
       if (action === "ai-proposal-approve") updateAiProposalStatus(id, "approved");

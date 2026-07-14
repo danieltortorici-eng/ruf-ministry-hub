@@ -90,6 +90,7 @@ RUF_HUB_APP_DIR="/path/to/ruf-ministry-hub-deploy" node tests/regression-harness
 - Backup Health status and action selection.
 - Auto Memory Vault local restore point creation, restore confirmation, deletion, retention limits, and Device Vault migration without plaintext snapshots.
 - Cloudflare Pages AI health and Quick Grab proposal routes, mock fallback, OpenAI Responses API request shape, no frontend key exposure, and AI proposal approval before any local save.
+- Deploy-source AI Review cards, including selected/skipped action persistence across reload, editable action drafts, partial approval filtering, and confirmation-only record creation.
 - Cloudflare Pages extensionless rewrites, direct HTML loading, and service worker bypass for `/api/*` routes.
 - Cloudflare Pages deploy-root shape, public file boundary, Pages Function locations, and Wrangler/ignore guardrails.
 - Service worker registration shape, cache version, and current asset list.

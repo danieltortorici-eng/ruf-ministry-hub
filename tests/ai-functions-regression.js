@@ -5,7 +5,8 @@ const nodeCrypto = require("crypto");
 
 const repoRoot = path.resolve(__dirname, "..");
 const appDir = path.resolve(repoRoot, "ruf-ministry-hub-deploy-working");
-const aiActionApprovalDistPath = path.resolve(repoRoot, "dist", "ruf-ministry-hub.html");
+const aiQuickGrabApprovalDistPath = path.resolve(repoRoot, "dist", "ruf-ministry-hub.html");
+const aiActionApprovalAppPath = path.resolve(appDir, "ruf-ministry-hub.html");
 
 function assert(condition, label) {
   if (!condition) throw new Error(label);
@@ -636,7 +637,7 @@ function makeAppSandbox(options = {}) {
 }
 
 function makeAiApprovalHarness({ people = [], rawContent = "Coffee with Mara Thompson. Pray for wisdom. Check in tomorrow." } = {}) {
-  const { sandbox, elements } = makeAppSandbox({ htmlPath: aiActionApprovalDistPath });
+  const { sandbox, elements } = makeAppSandbox({ htmlPath: aiQuickGrabApprovalDistPath });
   function appEval(code) {
     return vm.runInContext(code, sandbox);
   }
@@ -871,7 +872,7 @@ function testAiMatchedPersonFlowStillSaves() {
 }
 
 function makeAiActionApprovalHarness() {
-  const { sandbox, elements } = makeAppSandbox({ htmlPath: aiActionApprovalDistPath });
+  const { sandbox, elements } = makeAppSandbox({ htmlPath: aiActionApprovalAppPath });
   function appEval(code) {
     return vm.runInContext(code, sandbox);
   }
@@ -969,15 +970,8 @@ function testAiActionConfirmPageOpensFromSelectedActions() {
   const harness = makeAiActionApprovalHarness();
   const ids = setupActionApprovalProposal(harness, { personName: "Mara Thompson" });
   harness.sandbox.__proposalId = ids.proposalId;
-  harness.sandbox.document.querySelectorAll = selector => {
-    if (selector !== "[data-ai-action-select]") return [];
-    return [
-      { dataset: { aiActionSelect: ids.proposalId, actionIndex: "0" }, checked: true, disabled: false },
-      { dataset: { aiActionSelect: ids.proposalId, actionIndex: "1" }, checked: true, disabled: false },
-      { dataset: { aiActionSelect: ids.proposalId, actionIndex: "2" }, checked: false, disabled: false }
-    ];
-  };
   const result = harness.appEval(`(() => {
+    persistAiActionSelection(__proposalId, "act-meeting", false);
     openAiActionConfirmSheet(__proposalId, "selected");
     return {
       screen: view.screen,
@@ -994,6 +988,80 @@ function testAiActionConfirmPageOpensFromSelectedActions() {
   assert(result.html.includes("Selected actions to save"), "Confirm AI Actions view renders selected actions");
   assert(result.html.includes("Choose or create person"), "Confirm AI Actions view renders person choice when needed");
   assert(result.html.includes("data-action=\"ai-action-confirm-save\""), "Confirm AI Actions view renders save button");
+}
+
+function testAiActionSelectionPersistsAcrossReload() {
+  const harness = makeAiActionApprovalHarness();
+  const ids = setupActionApprovalProposal(harness, { includePerson: true });
+  harness.sandbox.__proposalId = ids.proposalId;
+  const after = harness.appEval(`(() => {
+    persistAiActionSelection(__proposalId, "act-meeting", false);
+    view.aiActionSelections = {};
+    db = normalizeData(JSON.parse(JSON.stringify(db)));
+    const proposal = aiProposalById(__proposalId);
+    const selection = aiCurrentActionSelection(proposal);
+    return {
+      selection,
+      persisted: proposal.result?.actionReview?.persistedLocally === true,
+      records: db.notes.length + db.meetingNotes.length + db.prayerRequests.length + db.tasks.length
+    };
+  })()`);
+
+  assert(after.selection.selectedActionIds.includes("act-prayer") && after.selection.selectedActionIds.includes("act-task"), "selected AI actions survive local data reload");
+  assert(after.selection.skippedActionIds.includes("act-meeting"), "skipped AI actions survive local data reload");
+  assert(after.persisted === true, "AI action review records local persistence metadata");
+  assert(after.records === 0, "selection persistence creates no ministry records");
+}
+
+function testAiApproveAllPersistsBeforeConfirmation() {
+  const harness = makeAiActionApprovalHarness();
+  const ids = setupActionApprovalProposal(harness, { includePerson: true });
+  harness.sandbox.__proposalId = ids.proposalId;
+  const after = harness.appEval(`(() => {
+    persistAiActionSelection(__proposalId, "act-meeting", false);
+    openAiActionConfirmSheet(__proposalId, "all");
+    const review = aiProposalById(__proposalId).result?.actionReview || {};
+    return {
+      selectedActionIds: review.selectedActionIds || [],
+      skippedActionIds: review.skippedActionIds || [],
+      records: db.notes.length + db.meetingNotes.length + db.prayerRequests.length + db.tasks.length
+    };
+  })()`);
+
+  assert(after.selectedActionIds.length === 3 && after.skippedActionIds.length === 0, "Approve all persists the full selection before final confirmation");
+  assert(after.records === 0, "Approve all selection alone creates no ministry records");
+}
+
+function testAiReviewActionCanBeEditedSafely() {
+  const harness = makeAiActionApprovalHarness();
+  const ids = setupActionApprovalProposal(harness, { includePerson: true });
+  harness.sandbox.__proposalId = ids.proposalId;
+  harness.appEval(`persistAiActionSelection(__proposalId, "act-meeting", false)`);
+  const cardHtml = harness.appEval(`renderAiProposalCard(aiProposalById(__proposalId))`);
+  harness.appEval(`openAiActionEditSheet(__proposalId, 0)`);
+  harness.makeElement("sheet-ai-action-request").value = "Pray for a wise conversation this week.";
+  harness.makeElement("sheet-ai-action-followUpDate").value = "2026-07-15";
+  const after = harness.appEval(`(() => {
+    submitAiActionEditSheet();
+    const proposal = aiProposalById(__proposalId);
+    return {
+      status: proposal.status,
+      request: proposal.proposedActions[0].request,
+      followUpDate: proposal.proposedActions[0].followUpDate,
+      selection: aiCurrentActionSelection(proposal),
+      editedActionIds: proposal.result?.editedActionIds || [],
+      cardHtml: renderAiProposalCard(proposal),
+      records: db.notes.length + db.meetingNotes.length + db.prayerRequests.length + db.tasks.length
+    };
+  })()`);
+
+  assert(cardHtml.includes("data-action=\"ai-action-edit\""), "pending AI review cards expose action editing");
+  assert(after.status === "edited", "editing an AI action marks the proposal as edited");
+  assert(after.request === "Pray for a wise conversation this week." && after.followUpDate === "2026-07-15", "edited AI action fields persist on the proposal");
+  assert(after.cardHtml.includes("Pray for a wise conversation this week."), "AI review card shows the edited action wording");
+  assert(after.selection.skippedActionIds.includes("act-meeting"), "editing an AI action preserves selected and skipped choices");
+  assert(after.editedActionIds.includes("act-prayer"), "edited AI actions keep local audit metadata");
+  assert(after.records === 0, "editing an AI review card creates no ministry records");
 }
 
 function saveActionApproval(harness, proposalId, actionIndexes, personChoice = {}) {
@@ -1118,6 +1186,9 @@ async function run() {
   testAiCancelCreatesNothing();
   testAiMatchedPersonFlowStillSaves();
   testAiActionConfirmPageOpensFromSelectedActions();
+  testAiActionSelectionPersistsAcrossReload();
+  testAiApproveAllPersistsBeforeConfirmation();
+  testAiReviewActionCanBeEditedSafely();
   testAiActionApprovalAllActionsApprovedLeavesPending();
   testAiActionApprovalPartialLeavesPending();
   testAiActionApprovalCreateNewPersonPath();

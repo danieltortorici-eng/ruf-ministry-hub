@@ -566,7 +566,7 @@ async function testDataSafetySheets() {
 }
 
 function testServiceWorkerShape() {
-  assert(serviceWorkerSource.includes("ruf-ministry-hub-v32-offline-cache-hardening-local-agents"), "service worker preserves the v32 cache foundation");
+  assert(serviceWorkerSource.includes("ruf-ministry-hub-v32-ai-review-card-stability"), "service worker cache version is bumped");
   assert(serviceWorkerSource.includes('"index.html"'), "service worker caches redirect entry point");
   assert(serviceWorkerSource.includes("ruf-ministry-hub-icon.svg"), "service worker caches the SVG icon");
   assert(serviceWorkerSource.includes("async function cacheAsset") && serviceWorkerSource.includes("Do not fail the whole service-worker install"), "service worker treats unavailable assets as non-blocking");

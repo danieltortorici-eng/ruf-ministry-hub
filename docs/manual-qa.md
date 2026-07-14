@@ -131,6 +131,18 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 - Mark a follow-up task done from Today.
 - Confirm those actions persist after refresh.
 
+## AI Review With Synthetic Data
+
+- Use only fictional test names and details for this check.
+- Create or open a pending AI proposal with at least three supported local actions.
+- Uncheck one action, refresh the app, and confirm the same action remains skipped while the other actions remain selected.
+- Tap Edit action, change the draft wording and date, save, and confirm the proposal is labeled Edited.
+- Confirm editing the card does not create a person, note, meeting, prayer request, or task.
+- Tap Approve selected actions, cancel from the confirmation page, and confirm no records were created and the selected/skipped choices remain.
+- Tap Approve all actions, return to AI Review without saving if possible, and confirm all supported actions remain selected.
+- Complete a partial approval and confirm the proposal leaves Pending, appears under Approved as Partially Approved, and shows the saved selected/skipped choices.
+- Confirm final approval still requires the explicit review checkbox before local records are created.
+
 ## PWA And Offline Cache
 
 - Open More, then iPhone Readiness.
