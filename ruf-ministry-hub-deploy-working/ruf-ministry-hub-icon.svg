@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">RUF Ministry Hub</title>
+  <desc id="desc">A simple RUF Ministry Hub app icon.</desc>
+  <rect width="512" height="512" rx="112" fill="#202731"/>
+  <circle cx="256" cy="256" r="176" fill="#f7f8fb"/>
+  <path d="M256 132c54 0 98 44 98 98 0 44-29 81-69 93v57h-58v-57c-40-12-69-49-69-93 0-54 44-98 98-98zm0 58c-22 0-40 18-40 40s18 40 40 40 40-18 40-40-18-40-40-40z" fill="#2c6f6d"/>
+  <path d="M169 374h174c16 0 29 13 29 29v8H140v-8c0-16 13-29 29-29z" fill="#d99441"/>
+</svg>

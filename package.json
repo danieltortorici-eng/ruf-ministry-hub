@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run check:app && npm run audit:assets && npm run audit:secrets",
+    "test": "npm run check:app && npm run check:deploy && npm run test:regression && npm run audit:assets && npm run audit:secrets",
     "check:app": "node check-app-syntax.mjs && node --check ruf-ministry-hub-sw.js",
+    "check:deploy": "node --check functions/api/ai/quick-grab.js && node --check functions/api/ai/health.js && node --check ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab.js && node --check ruf-ministry-hub-deploy-working/functions/api/ai/health.js && node --check ruf-ministry-hub-deploy-working/ruf-ministry-hub-sw.js",
+    "test:regression": "node tests/regression-harness.js && node tests/person-profile-fix-regression.js && node tests/ai-functions-regression.js && node tests/deployment-config-regression.js",
     "audit:assets": "node audit-assets.mjs",
     "audit:secrets": "node audit-secrets.mjs"
   }

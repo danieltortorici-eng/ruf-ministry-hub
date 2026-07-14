@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Pages guardrail only. This is not a Worker deployment config.
+  // Do not use `npx wrangler deploy`; it creates a separate Worker URL.
+  // Cloudflare Pages should deploy ruf-ministry-hub-deploy-working with
+  // Pages Functions handled from that folder's functions directory.
+  "name": "ruf-ministry-hub",
+  "pages_build_output_dir": "./ruf-ministry-hub-deploy-working",
+  "compatibility_date": "2026-07-07"
+}
