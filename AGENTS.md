@@ -2,6 +2,8 @@
 
 ## Source Of Truth
 
+- Canonical repository: `https://github.com/danieltortorici-eng/ruf-ministry-hub`.
+- Read `docs/canonical-repository-guide.md` for the current architecture and operating map.
 - Treat `ruf-ministry-hub-deploy-working/` as the deployable app source.
 - Keep `functions/api/ai/*.js` and `ruf-ministry-hub-deploy-working/functions/api/ai/*.js` in sync.
 - Do not edit old zip archives or `.ai-*`, `.mock-*`, `.person-*`, `.prayer-*`, or `.follow-up-*` staging folders unless explicitly asked.

@@ -73,7 +73,7 @@ These are not implemented in the current app and should not be claimed until bui
 - Email/Gmail import.
 - Native iOS widgets.
 - Background processing.
-- External AI parsing.
+- Additional external AI parsing beyond the implemented Quick Grab proposal route.
 - Donor database sync.
 
 ## Phase 9: Architecture Hardening
@@ -85,7 +85,7 @@ These are not implemented in the current app and should not be claimed until bui
 
 ## Roadblock Audit
 
-- No backend exists today, so sync and server automation require product and privacy decisions first.
+- The only current backend surface is two stateless Cloudflare Pages Functions for AI health and Quick Grab proposals. No server database, sync service, scheduler, or general-purpose backend exists, so sync and server automation still require product and privacy decisions first.
 - Auto Memory Vault is local restore history, not cloud sync. Device loss, browser data deletion, or moving to another device still require exported backups or a future backend.
 - No native shell exists today, so widgets, background tasks, and OS-level contact/calendar access require a native wrapper or external platform.
 - The current tests are local render/action tests, not full iPhone Safari automation.

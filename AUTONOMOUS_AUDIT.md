@@ -1,5 +1,7 @@
 # RUF Ministry Hub Autonomous Build Audit — 2026-07-08
 
+> Historical record: this audit preserves the pre-canonical state observed on 2026-07-08. Do not use its access assumptions or next steps as current instructions. See `README.md` and `docs/canonical-repository-guide.md`.
+
 ## Access status
 - GitHub connector login works as `danieltortorici-eng`, but the GitHub App currently has zero installed accounts/repositories available in this ChatGPT session. Direct commits, PRs, issue creation, and repo file edits are blocked until the GitHub App is installed on the intended repo/account.
 - Cloudflare Pages and Codex direct connectors are not available in this chat, so I could not edit Cloudflare dashboard settings or run Codex remotely from here.

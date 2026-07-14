@@ -1,0 +1,20 @@
+{
+  "rawContent": "Coffee with Jordan Example. Pray for wisdom about a synthetic summer schedule. Check in tomorrow.",
+  "candidatePeople": [
+    {
+      "id": "person_synthetic_1",
+      "name": "Jordan Example",
+      "personType": "Synthetic Student",
+      "fraternitySorority": "TEST"
+    }
+  ],
+  "todayISO": "2026-07-13",
+  "contextMode": "quick_grab",
+  "sourceType": "quickGrab",
+  "sourceId": "grab_synthetic_1",
+  "tags": [
+    "People",
+    "Prayer"
+  ],
+  "urgency": "Soon"
+}

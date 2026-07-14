@@ -1,5 +1,7 @@
 # RUF Ministry Hub Deployment Notes
 
+The canonical repository is `https://github.com/danieltortorici-eng/ruf-ministry-hub`. Use the GitHub-first release, rollback, and emergency Quick Grab procedures in `docs/canonical-repository-guide.md`; this file records the concrete production boundary and audit checklist.
+
 ## Correct Cloudflare Pages Setup
 
 Use Cloudflare Pages for this project, not a separate Worker. Do not rely on the accidental `workers.dev` URL; test the app at the Cloudflare Pages URL.
@@ -15,6 +17,8 @@ Recommended Cloudflare Pages settings:
 - Do not use the `workers.dev` URL.
 - Test the app at the Cloudflare Pages URL.
 - Test AI health at `https://YOUR-PAGES-URL/api/ai/health`.
+
+The intended routine release path is a reviewed merge to the canonical repository's configured Pages production branch, normally `main`. Confirm the actual production branch in the Cloudflare dashboard before release. Do not substitute a direct upload or separate Worker deployment for the Git-backed Pages project.
 
 This makes the public site root contain only the PWA files and Cloudflare Pages special files, while Pages Functions remain under `functions/`.
 
@@ -96,3 +100,15 @@ Recommended defaults are documented in `docs/openai-integration.md`. If `OPENAI_
 - `/api/ai/quick-grab` accepts POST JSON from a Pages Function on the Pages URL.
 - No `.git`, `.wrangler`, `node_modules`, tests, docs, logs, or local env files appear as public assets.
 - No OpenAI API key appears in frontend files, test files, tracked env templates, git history, or committed code.
+
+## Production Rollback
+
+Use Cloudflare Pages **Deployments** to roll back to a previously successful production deployment. Preview deployments are not rollback targets. After the dashboard rollback, verify the static routes and Pages Functions with synthetic data, then create a revert or fix in the canonical GitHub repository. A Pages rollback does not move `main`, so Git must be reconciled before the next production build.
+
+Cloudflare reference: https://developers.cloudflare.com/pages/configuration/rollbacks/
+
+## Emergency Quick Grab External-AI Control
+
+Set the production runtime variable `AI_MOCK_MODE=true`, then redeploy the current approved commit. Verify `/api/ai/health` reports `mockMode:true`, and verify a synthetic Quick Grab response reports `mode:"mock"` and `externalDataSent:false`. This stops external OpenAI requests while preserving local capture and mock proposals.
+
+Restore only after Daniel approves: confirm the OpenAI key still exists as an encrypted Pages secret, set `AI_MOCK_MODE=false`, redeploy the approved canonical commit, and verify with low-sensitivity synthetic data. Removing `OPENAI_API_KEY` also forces mock behavior, but use that more disruptive option only when the secret may be compromised. Never copy the secret value into a ticket, document, command transcript, or tracked file.

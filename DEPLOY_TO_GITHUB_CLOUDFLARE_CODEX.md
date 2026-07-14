@@ -1,5 +1,7 @@
 # Deploy / Source-of-Truth Runbook
 
+> Historical handoff: this runbook is retained as evidence of the pre-canonical workflow and contains superseded folder, project-name, direct-deploy, and connector assumptions. Do not execute it. Use `docs/canonical-repository-guide.md` and `DEPLOYMENT_NOTES.md`.
+
 Use this when applying the hotfix bundle to the real RUF Ministry Hub source.
 
 ## 1. Fix GitHub visibility first

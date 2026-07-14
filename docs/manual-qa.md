@@ -39,7 +39,7 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 - Confirm Today keeps the Autopilot card and Quick Capture, while loose reminders, people, and follow-up sections are hidden.
 - Choose Admin Catch-Up and tap Apply Preset.
 - Confirm Today brings backup, App Coach, Quick Capture, loose reminders, people, and follow-ups back into view.
-- Confirm no cloud sync, calendar, contacts, native widget, or external AI feature appears as active unless it has been separately built.
+- Confirm no cloud sync, calendar, contacts, native widget, or external AI feature beyond the implemented Quick Grab proposal route appears as active unless it has been separately built.
 
 ## Quick Grab Shortcut Flow
 

@@ -2,6 +2,8 @@
 
 Date: 2026-07-13
 
+Canonical repository: `https://github.com/danieltortorici-eng/ruf-ministry-hub`. See `docs/canonical-repository-guide.md` for the current operating map; this audit preserves the evidence behind the integrated v32 layout.
+
 ## Canonical source layout
 
 - Treat `ruf-ministry-hub-deploy-working/` as the Cloudflare Pages deployable app source.

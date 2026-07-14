@@ -1,3 +1,5 @@
+> Historical handoff: this prompt preserves pre-canonical assumptions for audit history. Do not execute its source discovery, deploy, or connector instructions. See `README.md` and `docs/canonical-repository-guide.md` for current guidance.
+
 Continue building RUF Ministry Hub autonomously. You have permission to change files as needed, but keep the safety model: AI proposes, Daniel approves, and no browser code may contain `OPENAI_API_KEY`, route secrets, or direct OpenAI SDK imports.
 
 Start by fixing source-of-truth:

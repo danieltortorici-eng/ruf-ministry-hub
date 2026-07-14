@@ -10,7 +10,7 @@ Your job is to make the app simpler, calmer, more automated, and more trustworth
 
 Before changing code:
 
-1. Read `RUF_Ministry_Hub_Project_Source_Audit.md`, `TESTING.md`, `docs/manual-qa.md`, and the current `ruf-ministry-hub-deploy-working/ruf-ministry-hub.html`.
+1. Read `docs/canonical-repository-guide.md`, `RUF_Ministry_Hub_Project_Source_Audit.md`, `TESTING.md`, `docs/manual-qa.md`, and the current `ruf-ministry-hub-deploy-working/ruf-ministry-hub.html`.
 2. Run the current regression tests.
 3. Identify whether the requested improvement is local-first, browser-only, PWA-only, or requires an external integration.
 4. Do not claim cloud sync, native widgets, calendar/contact permissions, email import, AI services, or background automation are implemented unless the working code and deploy path actually include them.

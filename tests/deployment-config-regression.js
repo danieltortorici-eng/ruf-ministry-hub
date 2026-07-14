@@ -125,6 +125,34 @@ function testDeploymentNotes() {
   });
 }
 
+function testCanonicalDocumentation() {
+  const readme = read("README.md");
+  const guide = read("docs/canonical-repository-guide.md");
+  const fixturePath = path.join(repoRoot, "tests", "fixtures", "api", "fake-quick-grab.json");
+  [readme, guide].forEach((source, index) => {
+    assert(source.includes("https://github.com/danieltortorici-eng/ruf-ministry-hub"), `${index === 0 ? "README" : "canonical guide"} names canonical GitHub repository`);
+  });
+  [
+    "## Architecture map",
+    "## Source-of-truth rules",
+    "## Local setup",
+    "## Test matrix",
+    "## Privacy model",
+    "## Worker catalog",
+    "## GitHub-first handoffs",
+    "## Cloudflare Pages deploy and rollback",
+    "## Emergency Quick Grab external-AI disable and restore",
+    "## Contributor checklist"
+  ].forEach(heading => {
+    assert(guide.includes(heading), `canonical guide includes ${heading}`);
+  });
+  assert(guide.includes("AI returns proposals only") || guide.includes("Proposals are not writes"), "canonical guide preserves human approval boundary");
+  assert(guide.includes("Do not run `npx wrangler deploy`"), "canonical guide rejects standalone Worker deployment");
+  assert(fs.existsSync(fixturePath), "synthetic Quick Grab QA fixture exists");
+  const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+  assert(fixture.sourceId === "grab_synthetic_1" && fixture.candidatePeople[0].name === "Jordan Example", "Quick Grab QA fixture is explicitly synthetic");
+}
+
 function run() {
   testDeployRootShape();
   testNoInternalsInDeployRoot();
@@ -133,6 +161,7 @@ function run() {
   testWranglerGuardrail();
   testIgnoreGuardrails();
   testDeploymentNotes();
+  testCanonicalDocumentation();
   console.log("All deployment config regression checks passed.");
 }
 

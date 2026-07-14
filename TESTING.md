@@ -2,6 +2,8 @@
 
 This workspace contains local regression checks for the current single-file PWA bundle in `ruf-ministry-hub-deploy-working`.
 
+The cross-project test matrix and change-to-check mapping live in `docs/canonical-repository-guide.md`. This file remains the command-level testing reference.
+
 ## Run The Full Suite
 
 From the repository root, run:
@@ -72,7 +74,7 @@ RUF_HUB_APP_DIR="/path/to/ruf-ministry-hub-deploy" node tests/regression-harness
 
 ## Notes
 
-These are local logic/render checks. They are not a full browser screenshot suite and not a real iPhone Safari test. They intentionally avoid backend services, cloud sync, native APIs, and real iOS Share Sheet behavior.
+These are local logic/render checks. They are not a full browser screenshot suite and not a real iPhone Safari test. They do not call live backend or OpenAI services and intentionally avoid cloud sync, native APIs, and real iOS Share Sheet behavior. Pages Function code is exercised locally with synthetic inputs and stubbed network calls.
 
 Run the manual iPhone Safari checklist before relying on a release on your phone:
 
