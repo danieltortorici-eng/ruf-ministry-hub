@@ -112,3 +112,15 @@ Cloudflare reference: https://developers.cloudflare.com/pages/configuration/roll
 Set the production runtime variable `AI_MOCK_MODE=true`, then redeploy the current approved commit. Verify `/api/ai/health` reports `mockMode:true`, and verify a synthetic Quick Grab response reports `mode:"mock"` and `externalDataSent:false`. This stops external OpenAI requests while preserving local capture and mock proposals.
 
 Restore only after Daniel approves: confirm the OpenAI key still exists as an encrypted Pages secret, set `AI_MOCK_MODE=false`, redeploy the approved canonical commit, and verify with low-sensitivity synthetic data. Removing `OPENAI_API_KEY` also forces mock behavior, but use that more disruptive option only when the secret may be compromised. Never copy the secret value into a ticket, document, command transcript, or tracked file.
+
+## Incident Response
+
+Use `docs/incident-response.md` for secret exposure, public AI abuse, failed deploys, data-loss reports, service-worker outages, and Worker loops. The runbook preserves local browser data, uses Cloudflare Pages rollback rather than a separate Worker deploy, and keeps production/data changes human-approved.
+
+Run the deterministic offline exercise with:
+
+```sh
+node tests/incident-response-simulations.js
+```
+
+The exercise uses synthetic fixtures only. It does not read real secrets or ministry data, contact external services, send messages, mutate records, deploy, roll back, purge caches, or rotate credentials.

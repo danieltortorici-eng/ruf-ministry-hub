@@ -12,7 +12,7 @@ From the repository root, run:
 npm test
 ```
 
-This runs the root v32 syntax, asset, generated-output drift, and secret-boundary audits; both copies of the Pages Function syntax checks; the deploy service worker check; and all five maintained regression suites below.
+This runs the root v32 syntax, asset, generated-output drift, and secret-boundary audits; both copies of the Pages Function syntax checks; the deploy service worker check; the five maintained app/repository regression suites below; and the deterministic incident-response simulations.
 
 The same command runs in `.github/workflows/ci.yml` for every pull request and push to `main`. The workflow uses read-only permissions, cancels superseded runs, and retains failure logs for 7 days.
 
@@ -63,6 +63,14 @@ node audit-generated-output.mjs
 node audit-secrets.mjs
 ```
 
+Run the offline incident-response simulations:
+
+```sh
+node tests/incident-response-simulations.js
+```
+
+These simulations use only `tests/fixtures/incident-simulations.json`. They cover synthetic secret exposure, public AI abuse, failed Pages deploy, data-loss report, service-worker outage, and Worker loop inputs. The runner makes no network requests, sends no external messages, uses no real credentials or ministry data, and changes no records or production state.
+
 To test another copy of the app, pass its folder:
 
 ```sh
@@ -89,6 +97,7 @@ RUF_HUB_APP_DIR="/path/to/ruf-ministry-hub-deploy" node tests/regression-harness
 - GitHub workflow permissions, full-SHA action pins, concurrency cancellation, failure-artifact retention, CODEOWNERS, and pull-request safety prompts.
 - Byte-for-byte drift checks for the two required Pages Function mirrors.
 - Tracked/proposed-file credential signatures, forbidden secret/data paths, and browser/server credential boundaries without reading ignored local env files.
+- Incident-response severity, containment, evidence, human-approval, and privacy guardrails for all six synthetic scenarios.
 
 ## Notes
 

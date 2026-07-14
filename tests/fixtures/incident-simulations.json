@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "guardrails": {
+    "syntheticOnly": true,
+    "networkAccess": false,
+    "externalMessages": false,
+    "recordWrites": false,
+    "realCredentials": false,
+    "realMinistryData": false
+  },
+  "cases": [
+    {
+      "id": "synthetic-public-active-secret",
+      "type": "secret_exposure",
+      "signals": { "publicExposure": true, "credentialActive": true, "sensitiveDataExposure": false },
+      "expected": {
+        "severity": "SEV-1",
+        "containment": ["freeze_distribution", "credential_rotation_handoff"],
+        "evidence": ["credential_metadata", "exposure_window", "aggregate_usage"]
+      }
+    },
+    {
+      "id": "synthetic-sustained-public-ai-abuse",
+      "type": "public_ai_abuse",
+      "signals": { "sustainedAbuse": true, "materialCostRisk": false, "sensitiveDataExposure": false },
+      "expected": {
+        "severity": "SEV-2",
+        "containment": ["force_ai_mock_mode", "bound_ai_route"],
+        "evidence": ["aggregate_ai_usage", "route_metrics", "sampled_request_ids"]
+      }
+    },
+    {
+      "id": "synthetic-failed-pages-production-deploy",
+      "type": "failed_deploy",
+      "signals": { "productionUnavailable": true, "knownGoodProductionTarget": true, "previewOnly": false },
+      "expected": {
+        "severity": "SEV-2",
+        "containment": ["freeze_deploys", "pages_rollback"],
+        "evidence": ["deployment_ids", "commit_shas", "version_metadata"]
+      }
+    },
+    {
+      "id": "synthetic-unscoped-local-data-loss-report",
+      "type": "data_loss_report",
+      "signals": { "credibleReport": true, "broadLossConfirmed": false, "irreversibleLossConfirmed": false },
+      "expected": {
+        "severity": "SEV-2",
+        "containment": ["freeze_affected_profile_writes", "preserve_browser_storage"],
+        "evidence": ["device_version_metadata", "action_timeline", "backup_metadata"]
+      }
+    },
+    {
+      "id": "synthetic-widespread-service-worker-outage",
+      "type": "service_worker_outage",
+      "signals": { "widespreadFailure": true, "localDataAtRisk": true, "apiRouteCached": false },
+      "expected": {
+        "severity": "SEV-2",
+        "containment": ["preserve_browser_storage", "separate_cache_layers"],
+        "evidence": ["app_cache_versions", "service_worker_state", "affected_route_metadata"]
+      }
+    },
+    {
+      "id": "synthetic-sustained-worker-loop-1019",
+      "type": "worker_loop",
+      "signals": { "loopLimit1019": true, "sustainedProductionImpact": true, "materialCostRisk": false },
+      "expected": {
+        "severity": "SEV-2",
+        "containment": ["freeze_deploys", "break_recursive_route"],
+        "evidence": ["worker_error_outcome", "redacted_hop_sequence", "invocation_aggregates"]
+      }
+    }
+  ]
+}
