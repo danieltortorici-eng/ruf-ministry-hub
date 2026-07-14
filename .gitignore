@@ -3,6 +3,7 @@
 
 # Dependencies / build tools
 node_modules/
+artifacts/
 .wrangler/
 .dev.vars
 .env

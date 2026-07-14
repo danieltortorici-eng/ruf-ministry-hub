@@ -12,7 +12,9 @@ From the repository root, run:
 npm test
 ```
 
-This runs the root v32 syntax/asset/secret audits, both copies of the Pages Function syntax checks, the deploy service worker check, and all four maintained regression suites below.
+This runs the root v32 syntax, asset, generated-output drift, and secret-boundary audits; both copies of the Pages Function syntax checks; the deploy service worker check; and all five maintained regression suites below.
+
+The same command runs in `.github/workflows/ci.yml` for every pull request and push to `main`. The workflow uses read-only permissions, cancels superseded runs, and retains failure logs for 7 days.
 
 ## Run The Regression Harness
 
@@ -48,6 +50,19 @@ Run the deployment configuration checks:
 /Users/danieltortorici/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/deployment-config-regression.js
 ```
 
+Run the GitHub coordination checks:
+
+```sh
+node tests/github-coordination-regression.js
+```
+
+Run the generated-output and secret boundaries directly:
+
+```sh
+node audit-generated-output.mjs
+node audit-secrets.mjs
+```
+
 To test another copy of the app, pass its folder:
 
 ```sh
@@ -71,6 +86,9 @@ RUF_HUB_APP_DIR="/path/to/ruf-ministry-hub-deploy" node tests/regression-harness
 - Cloudflare Pages deploy-root shape, public file boundary, Pages Function locations, and Wrangler/ignore guardrails.
 - Service worker registration shape, cache version, and current asset list.
 - Documentation guardrails so tests do not claim removed or unimplemented screens or future integrations as active features.
+- GitHub workflow permissions, full-SHA action pins, concurrency cancellation, failure-artifact retention, CODEOWNERS, and pull-request safety prompts.
+- Byte-for-byte drift checks for the two required Pages Function mirrors.
+- Tracked/proposed-file credential signatures, forbidden secret/data paths, and browser/server credential boundaries without reading ignored local env files.
 
 ## Notes
 

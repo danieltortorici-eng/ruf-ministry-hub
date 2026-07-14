@@ -1,0 +1,11 @@
+# Daniel is the privacy and release-boundary owner for the repository.
+* @danieltortorici-eng
+
+# Changes here can alter CI trust, review policy, or deploy behavior.
+/.github/ @danieltortorici-eng
+/functions/ @danieltortorici-eng
+/ruf-ministry-hub-deploy-working/functions/ @danieltortorici-eng
+/ruf-ministry-hub-deploy-working/ @danieltortorici-eng
+/audit-secrets.mjs @danieltortorici-eng
+/audit-generated-output.mjs @danieltortorici-eng
+/DEPLOYMENT_NOTES.md @danieltortorici-eng
