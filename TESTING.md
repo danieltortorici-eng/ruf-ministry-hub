@@ -40,9 +40,10 @@ Run the focused Cloudflare/OpenAI proposal checks:
 
 ```sh
 /Users/danieltortorici/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/ai-functions-regression.js
+/Users/danieltortorici/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/ai-rate-limiter-regression.js
 ```
 
-These checks cover the AI health endpoint, mock fallback, Responses API request shape, strict structured output, access-token protection, input-size and field validation, prompt-injection handling, upstream OpenAI error handling, retry behavior, and selected-action approval metadata.
+These checks cover the AI health endpoint, effective runtime mode, mock fallback, fail-closed real mode, Cloudflare Access JWT validation, constant-time route-token protection, durable rate limiting, bounded request bodies, Responses API request shape, strict structured output, field validation, prompt-injection handling, upstream OpenAI error handling, retry behavior, and selected-action approval metadata.
 
 Run the deployment configuration checks:
 

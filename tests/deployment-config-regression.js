@@ -94,6 +94,25 @@ function testWranglerGuardrail() {
   assert(!/"directory"\s*:\s*"\."/.test(wrangler), "root wrangler config does not publish repository root as assets");
 }
 
+function testProductionAiSafetyAssets() {
+  const worker = read("cloudflare/ai-rate-limiter/worker.js");
+  const limiterConfig = read("cloudflare/ai-rate-limiter/wrangler.jsonc");
+  const runbook = read("docs/production-ai-safety.md");
+  assert(worker.includes("extends DurableObject"), "AI limiter uses a Durable Object implementation");
+  assert(worker.includes("fixed-window"), "AI limiter persists a bounded fixed window");
+  assert(limiterConfig.includes('"new_sqlite_classes": ["AiRateLimiter"]'), "AI limiter declares its Durable Object migration");
+  [
+    "AI_MOCK_MODE=true",
+    "CF_ACCESS_TEAM_DOMAIN",
+    "CF_ACCESS_AUD",
+    "AI_RATE_LIMITER",
+    "OPENAI_API_KEY",
+    "requires Daniel approval"
+  ].forEach(text => {
+    assert(runbook.includes(text), `production AI runbook includes ${text}`);
+  });
+}
+
 function testIgnoreGuardrails() {
   const gitignore = read(".gitignore");
   const assetsignore = read(".assetsignore");
@@ -159,6 +178,7 @@ function run() {
   testPagesFunctionRoutesExist();
   testAiApprovalFixInDeployOutputs();
   testWranglerGuardrail();
+  testProductionAiSafetyAssets();
   testIgnoreGuardrails();
   testDeploymentNotes();
   testCanonicalDocumentation();

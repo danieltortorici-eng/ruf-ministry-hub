@@ -79,8 +79,15 @@ Set production runtime secrets and variables in Cloudflare Pages:
 - `OPENAI_RETRY_BASE_MS`
 - `RUF_HUB_AI_ACCESS_TOKEN`
 - `AI_MOCK_MODE`
+- `CF_ACCESS_TEAM_DOMAIN`
+- `CF_ACCESS_AUD`
+- `AI_RATE_LIMIT_MAX_REQUESTS`
+- `AI_RATE_LIMIT_WINDOW_SECONDS`
+- Durable Object binding `AI_RATE_LIMITER`
 
-Recommended defaults are documented in `docs/openai-integration.md`. If `OPENAI_API_KEY` is missing, or if `AI_MOCK_MODE=true`, the Quick Grab AI endpoint returns a mock proposal safely. AI proposals never write records directly; Daniel must approve selected actions before saving.
+Recommended defaults are documented in `docs/openai-integration.md`. If `OPENAI_API_KEY` is missing, or if `AI_MOCK_MODE` is not exactly `false`, the Quick Grab AI endpoint returns a mock proposal safely. Real mode is blocked unless a Cloudflare Access JWT or server-only route token authenticates the caller and the `AI_RATE_LIMITER` Durable Object binding is available. AI proposals never write records directly; Daniel must approve selected actions before saving.
+
+Do not change production to real mode until Daniel approves and completes `docs/production-ai-safety.md`.
 
 ## Deployment Audit Checklist
 

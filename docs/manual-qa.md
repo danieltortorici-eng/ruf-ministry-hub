@@ -43,6 +43,8 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 
 ## Quick Grab Shortcut Flow
 
+When production backend Quick Grab is enabled, sign in through the approved Cloudflare Access hostname before this flow. Confirm a signed-out request cannot create a real proposal and that the app falls back safely without changing records.
+
 - In Safari, open the deployed app with `?quickgrab=Test%20capture`.
 - Confirm Quick Grab opens and the textarea contains `Test capture`.
 - Repeat with `?quickgrab=Prayer%20capture&quickgrabCategory=prayer&quickgrabUrgency=soon`.

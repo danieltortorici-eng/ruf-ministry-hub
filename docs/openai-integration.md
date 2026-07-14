@@ -22,9 +22,14 @@ API billing is separate from any ChatGPT subscription. Check the OpenAI pricing 
 - `OPENAI_TIMEOUT_MS`: defaults to `12000`, capped by the function.
 - `OPENAI_MAX_RETRIES`: defaults to `1`, capped by the function.
 - `OPENAI_RETRY_BASE_MS`: defaults to `250`.
-- `AI_MOCK_MODE=true`: forces the safe local mock proposal path.
+- `AI_MOCK_MODE=true`: forces the safe local mock proposal path. Real mode requires the exact value `false`.
 - Missing `OPENAI_API_KEY`: also uses the safe local mock proposal path.
-- `RUF_HUB_AI_ACCESS_TOKEN`: optional request token. When set, callers must send `X-RUF-HUB-AI-Token`.
+- `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD`: enable browser authentication with a validated Cloudflare Access JWT.
+- `RUF_HUB_AI_ACCESS_TOKEN`: optional server/API-client credential. It must never be placed in browser code or browser storage.
+- `AI_RATE_LIMITER`: required Durable Object namespace binding for real mode.
+- `AI_RATE_LIMIT_MAX_REQUESTS` and `AI_RATE_LIMIT_WINDOW_SECONDS`: bounded fixed-window settings; defaults are 10 requests per 60 seconds per authenticated principal.
+
+Real mode is fail-closed. If the OpenAI key and `AI_MOCK_MODE=false` request real behavior but authentication or the durable limiter is missing or unavailable, the route returns a safe `503` and does not call OpenAI. `/api/ai/health` reports `effectiveMode` as `mock`, `blocked`, or `real` from the same runtime conditions.
 
 The current request uses the OpenAI Responses API with `store:false`, strict structured output through `text.format`, and no `temperature`. Reasoning settings are sent only for reasoning-capable model names.
 
@@ -40,6 +45,7 @@ The quick-grab function validates and minimizes the request before sending anyth
 
 - accepts only known top-level request fields;
 - caps body size, raw Quick Grab length, total fields, candidate count, and candidate field length;
+- stops reading request and upstream response streams at fixed byte limits;
 - rejects prototype-pollution keys;
 - sends candidate people with only `id`, `name`, `personType`, and `fraternitySorority`;
 - treats Quick Grab text as untrusted data that cannot override the system instructions;
@@ -68,7 +74,9 @@ node --check functions/api/ai/quick-grab.js
 node --check ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab.js
 ```
 
-Optional real-API QA should be done against a development Pages environment with a low-volume sample Quick Grab and `AI_MOCK_MODE=false`. Confirm `/api/ai/health` reports `hasOpenAIKey:true`, `responsesApi:true`, and `storedServerSide:false`.
+Optional real-API QA should be done against a development Pages environment with a low-volume synthetic Quick Grab and `AI_MOCK_MODE=false`. Confirm `/api/ai/health` reports `effectiveMode:"real"`, `readyForRealMode:true`, `authenticationConfigured:true`, `durableRateLimitConfigured:true`, and `storedServerSide:false`.
+
+See `docs/production-ai-safety.md` for the exact approval-gated Cloudflare configuration sequence.
 
 ## Rollback
 

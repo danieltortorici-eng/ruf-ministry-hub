@@ -5,6 +5,10 @@ const ROUTE = "/api/ai/quick-grab";
 const PROMPT_VERSION = "quick-grab-proposal-2026-07-13";
 const SCHEMA_VERSION = "quick_grab_proposal_v2";
 const MAX_BODY_BYTES = 24 * 1024;
+const MAX_UPSTREAM_ERROR_BYTES = 32 * 1024;
+const MAX_OPENAI_RESPONSE_BYTES = 256 * 1024;
+const MAX_ACCESS_CERTS_BYTES = 64 * 1024;
+const MAX_ACCESS_JWT_CHARS = 16 * 1024;
 const MAX_RAW_CONTENT_CHARS = 6000;
 const MAX_TOTAL_FIELDS = 420;
 const MAX_CANDIDATE_PEOPLE = 80;
@@ -15,6 +19,8 @@ const DEFAULT_TIMEOUT_MS = 12000;
 const MAX_TIMEOUT_MS = 30000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 1800;
 const DEFAULT_MAX_RETRIES = 1;
+const DEFAULT_RATE_LIMIT_REQUESTS = 10;
+const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60;
 
 const ACTION_TYPES = [
   "createNote",
@@ -161,11 +167,12 @@ const QUICK_GRAB_INSTRUCTIONS = [
   "Return strict JSON only. Do not include markdown, commentary, secrets, environment variables, or internal configuration."
 ].join("\n");
 
-function json(payload, status = 200) {
+function json(payload, status = 200, extraHeaders = {}) {
   return Response.json(payload, {
     status,
     headers: {
-      "Cache-Control": "no-store"
+      "Cache-Control": "no-store",
+      ...extraHeaders
     }
   });
 }
@@ -221,9 +228,37 @@ function nowISO() {
   return new Date().toISOString();
 }
 
-function estimateByteLength(text) {
-  if (typeof TextEncoder === "function") return new TextEncoder().encode(text).byteLength;
-  return String(text).length;
+async function readBoundedText(streamOwner, maxBytes) {
+  const contentLength = Number(streamOwner.headers?.get("Content-Length") || 0);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    return { ok: false, tooLarge: true, text: "" };
+  }
+  if (!streamOwner.body || typeof streamOwner.body.getReader !== "function") {
+    return { ok: true, tooLarge: false, text: "" };
+  }
+
+  const reader = streamOwner.body.getReader();
+  const decoder = new TextDecoder();
+  let totalBytes = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value?.byteLength || 0;
+      if (totalBytes > maxBytes) {
+        await reader.cancel("body_too_large").catch(() => {});
+        return { ok: false, tooLarge: true, text: "" };
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return { ok: true, tooLarge: false, text };
+  } catch {
+    return { ok: false, tooLarge: false, text: "" };
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 function countFields(value) {
@@ -259,14 +294,14 @@ function contentTypeAllowsJson(request) {
   return /\bapplication\/json\b/i.test(contentType) || /\+json\b/i.test(contentType);
 }
 
-function problem(status, code, message, externalDataSent = false) {
+function problem(status, code, message, externalDataSent = false, extraHeaders = {}) {
   return json({
     ok: false,
     code,
     error: message,
     externalDataSent,
     storedServerSide: false
-  }, status);
+  }, status, extraHeaders);
 }
 
 async function readJsonBody(request) {
@@ -279,15 +314,14 @@ async function readJsonBody(request) {
     return { ok: false, response: problem(413, "body_too_large", "Quick Grab AI requests must stay under the size limit.") };
   }
 
-  let text = "";
-  try {
-    text = await request.text();
-  } catch {
-    return { ok: false, response: problem(400, "body_unreadable", "The request body could not be read.") };
-  }
-  if (estimateByteLength(text) > MAX_BODY_BYTES) {
+  const bounded = await readBoundedText(request, MAX_BODY_BYTES);
+  if (bounded.tooLarge) {
     return { ok: false, response: problem(413, "body_too_large", "Quick Grab AI requests must stay under the size limit.") };
   }
+  if (!bounded.ok) {
+    return { ok: false, response: problem(400, "body_unreadable", "The request body could not be read.") };
+  }
+  const text = bounded.text;
 
   let body;
   try {
@@ -393,6 +427,11 @@ async function digestText(value) {
   return bytes;
 }
 
+async function digestHex(value) {
+  const digest = await digestText(value);
+  return Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function constantTimeEqual(left, right) {
   const [leftDigest, rightDigest] = await Promise.all([digestText(left), digestText(right)]);
   const length = Math.max(leftDigest.length, rightDigest.length);
@@ -403,12 +442,167 @@ async function constantTimeEqual(left, right) {
   return diff === 0;
 }
 
+function accessConfiguration(env) {
+  const teamDomain = safeString(env.CF_ACCESS_TEAM_DOMAIN, 240).replace(/\/+$/, "");
+  const audience = safeString(env.CF_ACCESS_AUD, 240);
+  const validTeamDomain = /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/i.test(teamDomain);
+  return {
+    configured: Boolean(teamDomain && audience && validTeamDomain),
+    teamDomain,
+    audience
+  };
+}
+
+function authenticationConfiguration(env) {
+  const tokenConfigured = String(env.RUF_HUB_AI_ACCESS_TOKEN || "").length > 0;
+  const access = accessConfiguration(env);
+  return {
+    configured: tokenConfigured || access.configured,
+    tokenConfigured,
+    access
+  };
+}
+
+function decodeBase64Url(value) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/.test(value) || value.length % 4 === 1) {
+    throw new Error("invalid_base64url");
+  }
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(padded);
+  return Uint8Array.from(binary, character => character.charCodeAt(0));
+}
+
+function parseAccessJwt(token) {
+  if (!token || token.length > MAX_ACCESS_JWT_CHARS) throw new Error("invalid_access_jwt");
+  const parts = token.split(".");
+  if (parts.length !== 3) throw new Error("invalid_access_jwt");
+  const decoder = new TextDecoder();
+  const header = JSON.parse(decoder.decode(decodeBase64Url(parts[0])));
+  const payload = JSON.parse(decoder.decode(decodeBase64Url(parts[1])));
+  if (!header || header.alg !== "RS256" || typeof header.kid !== "string") throw new Error("invalid_access_jwt");
+  if (!payload || typeof payload !== "object") throw new Error("invalid_access_jwt");
+  return {
+    header,
+    payload,
+    signingInput: new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
+    signature: decodeBase64Url(parts[2])
+  };
+}
+
+function accessClaimsAreValid(payload, access) {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  return payload.iss === access.teamDomain
+    && audiences.includes(access.audience)
+    && Number.isFinite(payload.exp)
+    && payload.exp > nowSeconds
+    && (!Number.isFinite(payload.nbf) || payload.nbf <= nowSeconds + 30)
+    && typeof payload.sub === "string"
+    && payload.sub.length > 0
+    && payload.sub.length <= 240;
+}
+
+async function verifyAccessJwt(token, access) {
+  let parsed;
+  try {
+    parsed = parseAccessJwt(token);
+  } catch {
+    return { ok: false, unavailable: false };
+  }
+
+  let response;
+  try {
+    response = await fetch(`${access.teamDomain}/cdn-cgi/access/certs`, {
+      headers: { "Accept": "application/json" }
+    });
+  } catch {
+    return { ok: false, unavailable: true };
+  }
+  if (!response.ok) return { ok: false, unavailable: true };
+  const bounded = await readBoundedText(response, MAX_ACCESS_CERTS_BYTES);
+  if (!bounded.ok) return { ok: false, unavailable: true };
+
+  let key;
+  try {
+    const jwks = JSON.parse(bounded.text);
+    key = Array.isArray(jwks.keys)
+      ? jwks.keys.find(candidate => candidate?.kid === parsed.header.kid && candidate?.kty === "RSA" && candidate?.alg === "RS256")
+      : null;
+  } catch {
+    return { ok: false, unavailable: true };
+  }
+  if (!key || !accessClaimsAreValid(parsed.payload, access)) return { ok: false, unavailable: false };
+
+  try {
+    const cryptoKey = await crypto.subtle.importKey(
+      "jwk",
+      key,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+    const valid = await crypto.subtle.verify(
+      { name: "RSASSA-PKCS1-v1_5" },
+      cryptoKey,
+      parsed.signature,
+      parsed.signingInput
+    );
+    return valid
+      ? { ok: true, unavailable: false, principal: `access:${parsed.payload.sub}` }
+      : { ok: false, unavailable: false };
+  } catch {
+    return { ok: false, unavailable: true };
+  }
+}
+
 async function authorizeRequest(request, env) {
-  const configuredToken = safeString(env.RUF_HUB_AI_ACCESS_TOKEN, 300);
-  if (!configuredToken) return true;
-  const provided = safeString(request.headers.get("X-RUF-HUB-AI-Token"), 300);
-  if (!provided) return false;
-  return constantTimeEqual(provided, configuredToken);
+  const configuration = authenticationConfiguration(env);
+  const configuredToken = String(env.RUF_HUB_AI_ACCESS_TOKEN || "");
+  const providedToken = String(request.headers.get("X-RUF-HUB-AI-Token") || "");
+  if (configuration.tokenConfigured && providedToken && await constantTimeEqual(providedToken, configuredToken)) {
+    return { ok: true, unavailable: false, principal: "static-route-token", method: "route_token" };
+  }
+
+  const accessJwt = request.headers.get("Cf-Access-Jwt-Assertion") || "";
+  if (configuration.access.configured && accessJwt) {
+    const verified = await verifyAccessJwt(accessJwt, configuration.access);
+    if (verified.ok) return { ...verified, method: "cloudflare_access" };
+    if (verified.unavailable) return { ok: false, unavailable: true };
+  }
+  return { ok: false, unavailable: false };
+}
+
+function configuredRateLimit(env) {
+  const requests = Number(env.AI_RATE_LIMIT_MAX_REQUESTS || DEFAULT_RATE_LIMIT_REQUESTS);
+  const windowSeconds = Number(env.AI_RATE_LIMIT_WINDOW_SECONDS || DEFAULT_RATE_LIMIT_WINDOW_SECONDS);
+  return {
+    requests: Number.isFinite(requests) ? Math.max(1, Math.min(100, Math.floor(requests))) : DEFAULT_RATE_LIMIT_REQUESTS,
+    windowSeconds: Number.isFinite(windowSeconds) ? Math.max(10, Math.min(3600, Math.floor(windowSeconds))) : DEFAULT_RATE_LIMIT_WINDOW_SECONDS
+  };
+}
+
+async function applyDurableRateLimit(env, principal) {
+  if (!env.AI_RATE_LIMITER || typeof env.AI_RATE_LIMITER.idFromName !== "function") {
+    return { ok: false, unavailable: true, code: "rate_limit_not_configured" };
+  }
+  try {
+    const bucketName = await digestHex(`${ROUTE}:${principal}`);
+    const id = env.AI_RATE_LIMITER.idFromName(bucketName);
+    const stub = env.AI_RATE_LIMITER.get(id);
+    const configured = configuredRateLimit(env);
+    if (typeof stub.check !== "function") return { ok: false, unavailable: true, code: "rate_limit_unavailable" };
+    const result = await stub.check(configured.requests, configured.windowSeconds);
+    if (!result || typeof result.allowed !== "boolean") {
+      return { ok: false, unavailable: true, code: "rate_limit_unavailable" };
+    }
+    return {
+      ok: result.allowed === true,
+      unavailable: false,
+      retryAfter: Math.max(1, Math.min(3600, Number(result.retryAfter) || configured.windowSeconds))
+    };
+  } catch {
+    return { ok: false, unavailable: true, code: "rate_limit_unavailable" };
+  }
 }
 
 function detectSensitivity(rawContent, explicitLevel = "", sensitiveFlag = false) {
@@ -869,7 +1063,8 @@ async function fetchOpenAI(env, requestBody) {
 
       if (response.ok) return response;
 
-      const bodyText = await response.text().catch(() => "");
+      const bounded = await readBoundedText(response, MAX_UPSTREAM_ERROR_BYTES);
+      const bodyText = bounded.ok ? bounded.text : "";
       const mapped = openAIErrorFromStatus(response.status, bodyText);
       lastError = mapped;
       if (!mapped.retryable || attempt >= maxRetries) throw mapped;
@@ -911,7 +1106,26 @@ function extractResponseTextAndRefusal(responseJson) {
 async function callOpenAI(env, input) {
   const { body, model, reasoningEffort } = buildOpenAIRequestBody(env, input);
   const response = await fetchOpenAI(env, body);
-  const responseJson = await response.json();
+  const bounded = await readBoundedText(response, MAX_OPENAI_RESPONSE_BYTES);
+  if (!bounded.ok) {
+    throw {
+      code: bounded.tooLarge ? "openai_response_too_large" : "openai_response_unreadable",
+      status: 502,
+      message: "AI returned a response that could not be safely read. Sort this Quick Grab manually for now.",
+      retryable: false
+    };
+  }
+  let responseJson;
+  try {
+    responseJson = JSON.parse(bounded.text);
+  } catch {
+    throw {
+      code: "openai_response_invalid_json",
+      status: 502,
+      message: "AI returned a response that could not be safely read. Sort this Quick Grab manually for now.",
+      retryable: false
+    };
+  }
 
   if (responseJson.status === "incomplete") {
     throw {
@@ -963,8 +1177,32 @@ async function callOpenAI(env, input) {
 }
 
 export async function onRequestPost({ request, env = {} }) {
-  const authorized = await authorizeRequest(request, env);
-  if (!authorized) return problem(401, "unauthorized", "Unauthorized.", false);
+  const shouldMock = env.AI_MOCK_MODE !== "false" || !env.OPENAI_API_KEY;
+  const authConfiguration = authenticationConfiguration(env);
+  if (!shouldMock && !authConfiguration.configured) {
+    return problem(503, "authentication_not_configured", "Real AI is unavailable until server-side authentication is configured.", false);
+  }
+
+  let authorization = { ok: true, principal: "mock-anonymous", method: "none" };
+  if (!shouldMock || authConfiguration.configured) {
+    authorization = await authorizeRequest(request, env);
+    if (authorization.unavailable) {
+      return problem(503, "authentication_unavailable", "Authentication is temporarily unavailable.", false);
+    }
+    if (!authorization.ok) return problem(401, "unauthorized", "Unauthorized.", false);
+  }
+
+  if (!shouldMock) {
+    const rateLimit = await applyDurableRateLimit(env, authorization.principal);
+    if (rateLimit.unavailable) {
+      return problem(503, rateLimit.code, "Real AI is unavailable until durable rate limiting is available.", false);
+    }
+    if (!rateLimit.ok) {
+      return problem(429, "rate_limited", "Too many AI requests. Try again soon.", false, {
+        "Retry-After": String(rateLimit.retryAfter)
+      });
+    }
+  }
 
   const parsed = await readJsonBody(request);
   if (!parsed.ok) return parsed.response;
@@ -973,7 +1211,6 @@ export async function onRequestPost({ request, env = {} }) {
   if (!normalized.ok) return problem(normalized.status, normalized.code, normalized.error, false);
   const input = normalized.value;
 
-  const shouldMock = env.AI_MOCK_MODE === "true" || !env.OPENAI_API_KEY;
   try {
     const proposal = shouldMock ? mockProposal(input) : await callOpenAI(env, input);
     return json({
@@ -988,11 +1225,12 @@ export async function onRequestPost({ request, env = {} }) {
       proposal
     });
   } catch (error) {
-    console.error("Quick Grab AI failed", {
+    console.error(JSON.stringify({
+      message: "Quick Grab AI failed",
       code: error?.code || "unknown",
       status: error?.status || 502,
       externalDataSent: true
-    });
+    }));
     return problem(error?.status || 502, error?.code || "openai_upstream_error", error?.message || "AI proposal failed. Sort this Quick Grab manually for now.", true);
   }
 }
