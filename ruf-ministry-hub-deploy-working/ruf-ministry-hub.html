@@ -1163,7 +1163,14 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.13-ai-review-production-safety";
+    const APP_VERSION = "2026.07.13-steward-security-consolidation";
+    const MAX_BACKUP_FILE_BYTES = 8 * 1024 * 1024;
+    const MAX_BACKUP_RECORDS_PER_COLLECTION = 10000;
+    const MAX_BACKUP_TOTAL_RECORDS = 30000;
+    const MAX_BACKUP_NODES = 200000;
+    const MAX_BACKUP_DEPTH = 12;
+    const MAX_BACKUP_STRING_CHARS = 4 * 1024 * 1024;
+    const SAFE_BACKUP_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
     const CALM_MODE_KEY = "ruf_ministry_hub_calm_mode";
     const SETTINGS_KEY = "ruf_ministry_hub_settings_v1";
     const COPY_KEY = "ruf_ministry_hub_custom_copy_v1";
@@ -1532,7 +1539,7 @@
         serviceWorkerRegistration = registration;
         if (registration.waiting) {
           updateAvailable = true;
-          render();
+          showToast("App update ready. Finish what you are typing, then choose Update now from Today.");
         }
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -1540,7 +1547,7 @@
           installing.addEventListener("statechange", () => {
             if (installing.state === "installed" && navigator.serviceWorker.controller) {
               updateAvailable = true;
-              render();
+              showToast("App update ready. Finish what you are typing, then choose Update now from Today.");
             }
           });
         });
@@ -1706,6 +1713,76 @@
         tasks: [],
         aiProposals: []
       };
+    }
+
+    function isPlainBackupObject(value) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+      const prototype = Object.getPrototypeOf(value);
+      return prototype === Object.prototype || prototype === null;
+    }
+
+    function assertSafeBackupId(value, label) {
+      if (value === "") return;
+      if (typeof value !== "string" || !SAFE_BACKUP_ID_PATTERN.test(value)) {
+        throw new Error(`${label} contains an unsafe identifier.`);
+      }
+    }
+
+    function validateBackupNode(value, path, state, depth = 0) {
+      state.nodes += 1;
+      if (state.nodes > MAX_BACKUP_NODES) throw new Error("Backup contains too much nested data.");
+      if (depth > MAX_BACKUP_DEPTH) throw new Error("Backup data is nested too deeply.");
+      if (typeof value === "string") {
+        if (value.length > MAX_BACKUP_STRING_CHARS) throw new Error(`${path} is too large.`);
+        return;
+      }
+      if (value === null || ["boolean", "number"].includes(typeof value)) return;
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => validateBackupNode(item, `${path}[${index}]`, state, depth + 1));
+        return;
+      }
+      if (!isPlainBackupObject(value)) throw new Error(`${path} must be plain JSON data.`);
+      Object.entries(value).forEach(([key, item]) => {
+        if (["__proto__", "prototype", "constructor"].includes(key)) throw new Error(`${path}.${key} is not allowed.`);
+        if (/Id$/.test(key) && typeof item === "string") assertSafeBackupId(item, `${path}.${key}`);
+        if (/Ids$/.test(key) && Array.isArray(item)) item.forEach((id, index) => assertSafeBackupId(id, `${path}.${key}[${index}]`));
+        validateBackupNode(item, `${path}.${key}`, state, depth + 1);
+      });
+    }
+
+    function validateBackupPayload(payload) {
+      if (!isPlainBackupObject(payload)) throw new Error("Backup must be a JSON object.");
+      if (payload.app !== "RUF Ministry Hub" || Number(payload.version) !== 2) {
+        throw new Error("Backup app or version is not supported.");
+      }
+      if (!isPlainBackupObject(payload.data)) throw new Error("Backup data is missing.");
+      const expectedCollections = Object.keys(emptyData());
+      let totalRecords = 0;
+      const seenIds = new Set();
+      expectedCollections.forEach(collection => {
+        const records = payload.data[collection];
+        if (!Array.isArray(records)) throw new Error(`Backup collection ${collection} is missing.`);
+        if (records.length > MAX_BACKUP_RECORDS_PER_COLLECTION) throw new Error(`Backup collection ${collection} is too large.`);
+        totalRecords += records.length;
+        records.forEach((record, index) => {
+          if (!isPlainBackupObject(record)) throw new Error(`Backup ${collection}[${index}] must be an object.`);
+          if (!record.id) throw new Error(`Backup ${collection}[${index}] is missing an identifier.`);
+          assertSafeBackupId(record.id, `Backup ${collection}[${index}].id`);
+          if (seenIds.has(record.id)) throw new Error("Backup contains duplicate record identifiers.");
+          seenIds.add(record.id);
+        });
+      });
+      if (totalRecords > MAX_BACKUP_TOTAL_RECORDS) throw new Error("Backup contains too many records.");
+      ["settings", "customCopy", "autosaveDrafts"].forEach(key => {
+        if (payload[key] !== undefined && !isPlainBackupObject(payload[key])) throw new Error(`Backup ${key} must be an object.`);
+      });
+      validateBackupNode(payload, "backup", { nodes: 0 });
+      return payload;
+    }
+
+    function assertBackupFileSize(file) {
+      const size = Number(file?.size);
+      if (Number.isFinite(size) && size > MAX_BACKUP_FILE_BYTES) throw new Error("Backup file is too large.");
     }
 
     function normalizeData(raw) {
@@ -2498,8 +2575,9 @@
     }
 
     function applyRestoredPayload(payload, options = {}) {
-      const restoredData = normalizeData(payload.data || payload.db);
-      const incomingSettings = normalizeSettings(payload.settings || {});
+      const validatedPayload = validateBackupPayload(payload);
+      const restoredData = normalizeData(validatedPayload.data);
+      const incomingSettings = normalizeSettings(validatedPayload.settings || {});
       const keepVault = {
         localEncryptionEnabled: settings.localEncryptionEnabled,
         localEncryptionHint: settings.localEncryptionHint,
@@ -2509,8 +2587,8 @@
       recordUndo(options.undoLabel || "backup restore");
       db = restoredData;
       settings = normalizeSettings({ ...incomingSettings, ...keepVault });
-      customCopy = payload.customCopy && typeof payload.customCopy === "object" ? payload.customCopy : {};
-      autosaveDraftsCache = payload.autosaveDrafts && typeof payload.autosaveDrafts === "object" ? payload.autosaveDrafts : {};
+      customCopy = validatedPayload.customCopy && typeof validatedPayload.customCopy === "object" ? validatedPayload.customCopy : {};
+      autosaveDraftsCache = validatedPayload.autosaveDrafts && typeof validatedPayload.autosaveDrafts === "object" ? validatedPayload.autosaveDrafts : {};
       saveSettings();
       saveData();
       saveCustomCopy();
@@ -3548,7 +3626,7 @@
         <div class="field">
           <label>${escapeHtml(label)}</label>
           <div class="people-shortcuts">
-            ${people.map(person => `<button class="shortcut-button" data-action="person-open" data-id="${person.id}">${escapeHtml(person.name)}</button>`).join("")}
+            ${people.map(person => `<button class="shortcut-button" data-action="person-open" data-id="${escapeHtml(person.id)}">${escapeHtml(person.name)}</button>`).join("")}
           </div>
         </div>
       ` : "";
@@ -4029,11 +4107,11 @@
       } else if (firstTask) {
         stepText = `Take this follow-up: ${firstTask.title}`;
         primaryButton = firstTask.relatedPersonId
-          ? `<button class="button primary" data-action="person-open" data-id="${firstTask.relatedPersonId}">Open Related Profile</button>`
+          ? `<button class="button primary" data-action="person-open" data-id="${escapeHtml(firstTask.relatedPersonId)}">Open Related Profile</button>`
           : `<button class="button primary" data-action="nav" data-screen="minutes">Open Short List</button>`;
       } else if (firstPerson) {
         stepText = `Care for ${firstPerson.name}: ${firstPerson.followUpReason || "check in when you can."}`;
-        primaryButton = `<button class="button primary" data-action="person-open" data-id="${firstPerson.id}">Open That Profile</button>`;
+        primaryButton = `<button class="button primary" data-action="person-open" data-id="${escapeHtml(firstPerson.id)}">Open That Profile</button>`;
       }
       return `
         <section class="section">
@@ -4426,11 +4504,11 @@
             <div class="action-row">
               <button class="button" data-action="review-prev" ${index === 0 ? "disabled" : ""}>Previous</button>
               <button class="button" data-action="review-next" ${index >= items.length - 1 ? "disabled" : ""}>Next</button>
-              <button class="button primary" data-action="qg-process" data-id="${grab.id}">Process This</button>
-              <button class="button" data-action="qg-mock-ai" data-id="${grab.id}">${quickGrabAiButtonLabel()}</button>
-              <button class="button" data-action="snooze-screen" data-id="${grab.id}">Snooze</button>
-              <button class="button" data-action="qg-done" data-id="${grab.id}">Done</button>
-              <button class="button danger" data-action="qg-archive" data-id="${grab.id}">Archive</button>
+              <button class="button primary" data-action="qg-process" data-id="${escapeHtml(grab.id)}">Process This</button>
+              <button class="button" data-action="qg-mock-ai" data-id="${escapeHtml(grab.id)}">${quickGrabAiButtonLabel()}</button>
+              <button class="button" data-action="snooze-screen" data-id="${escapeHtml(grab.id)}">Snooze</button>
+              <button class="button" data-action="qg-done" data-id="${escapeHtml(grab.id)}">Done</button>
+              <button class="button danger" data-action="qg-archive" data-id="${escapeHtml(grab.id)}">Archive</button>
             </div>
           </div>
         </section>
@@ -4460,22 +4538,22 @@
           </div>
           ${showActions ? `
             <div class="action-row focus-actions">
-              <button class="button small primary" data-action="qg-process" data-id="${grab.id}">Process</button>
-              <button class="button small" data-action="qg-mock-ai" data-id="${grab.id}">${quickGrabAiButtonLabel()}</button>
-              <button class="button small" data-action="snooze-screen" data-id="${grab.id}">Snooze</button>
-              <button class="button small" data-action="qg-done" data-id="${grab.id}">Done</button>
-              ${settings.showAdvancedActions ? "" : `<button class="button small" data-action="qg-toggle-more" data-id="${grab.id}">${expanded ? "Less" : "More"}</button>`}
+              <button class="button small primary" data-action="qg-process" data-id="${escapeHtml(grab.id)}">Process</button>
+              <button class="button small" data-action="qg-mock-ai" data-id="${escapeHtml(grab.id)}">${quickGrabAiButtonLabel()}</button>
+              <button class="button small" data-action="snooze-screen" data-id="${escapeHtml(grab.id)}">Snooze</button>
+              <button class="button small" data-action="qg-done" data-id="${escapeHtml(grab.id)}">Done</button>
+              ${settings.showAdvancedActions ? "" : `<button class="button small" data-action="qg-toggle-more" data-id="${escapeHtml(grab.id)}">${expanded ? "Less" : "More"}</button>`}
             </div>
             <div class="action-row extra-actions ${expanded ? "is-open" : ""}">
-              <button class="button small" data-action="qg-preset" data-type="note" data-id="${grab.id}">Turn into Note</button>
-              <button class="button small" data-action="qg-preset" data-type="followup" data-id="${grab.id}">Turn into Task</button>
-              <button class="button small" data-action="qg-preset" data-type="followup" data-id="${grab.id}">Turn into Follow-Up</button>
-              <button class="button small" data-action="qg-preset" data-type="prayer" data-id="${grab.id}">Turn into Prayer Request</button>
-              <button class="button small" data-action="qg-preset" data-type="meeting" data-id="${grab.id}">Turn into Meeting Note</button>
-              <button class="button small" data-action="qg-preset" data-type="teaching" data-id="${grab.id}">Turn into Teaching Idea</button>
-              <button class="button small" data-action="qg-preset" data-type="donor" data-id="${grab.id}">Turn into Donor Update Idea</button>
-              ${settings.inlineEditing ? `<button class="button small" data-action="edit-record-field" data-collection="quickGrabs" data-field="rawContent" data-label="Quick Grab" data-id="${grab.id}">Edit Grab</button>` : ""}
-              <button class="button small" data-action="qg-archive" data-id="${grab.id}">Archive</button>
+              <button class="button small" data-action="qg-preset" data-type="note" data-id="${escapeHtml(grab.id)}">Turn into Note</button>
+              <button class="button small" data-action="qg-preset" data-type="followup" data-id="${escapeHtml(grab.id)}">Turn into Task</button>
+              <button class="button small" data-action="qg-preset" data-type="followup" data-id="${escapeHtml(grab.id)}">Turn into Follow-Up</button>
+              <button class="button small" data-action="qg-preset" data-type="prayer" data-id="${escapeHtml(grab.id)}">Turn into Prayer Request</button>
+              <button class="button small" data-action="qg-preset" data-type="meeting" data-id="${escapeHtml(grab.id)}">Turn into Meeting Note</button>
+              <button class="button small" data-action="qg-preset" data-type="teaching" data-id="${escapeHtml(grab.id)}">Turn into Teaching Idea</button>
+              <button class="button small" data-action="qg-preset" data-type="donor" data-id="${escapeHtml(grab.id)}">Turn into Donor Update Idea</button>
+              ${settings.inlineEditing ? `<button class="button small" data-action="edit-record-field" data-collection="quickGrabs" data-field="rawContent" data-label="Quick Grab" data-id="${escapeHtml(grab.id)}">Edit Grab</button>` : ""}
+              <button class="button small" data-action="qg-archive" data-id="${escapeHtml(grab.id)}">Archive</button>
             </div>
           ` : ""}
         </article>
@@ -4669,8 +4747,8 @@
           <p class="item-preview">${escapeHtml(result.preview)}</p>
           ${timestampLine(result, result.primaryLabel, result.primaryValue)}
           <div class="action-row">
-            ${result.personId ? `<button class="button small primary" data-action="person-open" data-id="${result.personId}">Open Profile</button>` : ""}
-            ${result.quickGrabId ? `<button class="button small primary" data-action="qg-process" data-id="${result.quickGrabId}">Process Quick Grab</button>` : ""}
+            ${result.personId ? `<button class="button small primary" data-action="person-open" data-id="${escapeHtml(result.personId)}">Open Profile</button>` : ""}
+            ${result.quickGrabId ? `<button class="button small primary" data-action="qg-process" data-id="${escapeHtml(result.quickGrabId)}">Process Quick Grab</button>` : ""}
             ${result.kind === "Prayer Request" ? `<button class="button small" data-action="open-prayer-filter" data-filter="${escapeHtml(prayerFilterForStatus(result.prayerStatus))}">Open Prayer List</button>` : ""}
           </div>
         </article>
@@ -6851,8 +6929,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                 </div>
               </div>
               <div class="action-row" style="margin-top:14px;">
-                <button class="button" data-action="qg-mock-ai" data-id="${grab.id}">${quickGrabAiButtonLabel()}</button>
-                <button class="button primary" data-action="process-save" data-id="${grab.id}">Save Structured Records</button>
+                <button class="button" data-action="qg-mock-ai" data-id="${escapeHtml(grab.id)}">${quickGrabAiButtonLabel()}</button>
+                <button class="button primary" data-action="process-save" data-id="${escapeHtml(grab.id)}">Save Structured Records</button>
                 <button class="button" data-action="nav" data-screen="quick">Back to Quick Grab</button>
               </div>
             </div>
@@ -7077,6 +7155,20 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       };
     }
 
+    function normalizeBackendQuickGrabAction(raw = {}, index = 0) {
+      const action = normalizeAiProposedAction(raw, index);
+      const body = String(action.body || "");
+      return {
+        ...action,
+        content: action.content || body,
+        summary: action.summary || body,
+        request: action.request || body,
+        whatToRemember: action.whatToRemember || body,
+        meetingDate: action.meetingDate || action.date || "",
+        dueDate: action.dueDate || action.followUpDate || action.date || ""
+      };
+    }
+
     function normalizeBackendQuickGrabProposal(responseBody, grab) {
       const source = responseBody && responseBody.proposal && typeof responseBody.proposal === "object" ? responseBody.proposal : {};
       const proposal = normalizeAiProposal({
@@ -7096,12 +7188,14 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         ])),
         result: {
           ...(source.result && typeof source.result === "object" ? source.result : {}),
+          possiblePersonId: source.relatedPersonIdSuggestion || source.result?.possiblePersonId || "",
+          possiblePersonName: source.detectedPersonName || source.result?.possiblePersonName || "",
           backendRoute: responseBody?.route || "/api/ai/quick-grab",
           backendMode: responseBody?.mode || "unknown",
           proposalOnly: true
         }
       });
-      proposal.proposedActions = proposal.proposedActions.map(normalizeAiProposedAction);
+      proposal.proposedActions = proposal.proposedActions.map(normalizeBackendQuickGrabAction);
       if (!proposal.title) proposal.title = "Quick Grab backend proposal";
       if (!proposal.summary) proposal.summary = "Review these Quick Grab suggestions before changing ministry records.";
       if (!proposal.contextPreview) proposal.contextPreview = "One Quick Grab, today's date, privacy flags, selected tags/urgency, and candidate people names/ids only.";
@@ -7801,17 +7895,17 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           </article>
           <div class="surface">
             <div class="action-row">
-              <button class="button" data-action="snooze-set" data-id="${grab.id}" data-when="later">Later Today</button>
-              <button class="button" data-action="snooze-set" data-id="${grab.id}" data-when="tomorrow">Tomorrow</button>
-              <button class="button" data-action="snooze-set" data-id="${grab.id}" data-when="weekend">This Weekend</button>
-              <button class="button" data-action="snooze-set" data-id="${grab.id}" data-when="nextweek">Next Week</button>
+              <button class="button" data-action="snooze-set" data-id="${escapeHtml(grab.id)}" data-when="later">Later Today</button>
+              <button class="button" data-action="snooze-set" data-id="${escapeHtml(grab.id)}" data-when="tomorrow">Tomorrow</button>
+              <button class="button" data-action="snooze-set" data-id="${escapeHtml(grab.id)}" data-when="weekend">This Weekend</button>
+              <button class="button" data-action="snooze-set" data-id="${escapeHtml(grab.id)}" data-when="nextweek">Next Week</button>
             </div>
             <div class="field" style="margin-top:14px;">
               <label for="pick-snooze">Pick Date</label>
               <input class="input" type="date" id="pick-snooze" value="${daysFromNow(2)}">
             </div>
             <div class="action-row" style="margin-top:14px;">
-              <button class="button primary" data-action="snooze-pick" data-id="${grab.id}">Save Picked Date</button>
+              <button class="button primary" data-action="snooze-pick" data-id="${escapeHtml(grab.id)}">Save Picked Date</button>
               <button class="button" data-action="nav" data-screen="quick">Back</button>
             </div>
           </div>
@@ -7868,9 +7962,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           </div>
           ${timestampLine(person)}
           <div class="action-row">
-            <button class="button primary small" data-action="person-open" data-id="${person.id}">Open Profile</button>
-            <button class="button small" data-action="person-pin" data-id="${person.id}">${pinned ? "Unpin" : "Pin"}</button>
-            <button class="button small" data-action="person-followed-up" data-id="${person.id}">Mark Followed Up</button>
+            <button class="button primary small" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Profile</button>
+            <button class="button small" data-action="person-pin" data-id="${escapeHtml(person.id)}">${pinned ? "Unpin" : "Pin"}</button>
+            <button class="button small" data-action="person-followed-up" data-id="${escapeHtml(person.id)}">Mark Followed Up</button>
           </div>
         </article>
       `;
@@ -7922,10 +8016,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               ${profileField("Follow-up reason", person.followUpReason || "Not set")}
               <div class="field wide">
                 <label for="profile-photo-input">Profile picture</label>
-                <input class="input" id="profile-photo-input" type="file" accept="image/*" data-person-id="${person.id}">
+                <input class="input" id="profile-photo-input" type="file" accept="image/*" data-person-id="${escapeHtml(person.id)}">
                 <div class="meta">Choose a photo from your phone. The app shrinks it before saving it locally.</div>
                 <div class="action-row" style="margin-top:8px;">
-                  ${person.photoDataUrl ? `<button class="button small danger" data-action="person-remove-photo" data-id="${person.id}">Remove Photo</button>` : ""}
+                  ${person.photoDataUrl ? `<button class="button small danger" data-action="person-remove-photo" data-id="${escapeHtml(person.id)}">Remove Photo</button>` : ""}
                 </div>
               </div>
             </div>
@@ -7936,17 +8030,17 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             <h2 class="section-title">Quick Actions</h2>
           </div>
           <div class="action-row">
-            <button class="button primary" data-action="person-add-note" data-id="${person.id}">Add Note</button>
-            <button class="button" data-action="person-add-meeting" data-id="${person.id}">Add Meeting Note</button>
-	            <button class="button" data-action="person-add-prayer" data-id="${person.id}">Add Prayer Request</button>
-            <button class="button" data-action="person-add-followup" data-id="${person.id}">Add Follow-Up Task</button>
-            <button class="button" data-action="person-brief" data-id="${person.id}">Brief Me</button>
-            <button class="button" data-action="followup-draft" data-source-type="person" data-id="${person.id}">Draft Follow-Up</button>
-            <button class="button" data-action="person-copy-briefing" data-id="${person.id}">Copy Local Briefing</button>
-            <button class="button terra" data-action="person-copy-drafts" data-id="${person.id}">Copy Text Drafts</button>
-	            <button class="button" data-action="person-pin" data-id="${person.id}">${pinned ? "Unpin Person" : "Pin Person"}</button>
-	            <button class="button" data-action="person-followed-up" data-id="${person.id}">Mark Followed Up</button>
-            ${settings.inlineEditing ? `<button class="button" data-action="person-edit-field" data-id="${person.id}" data-field="name" data-label="Name">Edit Name</button>` : ""}
+            <button class="button primary" data-action="person-add-note" data-id="${escapeHtml(person.id)}">Add Note</button>
+            <button class="button" data-action="person-add-meeting" data-id="${escapeHtml(person.id)}">Add Meeting Note</button>
+	            <button class="button" data-action="person-add-prayer" data-id="${escapeHtml(person.id)}">Add Prayer Request</button>
+            <button class="button" data-action="person-add-followup" data-id="${escapeHtml(person.id)}">Add Follow-Up Task</button>
+            <button class="button" data-action="person-brief" data-id="${escapeHtml(person.id)}">Brief Me</button>
+            <button class="button" data-action="followup-draft" data-source-type="person" data-id="${escapeHtml(person.id)}">Draft Follow-Up</button>
+            <button class="button" data-action="person-copy-briefing" data-id="${escapeHtml(person.id)}">Copy Local Briefing</button>
+            <button class="button terra" data-action="person-copy-drafts" data-id="${escapeHtml(person.id)}">Copy Text Drafts</button>
+	            <button class="button" data-action="person-pin" data-id="${escapeHtml(person.id)}">${pinned ? "Unpin Person" : "Pin Person"}</button>
+	            <button class="button" data-action="person-followed-up" data-id="${escapeHtml(person.id)}">Mark Followed Up</button>
+            ${settings.inlineEditing ? `<button class="button" data-action="person-edit-field" data-id="${escapeHtml(person.id)}" data-field="name" data-label="Name">Edit Name</button>` : ""}
           </div>
         </section>
         <div class="grid two">
@@ -8012,7 +8106,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       };
       const field = fieldMap[label];
       const edit = settings.inlineEditing && field && view.personId
-        ? `<button class="button small" data-action="person-edit-field" data-id="${view.personId}" data-field="${field}" data-label="${escapeHtml(label)}">Edit</button>`
+        ? `<button class="button small" data-action="person-edit-field" data-id="${escapeHtml(view.personId)}" data-field="${field}" data-label="${escapeHtml(label)}">Edit</button>`
         : "";
       return `<div class="field"><label>${escapeHtml(label)}</label><div class="row wrap"><div class="meta">${escapeHtml(value)}</div>${edit}</div></div>`;
     }
@@ -8031,7 +8125,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           <p class="item-preview">${escapeHtml(maskedText(note.sensitiveFlag, "Sensitive note - tap to view.", note.content))}</p>
           ${timestampLine(note, "Note date", note.noteDate)}
           ${note.sensitiveFlag ? `<span class="pill rose">Sensitive</span>` : ""}
-          ${settings.inlineEditing ? `<div class="action-row"><button class="button small" data-action="edit-record-field" data-collection="notes" data-field="content" data-label="Note" data-id="${note.id}">Edit Note</button></div>` : ""}
+          ${settings.inlineEditing ? `<div class="action-row"><button class="button small" data-action="edit-record-field" data-collection="notes" data-field="content" data-label="Note" data-id="${escapeHtml(note.id)}">Edit Note</button></div>` : ""}
         </article>
       `;
     }
@@ -8053,9 +8147,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             ${meeting.sensitiveFlag ? `<span class="pill rose">Sensitive</span>` : ""}
           </div>
           <div class="action-row">
-            <button class="button small" data-action="meeting-add-prayer" data-id="${meeting.id}">Add Prayer Request from this Meeting</button>
-            <button class="button small" data-action="followup-draft" data-source-type="meetingNote" data-id="${meeting.id}">Draft Follow-Up</button>
-            ${settings.inlineEditing ? `<button class="button small" data-action="edit-record-field" data-collection="meetingNotes" data-field="whatWeTalkedAbout" data-label="Meeting summary" data-id="${meeting.id}">Edit Summary</button>` : ""}
+            <button class="button small" data-action="meeting-add-prayer" data-id="${escapeHtml(meeting.id)}">Add Prayer Request from this Meeting</button>
+            <button class="button small" data-action="followup-draft" data-source-type="meetingNote" data-id="${escapeHtml(meeting.id)}">Draft Follow-Up</button>
+            ${settings.inlineEditing ? `<button class="button small" data-action="edit-record-field" data-collection="meetingNotes" data-field="whatWeTalkedAbout" data-label="Meeting summary" data-id="${escapeHtml(meeting.id)}">Edit Summary</button>` : ""}
           </div>
         </article>
       `;
@@ -8210,15 +8304,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           </div>
           <div class="action-row focus-actions">
             ${renderPrayerPrimaryActions(prayer, person)}
-            ${settings.showAdvancedActions ? "" : `<button class="button small" data-action="prayer-toggle-more" data-id="${prayer.id}">${expanded ? "Less" : "More"}</button>`}
-            ${prayer.status !== "Archived" ? `<button class="button small" data-action="followup-draft" data-source-type="prayerRequest" data-id="${prayer.id}">Draft Follow-Up</button>` : ""}
+            ${settings.showAdvancedActions ? "" : `<button class="button small" data-action="prayer-toggle-more" data-id="${escapeHtml(prayer.id)}">${expanded ? "Less" : "More"}</button>`}
+            ${prayer.status !== "Archived" ? `<button class="button small" data-action="followup-draft" data-source-type="prayerRequest" data-id="${escapeHtml(prayer.id)}">Draft Follow-Up</button>` : ""}
           </div>
           <div class="action-row extra-actions ${expanded ? "is-open" : ""}">
-            ${prayer.status !== "Archived" && prayer.status !== "Answered" ? `<button class="button small" data-action="prayer-note" data-id="${prayer.id}">Add Answered Note</button>` : ""}
-            ${prayer.status !== "Archived" && prayer.status !== "Answered" ? `<button class="button small" data-action="prayer-follow-date" data-id="${prayer.id}">Set Follow-Up Date</button>` : ""}
-            ${prayer.status !== "Archived" && prayer.status !== "Answered" ? `<button class="button small" data-action="prayer-archive" data-id="${prayer.id}">Archive</button>` : ""}
-            ${settings.inlineEditing && prayer.status !== "Archived" ? `<button class="button small" data-action="edit-record-field" data-collection="prayerRequests" data-field="request" data-label="Prayer request" data-id="${prayer.id}">Edit Request</button>` : ""}
-            ${person && prayer.status !== "Archived" ? `<button class="button small primary" data-action="person-open" data-id="${person.id}">Open Person Profile</button>` : ""}
+            ${prayer.status !== "Archived" && prayer.status !== "Answered" ? `<button class="button small" data-action="prayer-note" data-id="${escapeHtml(prayer.id)}">Add Answered Note</button>` : ""}
+            ${prayer.status !== "Archived" && prayer.status !== "Answered" ? `<button class="button small" data-action="prayer-follow-date" data-id="${escapeHtml(prayer.id)}">Set Follow-Up Date</button>` : ""}
+            ${prayer.status !== "Archived" && prayer.status !== "Answered" ? `<button class="button small" data-action="prayer-archive" data-id="${escapeHtml(prayer.id)}">Archive</button>` : ""}
+            ${settings.inlineEditing && prayer.status !== "Archived" ? `<button class="button small" data-action="edit-record-field" data-collection="prayerRequests" data-field="request" data-label="Prayer request" data-id="${escapeHtml(prayer.id)}">Edit Request</button>` : ""}
+            ${person && prayer.status !== "Archived" ? `<button class="button small primary" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Person Profile</button>` : ""}
           </div>
         </article>
       `;
@@ -8233,12 +8327,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function renderPrayerPrimaryActions(prayer, person) {
       if (prayer.status === "Archived") {
-        return `<button class="button small" data-action="prayer-restore" data-id="${prayer.id}">Restore</button>${person ? `<button class="button small primary" data-action="person-open" data-id="${person.id}">Open Profile</button>` : ""}`;
+        return `<button class="button small" data-action="prayer-restore" data-id="${escapeHtml(prayer.id)}">Restore</button>${person ? `<button class="button small primary" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Profile</button>` : ""}`;
       }
       if (prayer.status === "Answered") {
-        return `<button class="button small primary" data-action="prayer-archive-answered" data-id="${prayer.id}">Archive Answered</button><button class="button small" data-action="prayer-note" data-id="${prayer.id}">Add Note</button>`;
+        return `<button class="button small primary" data-action="prayer-archive-answered" data-id="${escapeHtml(prayer.id)}">Archive Answered</button><button class="button small" data-action="prayer-note" data-id="${escapeHtml(prayer.id)}">Add Note</button>`;
       }
-      return `<button class="button small primary" data-action="prayer-answered" data-id="${prayer.id}">Mark Answered</button><button class="button small" data-action="prayer-task" data-id="${prayer.id}">Create Follow-Up</button>`;
+      return `<button class="button small primary" data-action="prayer-answered" data-id="${escapeHtml(prayer.id)}">Mark Answered</button><button class="button small" data-action="prayer-task" data-id="${escapeHtml(prayer.id)}">Create Follow-Up</button>`;
     }
 
     function renderFifteenMinutes() {
@@ -8642,8 +8736,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                 </div>
               </div>
               <div class="action-row">
-                <button class="button primary" data-action="merge-person" data-from="${a.id}" data-to="${b.id}">Merge ${escapeHtml(a.name)} Into ${escapeHtml(b.name)}</button>
-                <button class="button" data-action="merge-person" data-from="${b.id}" data-to="${a.id}">Merge ${escapeHtml(b.name)} Into ${escapeHtml(a.name)}</button>
+                <button class="button primary" data-action="merge-person" data-from="${escapeHtml(a.id)}" data-to="${escapeHtml(b.id)}">Merge ${escapeHtml(a.name)} Into ${escapeHtml(b.name)}</button>
+                <button class="button" data-action="merge-person" data-from="${escapeHtml(b.id)}" data-to="${escapeHtml(a.id)}">Merge ${escapeHtml(b.name)} Into ${escapeHtml(a.name)}</button>
               </div>
             </article>
           `).join("") : emptyState("No likely duplicate profiles were found.")}
@@ -8891,8 +8985,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             <span class="pill gold">${dateLabel(person.nextFollowUpDate)}</span>
           </div>
           <div class="action-row">
-            <button class="button small primary" data-action="person-open" data-id="${person.id}">Open Profile</button>
-            <button class="button small" data-action="person-followed-up" data-id="${person.id}">Mark Followed Up</button>
+            <button class="button small primary" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Profile</button>
+            <button class="button small" data-action="person-followed-up" data-id="${escapeHtml(person.id)}">Mark Followed Up</button>
           </div>
           ${timestampLine(person)}
         </article>
@@ -8915,10 +9009,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           </div>
           ${timestampLine(task, "Due", task.dueDate)}
           <div class="action-row">
-            <button class="button small" data-action="task-done" data-id="${task.id}">Done</button>
-            <button class="button small" data-action="followup-draft" data-source-type="followUpTask" data-id="${task.id}">Draft Follow-Up</button>
-            ${person ? `<button class="button small primary" data-action="person-open" data-id="${person.id}">Open Person Profile</button>` : ""}
-            ${settings.inlineEditing ? `<button class="button small" data-action="edit-record-field" data-collection="tasks" data-field="title" data-label="Task" data-id="${task.id}">Edit Task</button>` : ""}
+            <button class="button small" data-action="task-done" data-id="${escapeHtml(task.id)}">Done</button>
+            <button class="button small" data-action="followup-draft" data-source-type="followUpTask" data-id="${escapeHtml(task.id)}">Draft Follow-Up</button>
+            ${person ? `<button class="button small primary" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Person Profile</button>` : ""}
+            ${settings.inlineEditing ? `<button class="button small" data-action="edit-record-field" data-collection="tasks" data-field="title" data-label="Task" data-id="${escapeHtml(task.id)}">Edit Task</button>` : ""}
           </div>
         </article>
       `;
@@ -9552,7 +9646,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             </div>
             <div class="sheet-actions">
               <button class="button" data-action="sheet-close">Cancel</button>
-              <button class="button primary" data-action="ai-action-confirm-save" data-id="${proposal ? escapeHtml(proposal.id) : ""}" ${disabled}>Save Selected Actions</button>
+              <button class="button primary" data-action="ai-action-confirm-save" data-id="${escapeHtml(proposal ? escapeHtml(proposal.id) : "")}" ${disabled}>Save Selected Actions</button>
             </div>
           </section>
         </div>
@@ -12261,6 +12355,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function readTextFile(file) {
       return new Promise((resolve, reject) => {
+        try {
+          assertBackupFileSize(file);
+        } catch (error) {
+          reject(error);
+          return;
+        }
         const reader = new FileReader();
         reader.onload = event => resolve(event.target.result);
         reader.onerror = () => reject(new Error("Could not read that backup file."));
@@ -12272,8 +12372,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const text = await readTextFile(file);
       const parsed = JSON.parse(text);
       const payload = await decodeBackupPayload(parsed, passphrase, options);
-      normalizeData(payload.data || payload.db);
-      return payload;
+      return validateBackupPayload(payload);
     }
 
     function importJsonBackup() {
@@ -12284,11 +12383,17 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return;
       }
       const reader = new FileReader();
+      try {
+        assertBackupFileSize(file);
+      } catch (error) {
+        showToast("That backup is too large to import safely.");
+        return;
+      }
       reader.onload = async event => {
         try {
           const parsed = JSON.parse(event.target.result);
           const payload = await decodeBackupPayload(parsed);
-          normalizeData(payload.data || payload.db);
+          validateBackupPayload(payload);
           if (!window.confirm("Restore this backup and replace current local app data?")) return;
           applyRestoredPayload(payload);
         } catch (error) {

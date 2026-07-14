@@ -149,6 +149,10 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 
 - Open More, then iPhone Readiness.
 - Confirm the app does not crash when service worker/offline checks run.
+- When testing a newer deployed version over an older open version, confirm the older app stays active and an **App update ready** notice appears on Today.
+- Continue typing in an open form before choosing the update and confirm the app does not reload or replace the active worker on its own.
+- Tap **Update now** from the notice and confirm the app reloads once into the newer version.
+- In Settings, confirm a current version-2 backup restores successfully and an oversized, wrong-app, wrong-version, partial, or malformed backup is rejected without replacing existing records.
 - Add the app to Home Screen.
 - Launch from the Home Screen.
 - Turn on Airplane Mode after the app has loaded once online.

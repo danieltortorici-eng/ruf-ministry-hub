@@ -8,14 +8,16 @@ This is the current operating map for RUF Ministry Hub. The canonical repository
 
 ```text
 Canonical GitHub repository
-└── ruf-ministry-hub-deploy-working/        Cloudflare Pages root
-    ├── index.html                           Static entry redirect
-    ├── ruf-ministry-hub.html                Single-file PWA and editable app source
-    ├── ruf-ministry-hub-sw.js               Browser service worker/offline shell
-    ├── manifest, icons, _redirects           Static Pages assets
-    └── functions/api/ai/                    Pages Functions (Workers runtime)
-        ├── health.js                         GET /api/ai/health
-        └── quick-grab.js                     POST /api/ai/quick-grab
+├── ruf-ministry-hub-deploy-working/        Cloudflare Pages root
+│   ├── index.html                           Static entry redirect
+│   ├── ruf-ministry-hub.html                Single-file PWA and editable app source
+│   ├── ruf-ministry-hub-sw.js               Browser service worker/offline shell
+│   ├── manifest, icons, _redirects, _headers Static Pages assets and security policy
+│   └── functions/api/ai/                    Pages Functions (Workers runtime)
+│       ├── health.js                         GET /api/ai/health
+│       └── quick-grab.js                     POST /api/ai/quick-grab
+└── cloudflare/ai-rate-limiter/              Real-AI support Worker
+    └── AiRateLimiter Durable Object         Required fail-closed request limiter
 
 Browser
 ├── localStorage / IndexedDB                 Local records, settings, drafts, vault data
@@ -24,10 +26,11 @@ Browser
     └── Pages Function
         ├── mock path                         No external data sent
         └── real path                         Minimized packet -> OpenAI Responses API
+            ├── Cloudflare Access identity + durable rate-limit gate
             └── proposal -> browser review -> Daniel-approved local record changes
 ```
 
-The current backend boundary is deliberately narrow: two stateless Pages Functions and no application database, cloud sync service, scheduled job, or general-purpose API. The PWA remains usable locally when Quick Grab AI is in mock mode or has no OpenAI key.
+The current backend boundary is deliberately narrow: two stateless Pages Functions plus an optional real-AI rate-limiter support Worker, with no application database, cloud sync service, scheduled job, or general-purpose API. The support Worker exposes no application endpoint. The PWA remains usable locally when Quick Grab AI is in mock mode or has no OpenAI key.
 
 ## Source-of-truth rules
 
@@ -38,7 +41,8 @@ The current backend boundary is deliberately narrow: two stateless Pages Functio
 | `ruf-ministry-hub-deploy-working/functions/api/ai/*.js` | Deployed function copies | Cloudflare Pages executes these files. |
 | `functions/api/ai/*.js` | Maintained function mirrors | Change in the same patch as the deployed copies; the files must remain identical. |
 | Root PWA files | v32 compatibility/audit foundation | Do not treat the repository root as the Pages publish directory. Change only when a task explicitly requires the compatibility copy. |
-| `dist/ruf-ministry-hub.html` | Maintained regression/release artifact | Do not use it as the editable source of truth. |
+| `dist/ruf-ministry-hub.html` | Historical compatibility artifact | Do not deploy it or use it as editable source, current release output, or behavioral-test authority. |
+| `cloudflare/ai-rate-limiter/` | Optional real-AI support infrastructure | Deploy and bind only after Daniel approves the privacy, infrastructure, and spending boundary. |
 | `tests/` | Local verification | Use synthetic data only. Tests must not contact live ministry or OpenAI services. |
 | Old zip/staging folders | Historical evidence | Do not edit or delete unless a task explicitly scopes them in. |
 
@@ -82,6 +86,7 @@ npx wrangler pages dev ruf-ministry-hub-deploy-working --binding AI_MOCK_MODE=tr
 | PWA behavior or screen changes | `node tests/regression-harness.js` | Current screens, local actions, PWA routing/cache, privacy helpers, and documentation guardrails. |
 | People/profile workflows | `node tests/person-profile-fix-regression.js` | Person profile sheets, edits, actions, and linked records. |
 | AI function or AI review changes | `node tests/ai-functions-regression.js` | Mock/real request paths, validation, minimization, error handling, no live network, and approval-before-save behavior. |
+| Real-AI rate limiter | `node tests/ai-rate-limiter-regression.js` | Durable fixed-window behavior and absence of a public application endpoint. |
 | Pages layout or deployment docs | `node tests/deployment-config-regression.js` | Deploy-root boundary, function locations, mirror alignment, ignore rules, and Pages-only guidance. |
 | App JavaScript | `npm run check:app` | Inline app script and root service-worker syntax. |
 | Function or deploy JavaScript | `npm run check:deploy` | Both function copies and deploy service-worker syntax. |
@@ -101,6 +106,8 @@ The automated tests are local logic/render checks, not screenshot automation or 
 6. **No server-side ministry store.** The current Pages Functions report `storedServerSide:false`; the Quick Grab function logs only safe error metadata, not request bodies or candidate details.
 7. **Integrations remain opt-in.** Sync, calendar, contacts, email, background automation, and any expanded AI surface require a reviewed privacy boundary, a reversible control, and truthful documentation before release.
 
+Portable restores accept only the current versioned RUF Ministry Hub backup envelope, enforce bounded structure and safe unique identifiers before mutation, and escape dynamic record identifiers at the HTML boundary. Static Pages responses use a hash-based script CSP; Pages Function responses set their own MIME hardening because `_headers` does not apply to Functions.
+
 Device Vault protects local browser storage when enabled, but it does not protect against device loss by itself. Keep encrypted exports as part of release and migration practice.
 
 ## Worker catalog
@@ -110,9 +117,10 @@ Device Vault protects local browser storage when enabled, but it does not protec
 | Browser service worker | `ruf-ministry-hub-deploy-working/ruf-ministry-hub-sw.js` | Offline shell, cache cleanup, navigation fallback, and `/api/*` bypass. | Runs in the user's browser. It is not a Cloudflare Worker. |
 | AI health Pages Function | `ruf-ministry-hub-deploy-working/functions/api/ai/health.js` plus root mirror | Reports mode/capability metadata with `Cache-Control: no-store`. | Stateless; does not accept ministry content. |
 | Quick Grab Pages Function | `ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab.js` plus root mirror | Validates and minimizes one Quick Grab, returns a mock or OpenAI-backed proposal. | Stateless; no record writes; external send only on the real path. |
+| AI rate-limiter support Worker | `cloudflare/ai-rate-limiter/worker.js` and its `wrangler.jsonc` | Owns the `AiRateLimiter` Durable Object required by real mode. | No public app endpoint; deploy/bind only with Daniel's approval. |
 | Wrangler Pages guardrail | `wrangler.jsonc` | Identifies the Pages output directory for local tooling. | Not a standalone Worker deployment configuration. |
 
-There is no `_worker.js`, cron trigger, background Worker, Durable Object, server database, or cloud-sync worker in the current deploy path. Pages Functions use the Workers runtime, but the product is deployed as one Cloudflare Pages project.
+There is no `_worker.js`, cron trigger, background automation, server database, or cloud-sync worker in the application deploy path. Pages Functions use the Workers runtime, while the application is deployed as one Cloudflare Pages project. The separate Durable Object exists only as approved support infrastructure for fail-closed real-AI rate limiting.
 
 ## GitHub-first handoffs
 
@@ -203,10 +211,11 @@ If the flag cannot be changed safely, removing `OPENAI_API_KEY` also forces the 
 
 1. Confirm the incident is resolved and Daniel approves restoration.
 2. Confirm `OPENAI_API_KEY` exists as an encrypted Pages secret without revealing it.
-3. Set `AI_MOCK_MODE=false` and redeploy the approved canonical commit.
-4. Verify `/api/ai/health` reports `mockMode:false`, `hasOpenAIKey:true`, and `storedServerSide:false`.
-5. Use one low-sensitivity synthetic request to confirm `mode:"real"`; do not use a real person or ministry note as a smoke test.
-6. Confirm the returned proposal still waits for Daniel's selected-action approval before any local record save.
+3. Confirm Cloudflare Access authentication and the `AI_RATE_LIMITER` Durable Object binding are healthy.
+4. Set `AI_MOCK_MODE=false` and redeploy the approved canonical commit.
+5. Verify `/api/ai/health` reports `effectiveMode:"real"`, `readyForRealMode:true`, `hasOpenAIKey:true`, and `storedServerSide:false`.
+6. Use one low-sensitivity synthetic request to confirm `mode:"real"`; do not use a real person or ministry note as a smoke test.
+7. Confirm the returned proposal still waits for Daniel's selected-action approval before any local record save.
 
 ## Contributor checklist
 

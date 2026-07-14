@@ -565,8 +565,54 @@ async function testDataSafetySheets() {
   assert(appEval(`settings.pinnedPersonIds.includes("${mergeIds.toId}") && !settings.pinnedPersonIds.includes("${mergeIds.fromId}")`), "merge person sheet preserves pinned shortcut on kept person");
 }
 
+function testBackupValidationBoundary() {
+  resetApp("emptyData()");
+  appEval('createPerson("Safe Backup Person", "555-0000")');
+  const result = appEval(`(() => {
+    const base = JSON.parse(JSON.stringify(currentPortablePayload()));
+    validateBackupPayload(base);
+    const failures = {};
+    const check = (name, mutate) => {
+      const payload = JSON.parse(JSON.stringify(base));
+      mutate(payload);
+      try {
+        validateBackupPayload(payload);
+        failures[name] = false;
+      } catch (error) {
+        failures[name] = true;
+      }
+    };
+    check("wrongApp", payload => { payload.app = "Other App"; });
+    check("wrongVersion", payload => { payload.version = 999; });
+    check("missingCollection", payload => { delete payload.data.tasks; });
+    check("unsafeId", payload => { payload.data.people[0].id = 'person_bad"><img src=x onerror=alert(1)>'; });
+    check("duplicateId", payload => { payload.data.notes.push({ id: payload.data.people[0].id, content: "duplicate" }); });
+    let oversizedRejected = false;
+    try {
+      assertBackupFileSize({ size: MAX_BACKUP_FILE_BYTES + 1 });
+    } catch (error) {
+      oversizedRejected = true;
+    }
+    const before = JSON.stringify(db);
+    try {
+      const bad = JSON.parse(JSON.stringify(base));
+      bad.data.people[0].id = 'bad"><script>alert(1)</script>';
+      applyRestoredPayload(bad);
+    } catch (error) {}
+    return { failures, oversizedRejected, unchanged: JSON.stringify(db) === before };
+  })()`);
+
+  assert(result.failures.wrongApp && result.failures.wrongVersion, "backup validation rejects wrong app and schema versions");
+  assert(result.failures.missingCollection, "backup validation rejects partial destructive restores");
+  assert(result.failures.unsafeId && result.failures.duplicateId, "backup validation rejects unsafe and duplicate identifiers");
+  assert(result.oversizedRejected, "backup validation rejects oversized files before reading");
+  assert(result.unchanged, "invalid backup validation leaves current local records unchanged");
+  assert(!/data-(?:id|person-id|from|to)="\$\{(?!escapeHtml\()/.test(html), "dynamic record identifiers are escaped before HTML attribute interpolation");
+}
+
 function testServiceWorkerShape() {
-  assert(serviceWorkerSource.includes("ruf-ministry-hub-v32-ai-review-production-safety"), "service worker cache version is bumped");
+  assert(html.includes('const APP_VERSION = "2026.07.13-steward-security-consolidation"'), "deploy app version is bumped for the consolidated safety changes");
+  assert(serviceWorkerSource.includes("ruf-ministry-hub-v32-steward-security-consolidation"), "service worker cache version is bumped");
   assert(serviceWorkerSource.includes('"index.html"'), "service worker caches redirect entry point");
   assert(serviceWorkerSource.includes("ruf-ministry-hub-icon.svg"), "service worker caches the SVG icon");
   assert(serviceWorkerSource.includes("async function cacheAsset") && serviceWorkerSource.includes("Do not fail the whole service-worker install"), "service worker treats unavailable assets as non-blocking");
@@ -574,6 +620,15 @@ function testServiceWorkerShape() {
   assert(serviceWorkerSource.includes('requestUrl.pathname.startsWith("/api/")'), "service worker leaves Pages Function routes uncached");
   assert(serviceWorkerSource.includes("key.startsWith(CACHE_PREFIX)") && serviceWorkerSource.includes("key !== CACHE_NAME"), "service worker cleans only its own old caches");
   assert(html.includes("hadControllerAtRegistration"), "app does not reload on first service worker claim");
+  const skipWaitingCalls = serviceWorkerSource.match(/self\.skipWaiting\(\)/g) || [];
+  const messageHandlerIndex = serviceWorkerSource.indexOf('addEventListener("message"');
+  const skipWaitingIndex = serviceWorkerSource.indexOf("self.skipWaiting()");
+  assert(skipWaitingCalls.length === 1 && skipWaitingIndex > messageHandlerIndex, "service worker waits for an explicit update message before activating");
+  assert(html.includes('waiting.postMessage({ type: "SKIP_WAITING" })'), "app activates a waiting update only after Update now is chosen");
+  assert(html.includes("A newer offline copy is available. Update when you are not in the middle of typing."), "app explains that a waiting update can be deferred safely");
+  const registrationSource = html.slice(html.indexOf("function registerServiceWorker()"), html.indexOf("function applyAppUpdate()"));
+  assert(!registrationSource.includes("render();"), "service worker update discovery does not rerender and erase in-progress form input");
+  assert(serviceWorkerSource.includes("await cache.put(request, response.clone())"), "runtime asset caching settles before the fetch response completes");
   ["install", "activate", "fetch", "message"].forEach(eventName => {
     assert(serviceWorkerSource.includes(`addEventListener("${eventName}"`), `service worker registers ${eventName}`);
   });
@@ -609,6 +664,7 @@ async function run() {
   testAutoMemoryVault();
   await testSecuritySheets();
   await testDataSafetySheets();
+  testBackupValidationBoundary();
   testServiceWorkerShape();
   testRedirectAndServiceWorkerRouting();
   testCurrentDocsDoNotClaimRemovedScreens();

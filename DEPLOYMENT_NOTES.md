@@ -4,7 +4,7 @@ The canonical repository is `https://github.com/danieltortorici-eng/ruf-ministry
 
 ## Correct Cloudflare Pages Setup
 
-Use Cloudflare Pages for this project, not a separate Worker. Do not rely on the accidental `workers.dev` URL; test the app at the Cloudflare Pages URL.
+Use Cloudflare Pages for the application, not a standalone application Worker. Real AI additionally needs the separately approved rate-limiter support Worker and Durable Object described in `docs/production-ai-safety.md`; that support component does not serve the app. Do not rely on an accidental application `workers.dev` URL; test the app at the Cloudflare Pages URL.
 
 Recommended Cloudflare Pages settings:
 
@@ -37,6 +37,7 @@ The deploy root should contain these public app files:
 - `ruf-ministry-hub-icon-512.png`
 - `ruf-ministry-hub-icon.svg`
 - `_redirects`
+- `_headers`
 
 ## Pages Functions
 
@@ -107,6 +108,7 @@ Do not change production to real mode until Daniel approves and completes `docs/
 - `/api/ai/quick-grab` accepts POST JSON from a Pages Function on the Pages URL.
 - No `.git`, `.wrangler`, `node_modules`, tests, docs, logs, or local env files appear as public assets.
 - No OpenAI API key appears in frontend files, test files, tracked env templates, git history, or committed code.
+- Static responses apply the checked-in CSP, framing, MIME, referrer, and permissions headers from `_headers`.
 
 ## Production Rollback
 

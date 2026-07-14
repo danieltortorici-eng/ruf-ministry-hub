@@ -8,7 +8,7 @@ Canonical repository: `https://github.com/danieltortorici-eng/ruf-ministry-hub`.
 
 - Treat `ruf-ministry-hub-deploy-working/` as the Cloudflare Pages deployable app source.
 - Keep `functions/api/ai/*.js` identical to `ruf-ministry-hub-deploy-working/functions/api/ai/*.js`.
-- Keep `dist/ruf-ministry-hub.html` as a maintained release/regression artifact, not as the editable source of truth.
+- Keep `dist/ruf-ministry-hub.html` only as a historical compatibility artifact. It is not deployable source, a current release artifact, or behavioral-test authority.
 - Keep the root PWA files and audit scripts from GitHub `main` as the v32 compatibility and verification foundation. Cloudflare Pages must not publish the repository root.
 
 The deploy service worker preserves the `main` v32 cache foundation and adds the maintained Pages requirements: same-origin handling, `/api/*` bypass, direct-document routing, and query-insensitive offline shell fallback.
@@ -28,15 +28,17 @@ Unique `main` artifacts remain in the repository, including:
 - Local-first Today, Autopilot, Quick Grab, Quick Review, people, prayer, task, backup, Device Vault, and Auto Memory Vault workflows.
 - ADHD-aware attention presets and configurable Today sections.
 - In-app approval sheets for profile, prayer, data-safety, and security actions.
+- Versioned, size-bounded backup restore validation with safe unique identifiers and escaped dynamic record attributes.
+- Checked-in static CSP and browser security headers; Function JSON responses send `nosniff` directly.
 - Cloudflare Pages Functions for AI health and Quick Grab proposals.
-- Mock-first AI behavior when no server key is configured.
+- Fail-closed AI behavior: real mode requires the exact opt-in flag, server key, authenticated caller, and durable rate limiter; otherwise it remains mock or blocked.
 - Explicit AI proposal review: AI may propose actions, but Daniel selects and approves actions before local records are saved.
 - Server-only OpenAI credentials; no API key or secret belongs in browser code or tracked configuration.
 
 ## Version and deployment boundary
 
-- App version: `2026.07.08-offline-cache-hardening-local-agents`.
-- Service worker cache: `ruf-ministry-hub-v32-offline-cache-hardening-local-agents`.
+- App version: `2026.07.13-steward-security-consolidation`.
+- Service worker cache: `ruf-ministry-hub-v32-steward-security-consolidation`.
 - Pages root: `ruf-ministry-hub-deploy-working`.
 - Pages Functions directory: `functions` inside that deploy root.
 - Deploy with Cloudflare Pages only; do not use `npx wrangler deploy` for this app.

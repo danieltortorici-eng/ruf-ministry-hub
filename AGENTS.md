@@ -31,6 +31,7 @@ Run the relevant checks before reporting work as complete:
 node tests/regression-harness.js
 node tests/person-profile-fix-regression.js
 node tests/ai-functions-regression.js
+node tests/ai-rate-limiter-regression.js
 node tests/deployment-config-regression.js
 ```
 
@@ -42,11 +43,13 @@ node --check functions/api/ai/health.js
 node --check ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab.js
 node --check ruf-ministry-hub-deploy-working/functions/api/ai/health.js
 node --check ruf-ministry-hub-deploy-working/ruf-ministry-hub-sw.js
+node --check cloudflare/ai-rate-limiter/worker.js
 ```
 
 ## Deployment
 
-- Deploy with Cloudflare Pages, not a separate Worker.
+- Deploy the application with Cloudflare Pages, not a standalone application Worker.
+- The optional real-AI boundary also requires the approved `cloudflare/ai-rate-limiter/` support Worker and Durable Object; never deploy or bind it without Daniel's explicit approval.
 - Pages root directory: `ruf-ministry-hub-deploy-working`.
 - Build command: blank. Deploy command: blank. Build output directory: `.`.
 - Pages Functions directory: `functions`.

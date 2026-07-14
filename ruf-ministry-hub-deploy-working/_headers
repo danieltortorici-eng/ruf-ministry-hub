@@ -1,0 +1,6 @@
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-RKTTiloAUWZ8AU87V73/C81dlT/zV9Cf+b2N+OwBUGQ=' 'sha256-52T/ZJt9YLzBnuvTWwBNvfQ5nsecP7cQ/Uz9Vn9gcsc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), geolocation=(), payment=(), usb=(), serial=(), hid=()

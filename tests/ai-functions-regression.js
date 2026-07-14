@@ -5,7 +5,7 @@ const nodeCrypto = require("crypto");
 
 const repoRoot = path.resolve(__dirname, "..");
 const appDir = path.resolve(repoRoot, "ruf-ministry-hub-deploy-working");
-const aiQuickGrabApprovalDistPath = path.resolve(repoRoot, "dist", "ruf-ministry-hub.html");
+const aiQuickGrabApprovalAppPath = path.resolve(appDir, "ruf-ministry-hub.html");
 const aiActionApprovalAppPath = path.resolve(appDir, "ruf-ministry-hub.html");
 
 function assert(condition, label) {
@@ -155,6 +155,7 @@ function validQuickGrabBody(overrides = {}) {
     contextMode: "quick_grab",
     sourceType: "quickGrab",
     sourceId: "grab_1",
+    sendToAiApproved: true,
     tags: ["People", "Prayer"],
     urgency: "Soon",
     ...overrides
@@ -240,6 +241,7 @@ async function testQuickGrabRealModeUsesOpenAiFetch() {
       assert(requestBody.instructions.includes("untrusted data"), "quick-grab prompt treats Quick Grab as untrusted data");
       const inputText = requestBody.input[0].content[0].text;
       assert(inputText.includes("rawContent") && inputText.includes("candidatePeople"), "quick-grab request sends minimal approved context packet");
+      assert(!inputText.includes('"sourceId"'), "quick-grab request omits the internal source identifier from model input");
       assert(!inputText.includes("OPENAI_API_KEY"), "quick-grab request does not include secret names in model input");
       assert(init.headers.Authorization === "Bearer runtime-secret-present", "quick-grab real mode uses runtime secret in server fetch");
       return Response.json({
@@ -262,6 +264,34 @@ async function testQuickGrabRealModeUsesOpenAiFetch() {
   assert(body.proposal.proposedActions[0].actionType === "createPrayerRequest", "quick-grab real mode returns app-native action type");
   assert(body.proposal.modelMetadata.responseId === "resp_test", "quick-grab real mode keeps safe response metadata");
   assert(fetchCalled === true, "quick-grab real mode made the server-side fetch");
+}
+
+async function testQuickGrabExternalConsentBoundary() {
+  let fetchCalls = 0;
+  const quickGrab = loadPagesFunction("functions/api/ai/quick-grab.js", {
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("External fetch should not run without explicit approval.");
+    }
+  });
+
+  for (const [label, body, expectedCode] of [
+    ["missing approval", validQuickGrabBody({ sendToAiApproved: undefined }), "external_data_approval_required"],
+    ["false approval", validQuickGrabBody({ sendToAiApproved: false, externalDataApproved: false }), "external_data_approval_required"],
+    ["Do Not Send tier", validQuickGrabBody({ privacyTier: "Do Not Send to AI" }), "external_ai_blocked"]
+  ]) {
+    const response = await quickGrab.onRequestPost({ request: quickGrabRequest(body), env: realEnv() });
+    const payload = await jsonFrom(response);
+    assert(response.status === 400 && payload.code === expectedCode, `quick-grab rejects ${label} before external AI`);
+    assert(payload.externalDataSent === false, `${label} rejection reports no external data sent`);
+  }
+  assert(fetchCalls === 0, "consent and privacy-tier rejections never call OpenAI");
+
+  const mockResponse = await quickGrab.onRequestPost({
+    request: quickGrabRequest(validQuickGrabBody({ sendToAiApproved: undefined })),
+    env: { AI_MOCK_MODE: "true" }
+  });
+  assert(mockResponse.status === 200 && (await jsonFrom(mockResponse)).externalDataSent === false, "mock proposals remain available without external-send approval");
 }
 
 async function testQuickGrabMissingKeyFallsBackToMock() {
@@ -800,7 +830,7 @@ function makeAppSandbox(options = {}) {
 }
 
 function makeAiApprovalHarness({ people = [], rawContent = "Coffee with Mara Thompson. Pray for wisdom. Check in tomorrow." } = {}) {
-  const { sandbox, elements } = makeAppSandbox({ htmlPath: aiQuickGrabApprovalDistPath });
+  const { sandbox, elements } = makeAppSandbox({ htmlPath: aiQuickGrabApprovalAppPath });
   function appEval(code) {
     return vm.runInContext(code, sandbox);
   }
@@ -1300,6 +1330,65 @@ function testAiActionApprovalExistingPersonPath() {
   assert(after.meetings.length === 1 && after.meetings[0].relatedPersonId === personId, "existing-person AI save links meeting record");
 }
 
+function testBackendQuickGrabSchemaMapsToSavedRecords() {
+  const harness = makeAiActionApprovalHarness();
+  const ids = harness.appEval(`(() => {
+    const person = createPerson("Jonah Reed", "");
+    const grab = makeQuickGrab("Coffee with Jonah Reed. Pray for wisdom and check in next week.", ["People", "Prayer"], "Soon");
+    grab.relatedPersonId = person.id;
+    db.quickGrabs.unshift(grab);
+    const proposal = normalizeBackendQuickGrabProposal({
+      mode: "real",
+      route: "/api/ai/quick-grab",
+      proposal: {
+        id: "proposal-backend-contract",
+        title: "Backend schema proposal",
+        summary: "Review backend-shaped actions.",
+        detectedPersonName: "Jonah Reed",
+        relatedPersonIdSuggestion: person.id,
+        proposedActions: [
+          { actionId: "backend-note", actionType: "createNote", title: "Conversation note", body: "Remember the summer leadership conversation.", date: "2026-07-13", followUpDate: "", shareableStatus: "Private", requiresConfirmation: true, evidence: "conversation", confidence: 0.9, sensitivityLevel: "normal" },
+          { actionId: "backend-prayer", actionType: "createPrayerRequest", title: "Prayer", body: "Pray for wisdom with summer plans.", date: "2026-07-13", followUpDate: "2026-07-20", shareableStatus: "Private", requiresConfirmation: true, evidence: "pray for wisdom", confidence: 0.9, sensitivityLevel: "sensitive" },
+          { actionId: "backend-task", actionType: "createFollowUpTask", title: "Check in with Jonah", body: "Ask how the decision went.", date: "", followUpDate: "2026-07-20", shareableStatus: "Private", requiresConfirmation: true, evidence: "check in", confidence: 0.88, sensitivityLevel: "normal" },
+          { actionId: "backend-meeting", actionType: "createMeetingNote", title: "Coffee meeting", body: "Coffee conversation about summer leadership.", date: "2026-07-13", followUpDate: "2026-07-20", shareableStatus: "Private", requiresConfirmation: true, evidence: "coffee", confidence: 0.87, sensitivityLevel: "normal" }
+        ]
+      }
+    }, grab);
+    db.aiProposals.unshift(proposal);
+    return {
+      proposalId: proposal.id,
+      personId: person.id,
+      normalized: proposal.proposedActions.map(action => ({
+        id: action.actionId,
+        content: action.content,
+        request: action.request,
+        summary: action.summary,
+        meetingDate: action.meetingDate,
+        dueDate: action.dueDate
+      })),
+      possiblePersonId: proposal.result.possiblePersonId
+    };
+  })()`);
+
+  assert(ids.possiblePersonId === ids.personId, "backend person suggestion maps into the executable proposal contract");
+  assert(ids.normalized[0].content === "Remember the summer leadership conversation.", "backend note body maps to note content");
+  assert(ids.normalized[1].request === "Pray for wisdom with summer plans.", "backend prayer body maps to prayer request");
+  assert(ids.normalized[2].dueDate === "2026-07-20", "backend follow-up date maps to task due date");
+  assert(ids.normalized[3].summary === "Coffee conversation about summer leadership." && ids.normalized[3].meetingDate === "2026-07-13", "backend meeting body and date map to meeting fields");
+
+  saveActionApproval(harness, ids.proposalId, [0, 1, 2, 3], { value: ids.personId });
+  const saved = harness.appEval(`({
+    note: db.notes[0],
+    prayer: db.prayerRequests[0],
+    task: db.tasks[0],
+    meeting: db.meetingNotes[0]
+  })`);
+  assert(saved.note.content === "Remember the summer leadership conversation.", "approved backend note preserves its body");
+  assert(saved.prayer.request === "Pray for wisdom with summer plans." && saved.prayer.followUpDate === "2026-07-20", "approved backend prayer preserves body and follow-up date");
+  assert(saved.task.title === "Check in with Jonah" && saved.task.dueDate === "2026-07-20", "approved backend task preserves title and follow-up date");
+  assert(saved.meeting.whatWeTalkedAbout === "Coffee conversation about summer leadership." && saved.meeting.meetingDate === "2026-07-13", "approved backend meeting preserves body and date");
+}
+
 function testAiActionApprovalCancelCreatesNothing() {
   const harness = makeAiActionApprovalHarness();
   const ids = setupActionApprovalProposal(harness, { personName: "Mara Thompson" });
@@ -1332,6 +1421,7 @@ async function run() {
   await testHealthEndpoint();
   await testQuickGrabMockMode();
   await testQuickGrabRealModeUsesOpenAiFetch();
+  await testQuickGrabExternalConsentBoundary();
   await testQuickGrabMissingKeyFallsBackToMock();
   await testQuickGrabValidation();
   await testQuickGrabAccessTokenProtection();
@@ -1344,12 +1434,6 @@ async function run() {
   await testQuickGrabDuplicateActionIdsAndPersonAmbiguity();
   testNoApiKeyInFrontendOrRepo();
   testRootAndDeployFunctionCopiesMatch();
-  testAiProposalRequiresApprovalBeforeSaving();
-  testAiMissingPersonBlocksUntilChosenOrCreated();
-  testAiExistingPersonSelectionLinksRecords();
-  testAiCreateNewPersonLinksRecords();
-  testAiCancelCreatesNothing();
-  testAiMatchedPersonFlowStillSaves();
   testAiActionConfirmPageOpensFromSelectedActions();
   testAiActionSelectionPersistsAcrossReload();
   testAiApproveAllPersistsBeforeConfirmation();
@@ -1358,6 +1442,7 @@ async function run() {
   testAiActionApprovalPartialLeavesPending();
   testAiActionApprovalCreateNewPersonPath();
   testAiActionApprovalExistingPersonPath();
+  testBackendQuickGrabSchemaMapsToSavedRecords();
   testAiActionApprovalCancelCreatesNothing();
   testAiActionApprovalFailedValidationLeavesPending();
   console.log("All AI regression checks passed.");

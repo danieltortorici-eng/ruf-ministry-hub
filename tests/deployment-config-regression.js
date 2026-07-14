@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const repoRoot = path.resolve(__dirname, "..");
 const deployRoot = path.resolve(repoRoot, "ruf-ministry-hub-deploy-working");
@@ -15,6 +16,7 @@ function read(relativePath) {
 
 function testDeployRootShape() {
   const expectedTopLevel = new Set([
+    "_headers",
     "_redirects",
     "functions",
     "index.html",
@@ -81,9 +83,43 @@ function assertAiApprovalFix(relativePath) {
   assert(!/view\.sheet\s*=.*ai-action-confirm|type:\s*"ai-action-confirm"/.test(html), `${relativePath} does not use the legacy AI confirm sheet route`);
 }
 
-function testAiApprovalFixInDeployOutputs() {
-  assertAiApprovalFix("dist/ruf-ministry-hub.html");
+function testAiApprovalFixInDeploySource() {
   assertAiApprovalFix("ruf-ministry-hub-deploy-working/ruf-ministry-hub.html");
+}
+
+function inlineScriptHash(relativePath) {
+  const source = read(relativePath);
+  const match = source.match(/<script>([\s\S]*?)<\/script>/);
+  assert(Boolean(match), `${relativePath} contains one inline script for CSP hashing`);
+  return `sha256-${crypto.createHash("sha256").update(match[1]).digest("base64")}`;
+}
+
+function testStaticSecurityHeaders() {
+  const headers = read("ruf-ministry-hub-deploy-working/_headers");
+  const appHash = inlineScriptHash("ruf-ministry-hub-deploy-working/ruf-ministry-hub.html");
+  const indexHash = inlineScriptHash("ruf-ministry-hub-deploy-working/index.html");
+  [
+    "Content-Security-Policy:",
+    "default-src 'self'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+    "X-Content-Type-Options: nosniff",
+    "X-Frame-Options: DENY",
+    "Referrer-Policy: no-referrer",
+    "Permissions-Policy:"
+  ].forEach(value => assert(headers.includes(value), `_headers includes ${value}`));
+  assert(headers.includes(`'${appHash}'`) && headers.includes(`'${indexHash}'`), "CSP hashes match both current inline scripts");
+  const scriptDirective = headers.match(/script-src[^;]+/)?.[0] || "";
+  assert(!scriptDirective.includes("'unsafe-inline'"), "CSP does not allow arbitrary inline scripts");
+  [
+    "functions/api/ai/health.js",
+    "functions/api/ai/quick-grab.js",
+    "ruf-ministry-hub-deploy-working/functions/api/ai/health.js",
+    "ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab.js"
+  ].forEach(relativePath => {
+    assert(read(relativePath).includes('"X-Content-Type-Options": "nosniff"'), `${relativePath} sets nosniff on Function responses`);
+  });
 }
 
 function testWranglerGuardrail() {
@@ -134,7 +170,8 @@ function testDeploymentNotes() {
     "Do not use the `workers.dev` URL.",
     "Build output directory: `.`",
     "Functions directory: `functions`",
-    "Use Cloudflare Pages for this project, not a separate Worker",
+    "Use Cloudflare Pages for the application, not a standalone application Worker",
+    "rate-limiter support Worker and Durable Object",
     "test the app at the Cloudflare Pages URL",
     "Test AI health at `https://YOUR-PAGES-URL/api/ai/health`.",
     "/api/ai/health",
@@ -176,7 +213,8 @@ function run() {
   testDeployRootShape();
   testNoInternalsInDeployRoot();
   testPagesFunctionRoutesExist();
-  testAiApprovalFixInDeployOutputs();
+  testAiApprovalFixInDeploySource();
+  testStaticSecurityHeaders();
   testWranglerGuardrail();
   testProductionAiSafetyAssets();
   testIgnoreGuardrails();

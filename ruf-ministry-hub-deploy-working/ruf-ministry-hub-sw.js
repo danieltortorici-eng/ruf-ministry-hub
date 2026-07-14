@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "ruf-ministry-hub-";
-const CACHE_NAME = "ruf-ministry-hub-v32-ai-review-production-safety";
+const CACHE_NAME = "ruf-ministry-hub-v32-steward-security-consolidation";
 const APP_SHELL = "ruf-ministry-hub.html";
 const ASSETS = [
   "./",
@@ -25,7 +25,6 @@ self.addEventListener("install", event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
     await Promise.all(ASSETS.map(asset => cacheAsset(cache, asset)));
-    await self.skipWaiting();
   })());
 });
 
@@ -58,7 +57,7 @@ async function cacheFirstAsset(request) {
   const response = await fetch(request);
   if (response && response.ok) {
     const cache = await caches.open(CACHE_NAME);
-    cache.put(request, response.clone());
+    await cache.put(request, response.clone());
   }
   return response;
 }

@@ -5,7 +5,8 @@ function json(payload, status = 200) {
   return Response.json(payload, {
     status,
     headers: {
-      "Cache-Control": "no-store"
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff"
     }
   });
 }

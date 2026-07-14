@@ -172,6 +172,7 @@ function json(payload, status = 200, extraHeaders = {}) {
     status,
     headers: {
       "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
       ...extraHeaders
     }
   });
@@ -391,6 +392,7 @@ function validateAndNormalizeInput(body) {
   if (!candidates.ok) return { ok: false, status: 400, code: "invalid_candidate_people", error: candidates.error };
 
   const todayISO = safeString(body.todayISO || body.today, 20);
+  const privacyTier = safeString(body.privacyTier, 80);
   const tags = Array.isArray(body.tags)
     ? body.tags.slice(0, 8).map(tag => safeString(tag, 40)).filter(Boolean)
     : [];
@@ -410,9 +412,11 @@ function validateAndNormalizeInput(body) {
       proposalType: safeString(body.proposalType, 80) || "quickGrabParse",
       tags,
       urgency: safeString(body.urgency, 80),
-      privacyTier: safeString(body.privacyTier, 80),
+      privacyTier,
       sensitivityLevel: safeString(body.sensitivityLevel, 80),
-      sensitiveFlag: body.sensitiveFlag === true
+      sensitiveFlag: body.sensitiveFlag === true,
+      externalDataApproved: body.sendToAiApproved === true || body.externalDataApproved === true,
+      doNotSendToAi: /^do\s+not\s+send(?:\s+to\s+ai)?$/i.test(privacyTier)
     }
   };
 }
@@ -991,7 +995,6 @@ function buildOpenAIRequestBody(env, input) {
               todayISO: input.todayISO,
               contextMode: input.contextMode,
               sourceType: input.sourceType,
-              sourceId: input.sourceId,
               tags: input.tags,
               urgency: input.urgency,
               privacy: {
@@ -1210,6 +1213,13 @@ export async function onRequestPost({ request, env = {} }) {
   const normalized = validateAndNormalizeInput(parsed.value);
   if (!normalized.ok) return problem(normalized.status, normalized.code, normalized.error, false);
   const input = normalized.value;
+
+  if (!shouldMock && input.doNotSendToAi) {
+    return problem(400, "external_ai_blocked", "This Quick Grab is marked Do Not Send to AI.", false);
+  }
+  if (!shouldMock && !input.externalDataApproved) {
+    return problem(400, "external_data_approval_required", "Explicit approval is required before sending Quick Grab data to external AI.", false);
+  }
 
   try {
     const proposal = shouldMock ? mockProposal(input) : await callOpenAI(env, input);

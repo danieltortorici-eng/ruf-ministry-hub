@@ -12,7 +12,7 @@ From the repository root, run:
 npm test
 ```
 
-This runs the root v32 syntax, asset, generated-output drift, and secret-boundary audits; both copies of the Pages Function syntax checks; the deploy service worker check; the five maintained app/repository regression suites below; and the deterministic incident-response simulations.
+This runs the root v32 syntax, asset, generated-output drift, and secret-boundary audits; both copies of the Pages Function syntax checks; the deploy service worker and AI rate-limiter Worker checks; the seven maintained app/repository regression suites below; and the deterministic incident-response simulations.
 
 The same command runs in `.github/workflows/ci.yml` for every pull request and push to `main`. The workflow uses read-only permissions, cancels superseded runs, and retains failure logs for 7 days.
 
@@ -29,6 +29,14 @@ If `node` is not on your shell path, use the bundled runtime:
 ```sh
 /Users/danieltortorici/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/regression-harness.js
 ```
+
+Run the service-worker update lifecycle simulation:
+
+```sh
+node tests/service-worker-lifecycle-regression.js
+```
+
+This check uses a synthetic in-memory service-worker environment. It proves that install caches the app shell without activating a replacement worker, unrelated messages cannot activate it, and only the app's explicit update action sends the activation message. It does not register a worker in a real browser or access the network.
 
 Run the focused current person-profile checks:
 
@@ -92,6 +100,7 @@ RUF_HUB_APP_DIR="/path/to/ruf-ministry-hub-deploy" node tests/regression-harness
 - Auto Memory Vault local restore point creation, restore confirmation, deletion, retention limits, and Device Vault migration without plaintext snapshots.
 - Cloudflare Pages AI health and Quick Grab proposal routes, mock fallback, OpenAI Responses API request shape, no frontend key exposure, and AI proposal approval before any local save.
 - Deploy-source AI Review cards, including selected/skipped action persistence across reload, editable action drafts, partial approval filtering, and confirmation-only record creation.
+- Deploy-source Quick Grab AI proposal review and save behavior; behavioral harnesses do not use the stale `dist` artifact as application authority.
 - Cloudflare Pages extensionless rewrites, direct HTML loading, and service worker bypass for `/api/*` routes.
 - Cloudflare Pages deploy-root shape, public file boundary, Pages Function locations, and Wrangler/ignore guardrails.
 - Service worker registration shape, cache version, and current asset list.
