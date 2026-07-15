@@ -611,8 +611,8 @@ function testBackupValidationBoundary() {
 }
 
 function testServiceWorkerShape() {
-  assert(html.includes('const APP_VERSION = "2026.07.13-steward-security-consolidation"'), "deploy app version is bumped for the consolidated safety changes");
-  assert(serviceWorkerSource.includes("ruf-ministry-hub-v32-steward-security-consolidation"), "service worker cache version is bumped");
+  assert(/const APP_VERSION = "2026\.07\.15-calm-os-[^"]+"/.test(html), "deploy app version is in the Calm OS release family");
+  assert(/ruf-ministry-hub-v(?:3[5-9]|[4-9]\d+)-calm-os-[^"']+/.test(serviceWorkerSource), "service worker cache version is bumped for Calm OS");
   assert(serviceWorkerSource.includes('"index.html"'), "service worker caches redirect entry point");
   assert(serviceWorkerSource.includes("ruf-ministry-hub-icon.svg"), "service worker caches the SVG icon");
   assert(serviceWorkerSource.includes("async function cacheAsset") && serviceWorkerSource.includes("Do not fail the whole service-worker install"), "service worker treats unavailable assets as non-blocking");

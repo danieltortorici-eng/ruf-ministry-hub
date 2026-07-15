@@ -1,13 +1,13 @@
 {
-  "name": "RUF Ministry Hub",
-  "short_name": "RUF Hub",
+  "name": "Calm OS · RUF Ministry Hub",
+  "short_name": "Calm OS",
   "id": "ruf-ministry-hub",
-  "description": "A private ministry notebook for Quick Grabs, people, prayer, meetings, and follow-up.",
+  "description": "A private, local-first ministry operating system for the next faithful act of care.",
   "start_url": "./ruf-ministry-hub.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f7f8fb",
-  "theme_color": "#202731",
+  "background_color": "#f4f5f0",
+  "theme_color": "#214f46",
   "orientation": "portrait",
   "icons": [
     {

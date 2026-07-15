@@ -3,34 +3,45 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#202731">
+  <meta name="theme-color" content="#214f46">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="RUF Hub">
+  <meta name="apple-mobile-web-app-title" content="Calm OS">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="ruf-ministry-hub.webmanifest">
   <link rel="icon" href="ruf-ministry-hub-icon-192.png" sizes="192x192" type="image/png">
   <link rel="apple-touch-icon" sizes="180x180" href="ruf-ministry-hub-icon-180.png">
   <link rel="apple-touch-icon" sizes="192x192" href="ruf-ministry-hub-icon-192.png">
-  <title>RUF Ministry Hub</title>
+  <title>Calm OS · RUF Ministry Hub</title>
   <style>
     :root {
-      --ink: #17202a;
-      --soft-ink: #384452;
-      --muted: #667085;
-      --paper: #f7f8fb;
-      --surface: #ffffff;
-      --line: #d8dee8;
-      --accent: #2f6f63;
-      --accent-strong: #23544b;
-      --terra: #b45f3a;
-      --gold: #c89122;
+      --ink: #17231f;
+      --soft-ink: #394942;
+      --muted: #68756f;
+      --paper: #f4f5f0;
+      --surface: #fffefa;
+      --surface-muted: #f8f9f5;
+      --line: #dce3dc;
+      --accent: #2f6c5e;
+      --accent-strong: #214f46;
+      --accent-soft: #e9f3ee;
+      --terra: #a65f3e;
+      --gold: #a76f18;
       --violet: #6554b3;
       --rose: #b34b6d;
       --ok: #287d4f;
       --warning: #9a6a00;
       --danger: #a23f3f;
-      --shadow: 0 8px 24px rgba(23, 32, 42, 0.08);
-      --radius: 8px;
+      --shadow: 0 10px 30px rgba(28, 49, 42, 0.06);
+      --shadow-raised: 0 16px 42px rgba(28, 49, 42, 0.1);
+      --radius-sm: 10px;
+      --radius: 16px;
+      --radius-lg: 22px;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-6: 24px;
+      --space-8: 32px;
       color-scheme: light;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
@@ -75,7 +86,7 @@
       top: 0;
       height: 100vh;
       padding: 22px 18px;
-      background: #202731;
+      background: #1f332d;
       color: #f5f7fa;
       display: flex;
       flex-direction: column;
@@ -117,7 +128,7 @@
 
     .nav button:hover,
     .nav button.active {
-      background: #33404e;
+      background: rgba(255,255,255,0.1);
     }
 
     .sidebar-note {
@@ -131,7 +142,7 @@
 
     .content {
       min-width: 0;
-      padding: 28px;
+      padding: 32px clamp(20px, 4vw, 56px);
     }
 
     .app-frame.focus-mode .content {
@@ -143,7 +154,7 @@
       align-items: flex-start;
       justify-content: space-between;
       gap: 16px;
-      margin-bottom: 22px;
+      margin-bottom: var(--space-8);
     }
 
     .top-actions {
@@ -191,7 +202,7 @@
     .section {
       display: grid;
       gap: 12px;
-      margin-bottom: 26px;
+      margin-bottom: var(--space-8);
     }
 
     .section-header {
@@ -212,7 +223,7 @@
     .surface {
       background: var(--surface);
       border: 1px solid var(--line);
-      border-radius: var(--radius);
+      border-radius: var(--radius-lg);
       box-shadow: var(--shadow);
       padding: 16px;
     }
@@ -287,8 +298,8 @@
     .pill.gray { background: #f1f3f6; color: #4c5665; border-color: #dfe4ec; }
 
     .button {
-      min-height: 40px;
-      border-radius: var(--radius);
+      min-height: 44px;
+      border-radius: var(--radius-sm);
       padding: 9px 13px;
       background: #eef2f6;
       color: var(--ink);
@@ -336,8 +347,8 @@
     }
 
     .button.small {
-      min-height: 32px;
-      padding: 6px 9px;
+      min-height: 44px;
+      padding: 8px 11px;
       font-size: 0.86rem;
     }
 
@@ -358,7 +369,7 @@
       background: #ffffff;
       border: 1px solid var(--line);
       border-left: 5px solid var(--accent);
-      border-radius: var(--radius);
+      border-radius: var(--radius-lg);
       box-shadow: var(--shadow);
       padding: 18px;
     }
@@ -374,7 +385,7 @@
       gap: 4px;
       padding: 13px;
       border-radius: var(--radius);
-      background: #edf7f3;
+      background: var(--accent-soft);
       border: 1px solid #cde7dd;
     }
 
@@ -526,7 +537,7 @@
       background: white;
       color: var(--ink);
       padding: 10px 11px;
-      min-height: 42px;
+      min-height: 44px;
       outline: none;
     }
 
@@ -564,7 +575,7 @@
     }
 
     .chip {
-      min-height: 34px;
+      min-height: 44px;
       padding: 7px 10px;
       border-radius: 999px;
       background: white;
@@ -847,7 +858,7 @@
     }
 
     .tab {
-      min-height: 34px;
+      min-height: 44px;
       border-radius: 999px;
       padding: 7px 11px;
       background: white;
@@ -874,7 +885,7 @@
       opacity: 0;
       pointer-events: none;
       transform: translateY(8px);
-      transition: 160ms ease;
+      transition: opacity 160ms ease, transform 160ms ease;
       z-index: 20;
     }
 
@@ -940,7 +951,7 @@
       right: 0;
       bottom: 0;
       z-index: 10;
-      background: #202731;
+      background: #1f332d;
       color: white;
       padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
       gap: 5px;
@@ -955,7 +966,7 @@
       min-height: 48px;
       border-radius: 999px;
       padding: 7px 4px;
-      background: #33404e;
+      background: rgba(255,255,255,0.1);
       color: white;
       font-weight: 750;
       font-size: 0.72rem;
@@ -981,6 +992,156 @@
       color: #fff;
       font-weight: 850;
       box-shadow: 0 12px 30px rgba(35, 84, 75, 0.32);
+    }
+
+    :where(button, [role="button"], a, input, select, textarea, summary):focus-visible {
+      outline: 3px solid #d18a22;
+      outline-offset: 3px;
+    }
+
+    button:disabled,
+    .button[aria-disabled="true"] {
+      cursor: not-allowed;
+      opacity: 0.55;
+      filter: grayscale(0.25);
+    }
+
+    .button.quiet {
+      background: transparent;
+      border-color: transparent;
+      color: var(--accent-strong);
+      box-shadow: none;
+    }
+
+    .screen-question {
+      max-width: 680px;
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.5;
+    }
+
+    .eyebrow {
+      color: var(--accent-strong);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .calm-card {
+      display: grid;
+      gap: var(--space-4);
+      padding: clamp(16px, 3vw, 24px);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+    }
+
+    .calm-card.primary {
+      border-color: #b9d3c8;
+      background: linear-gradient(145deg, #fffefa 0%, #f1f7f3 100%);
+      box-shadow: var(--shadow-raised);
+    }
+
+    .calm-list {
+      display: grid;
+      gap: var(--space-2);
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .calm-list-row {
+      display: grid;
+      gap: var(--space-1);
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .calm-list-row:last-child {
+      border-bottom: 0;
+    }
+
+    .capture-composer {
+      display: grid;
+      gap: var(--space-3);
+      padding: var(--space-4);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+    }
+
+    .capture-composer textarea {
+      min-height: 48px;
+      max-height: 42vh;
+      resize: vertical;
+      border: 0;
+      padding: 2px;
+      background: transparent;
+      line-height: 1.5;
+    }
+
+    .capture-composer textarea:focus {
+      min-height: 120px;
+      box-shadow: none;
+    }
+
+    .capture-composer:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(47, 108, 94, 0.14);
+    }
+
+    .disclosure {
+      border-top: 1px solid var(--line);
+      padding: 0;
+    }
+
+    .disclosure > summary {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      cursor: pointer;
+      font-weight: 760;
+      list-style: none;
+    }
+
+    .disclosure > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .disclosure > summary::after {
+      content: "+";
+      color: var(--accent-strong);
+      font-size: 1.2rem;
+    }
+
+    .disclosure[open] > summary::after {
+      content: "−";
+    }
+
+    .visually-hidden {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
     }
 
     @media (max-width: 980px) {
@@ -1159,11 +1320,11 @@
 </head>
 <body>
   <div id="app"></div>
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.13-steward-security-consolidation";
+    const APP_VERSION = "2026.07.15-calm-os-design-system";
     const MAX_BACKUP_FILE_BYTES = 8 * 1024 * 1024;
     const MAX_BACKUP_RECORDS_PER_COLLECTION = 10000;
     const MAX_BACKUP_TOTAL_RECORDS = 30000;

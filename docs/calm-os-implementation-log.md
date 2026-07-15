@@ -88,3 +88,14 @@ Status: complete locally on 2026-07-15.
 - Defined a synthetic pre-Calm version-2 compatibility boundary; formats earlier than the tracked contract remain `NOT VERIFIED` rather than guessed.
 - Expanded the authorized runtime scope to the deploy webmanifest when Calm OS naming/theme metadata changes. Root and `dist` artifacts remain prohibited.
 - No runtime or external state changed in this phase.
+
+## Phase 3 — Calm OS design system
+
+Status: implemented locally on 2026-07-15; verification recorded with the phase commit.
+
+- Added Calm OS product/design principles, attention and visual-weight budgets, tokens, component contracts, and accessibility foundations.
+- Adopted warmer paper/surface colors, one core green accent, quieter borders/shadows, 10/16/22px radii, and the 4/8/12/16/24/32px spacing scale.
+- Raised shared controls to a 44px minimum, added visible focus, disabled, quiet-button, disclosure, capture-composer, calm-card/list, live-status, fixed-media, and reduced-motion primitives.
+- Updated deploy-only PWA naming/theme metadata to Calm OS while retaining the RUF Ministry Hub identity and install ID.
+- Paired app/package version, service-worker cache, and CSP identity. Pages routes, Functions, storage, records, and production settings are unchanged.
+- Verification: `node check-app-syntax.mjs`, service-worker `node --check`, `node tests/deployment-config-regression.js`, and `node tests/regression-harness.js` all exited 0. The regression harness retained its service-worker safety assertions and now recognizes the intentional Calm OS release family.
