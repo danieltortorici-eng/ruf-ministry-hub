@@ -1177,9 +1177,9 @@ function testAiActionConfirmPageOpensFromSelectedActions() {
   assert(result.screen === "aiConfirmActions", "Approve selected actions opens Confirm AI Actions view");
   assert(result.proposalId === ids.proposalId, "Confirm AI Actions view stores proposal id");
   assert(result.actionIndexes.length === 2, "Confirm AI Actions view keeps selected action indexes");
-  assert(result.html.includes("Confirm AI Actions"), "Confirm AI Actions view renders title");
+  assert(result.html.includes("Review before saving"), "approval view renders Calm OS review title");
   assert(result.html.includes("Selected actions to save"), "Confirm AI Actions view renders selected actions");
-  assert(result.html.includes("Choose or create person"), "Confirm AI Actions view renders person choice when needed");
+  assert(result.html.includes("Person for these updates"), "approval view renders change-person choice when needed");
   assert(result.html.includes("data-action=\"ai-action-confirm-save\""), "Confirm AI Actions view renders save button");
 }
 

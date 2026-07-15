@@ -68,14 +68,14 @@ function assertAiApprovalFix(relativePath) {
   const html = read(relativePath);
   [
     "partiallyApproved",
-    "Choose or create person",
+    "Person for these updates",
     "selectedActionIds",
     "skippedActionIds",
     "approvedAt",
     "aiConfirmActions",
     "view.aiConfirmProposalId",
     "ai-action-confirm-save",
-    "Confirm AI Actions"
+    "Review before saving"
   ].forEach(text => {
     assert(html.includes(text), `${relativePath} includes ${text}`);
   });

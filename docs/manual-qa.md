@@ -41,19 +41,21 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 - Confirm Today brings backup, App Coach, Quick Capture, loose reminders, people, and follow-ups back into view.
 - Confirm no cloud sync, calendar, contacts, native widget, or external AI feature beyond the implemented Quick Grab proposal route appears as active unless it has been separately built.
 
-## Quick Grab Shortcut Flow
+## Unified Capture And Shortcut Flow
 
 When production backend Quick Grab is enabled, sign in through the approved Cloudflare Access hostname before this flow. Confirm a signed-out request cannot create a real proposal and that the app falls back safely without changing records.
 
 - In Safari, open the deployed app with `?quickgrab=Test%20capture`.
-- Confirm Quick Grab opens and the textarea contains `Test capture`.
+- Confirm Capture opens and the textarea contains `Test capture`.
 - Repeat with `?quickgrab=Prayer%20capture&quickgrabCategory=prayer&quickgrabUrgency=soon`.
-- Confirm the Prayer chip and Soon urgency chip are selected.
+- Confirm the text imports but no category, urgency, or record-type controls appear.
 - Refresh the page.
 - Confirm the imported text does not duplicate.
 - Share selected text from iOS Notes through the Shortcut.
-- Confirm the shared text lands in the Quick Grab draft.
-- Tap Grab It and confirm the saved Quick Grab uses the selected category and urgency.
+- Confirm the shared text lands in the same Capture composer.
+- Tap Save for later and confirm one unprocessed capture is saved without creating a note, meeting, prayer, follow-up, or person update.
+- Add another fictional capture and tap Process. Confirm the raw text is saved before the privacy/context review opens.
+- Continue with local mock processing and confirm one Suggested updates review appears. Retry processing the same capture and confirm no duplicate proposal appears.
 
 ## Data Safety
 
@@ -133,17 +135,19 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 - Mark a follow-up task done from Today.
 - Confirm those actions persist after refresh.
 
-## AI Review With Synthetic Data
+## Suggested Updates With Synthetic Data
 
 - Use only fictional test names and details for this check.
 - Create or open a pending AI proposal with at least three supported local actions.
 - Uncheck one action, refresh the app, and confirm the same action remains skipped while the other actions remain selected.
 - Tap Edit action, change the draft wording and date, save, and confirm the proposal is labeled Edited.
 - Confirm editing the card does not create a person, note, meeting, prayer request, or task.
-- Tap Approve selected actions, cancel from the confirmation page, and confirm no records were created and the selected/skipped choices remain.
-- Tap Approve all actions, return to AI Review without saving if possible, and confirm all supported actions remain selected.
+- Tap Review selected, cancel from Review before saving, and confirm no records were created and the selected/skipped choices remain.
+- Tap Approve all, return to Suggested updates without saving if possible, and confirm all supported actions remain selected.
+- Change the selected person in Review before saving and confirm approved records link only to that person.
+- Mark the source sensitive and confirm its preview becomes masked.
 - Complete a partial approval and confirm the proposal leaves Pending, appears under Approved as Partially Approved, and shows the saved selected/skipped choices.
-- Confirm final approval still requires the explicit review checkbox before local records are created.
+- Confirm Save approved updates still requires the explicit review checkbox before local records are created.
 
 ## PWA And Offline Cache
 

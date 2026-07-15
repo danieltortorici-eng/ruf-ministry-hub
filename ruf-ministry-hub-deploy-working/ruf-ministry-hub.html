@@ -1053,7 +1053,9 @@
 
     .calm-list-row {
       display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: var(--space-1);
+      align-items: center;
       padding: 12px 0;
       border-bottom: 1px solid var(--line);
     }
@@ -1342,9 +1344,11 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-dates-v1";
+    const APP_VERSION = "2026.07.15-calm-os-capture-v1";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
+    const CAPTURE_PROCESSOR_VERSION = "calm-os-capture-v1";
+    const CAPTURE_SOURCES = ["main", "today", "profile", "dictation", "shared", "imported", "legacy"];
     const MAX_BACKUP_FILE_BYTES = 8 * 1024 * 1024;
     const MAX_BACKUP_RECORDS_PER_COLLECTION = 10000;
     const MAX_BACKUP_TOTAL_RECORDS = 30000;
@@ -1911,6 +1915,9 @@
         updatedAt: timestamp,
         sourceType: "manual",
         sourceId: "",
+        proposalKey: "",
+        sourceCaptureRevision: 0,
+        processorVersion: "",
         proposalType: "quickGrabParse",
         status: "pending",
         title: "",
@@ -1951,6 +1958,9 @@
         updatedAt: source.updatedAt || source.updated_at || source.createdAt || base.updatedAt,
         sourceType: enumOrDefault(source.sourceType, AI_PROPOSAL_SOURCE_TYPES, "manual"),
         sourceId: String(source.sourceId || ""),
+        proposalKey: String(source.proposalKey || ""),
+        sourceCaptureRevision: Math.max(0, Number.parseInt(source.sourceCaptureRevision, 10) || 0),
+        processorVersion: String(source.processorVersion || ""),
         proposalType: enumOrDefault(source.proposalType, AI_PROPOSAL_TYPES, "quickGrabParse"),
         status: enumOrDefault(source.status, AI_PROPOSAL_STATUSES, "pending"),
         title: String(source.title || ""),
@@ -1970,6 +1980,28 @@
 
     function normalizeAiProposals(raw) {
       return Array.isArray(raw) ? raw.map(normalizeAiProposal) : [];
+    }
+
+    function normalizeQuickGrab(raw = {}) {
+      const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+      const captureSource = CAPTURE_SOURCES.includes(source.captureSource) ? source.captureSource : "legacy";
+      const captureRevision = Math.max(1, Number.parseInt(source.captureRevision, 10) || 1);
+      let processingState = ["unprocessed", "awaitingApproval", "processing", "review", "failed", "saved"]
+        .includes(source.processingState)
+        ? source.processingState
+        : ["Converted", "Done", "Archived"].includes(source.status) ? "saved" : "unprocessed";
+      if (processingState === "processing") processingState = "failed";
+      return {
+        ...source,
+        captureSource,
+        captureRevision,
+        submissionKey: String(source.submissionKey || `${captureSource}:${source.id || "legacy"}:${captureRevision}`),
+        processingState,
+        processingError: String(source.processingError || (source.processingState === "processing" ? "Processing was interrupted. Retry when ready." : "")),
+        proposalKey: String(source.proposalKey || ""),
+        lastProcessingAttemptAt: String(source.lastProcessingAttemptAt || ""),
+        personLocked: source.personLocked === true
+      };
     }
 
     function emptyData() {
@@ -2062,6 +2094,7 @@
         normalized[key] = Array.isArray(raw[key]) ? raw[key] : [];
       });
       normalized.dataSchemaVersion = DATA_SCHEMA_VERSION;
+      normalized.quickGrabs = normalized.quickGrabs.map(normalizeQuickGrab);
       normalized.aiProposals = normalizeAiProposals(raw.aiProposals);
       normalized.people.forEach(person => {
         if (!("phone" in person)) person.phone = "";
@@ -2894,7 +2927,9 @@
     }
 
     function autosaveDraftKey() {
-      if (view.screen === "quick") return "screen:quick";
+      if (view.screen === "quick") return "capture:main";
+      if (view.screen === "today") return "capture:today";
+      if (view.screen === "person" && view.personId) return `capture:profile:${view.personId}`;
       if (view.screen === "process" && view.quickGrabId) return "process:" + view.quickGrabId;
       if (view.screen === "snooze" && view.quickGrabId) return "snooze:" + view.quickGrabId;
       if (view.screen === "search") return "screen:search";
@@ -2958,7 +2993,8 @@
       if (!settings.enableAutoSave) return;
       const key = autosaveDraftKey();
       if (!key) return;
-      const draft = loadAutosaveDrafts()[key];
+      const drafts = loadAutosaveDrafts();
+      const draft = drafts[key] || (key === "capture:main" ? drafts["screen:quick"] : null);
       if (!draft || !draft.fields) return;
       Object.entries(draft.fields).forEach(([id, value]) => {
         if (id === "quick-tags") {
@@ -3287,13 +3323,19 @@
       };
     }
 
-    function makeQuickGrab(rawContent, tags = [], urgency = "Whenever", peopleList = null) {
+    function makeQuickGrab(rawContent, tags = [], urgency = "Whenever", peopleList = null, captureOptions = {}) {
       const parsed = parseQuickGrab(rawContent, tags, urgency, peopleList);
+      const id = uid("grab");
+      const captureSource = CAPTURE_SOURCES.includes(captureOptions.captureSource) ? captureOptions.captureSource : "legacy";
+      const captureRevision = 1;
+      const lockedPersonId = captureOptions.personId && (peopleList || db.people).some(person => person.id === captureOptions.personId)
+        ? captureOptions.personId
+        : "";
       return {
-        id: uid("grab"),
+        id,
         rawContent,
         detectedPersonName: parsed.detectedPersonName,
-        relatedPersonId: parsed.relatedPersonId,
+        relatedPersonId: lockedPersonId || parsed.relatedPersonId,
         detectedDate: parsed.detectedDate,
         detectedPrayerRequest: parsed.detectedPrayerRequest,
         detectedFollowUp: parsed.detectedFollowUp,
@@ -3307,6 +3349,14 @@
         sensitiveFlag: false,
         convertedToTypes: [],
         convertedRecordIds: [],
+        captureSource,
+        captureRevision,
+        submissionKey: String(captureOptions.submissionKey || `${captureSource}:${id}:${captureRevision}`),
+        processingState: "unprocessed",
+        processingError: "",
+        proposalKey: "",
+        lastProcessingAttemptAt: "",
+        personLocked: Boolean(lockedPersonId && captureOptions.personLocked !== false),
         createdAt: nowISO(),
         updatedAt: nowISO()
       };
@@ -3389,6 +3439,10 @@
 
     function personById(id) {
       return db.people.find(person => person.id === id);
+    }
+
+    function personFirstName(person) {
+      return String(person?.name || "there").trim().split(/\s+/)[0] || "there";
     }
 
     function promptQuickGrabs() {
@@ -3774,9 +3828,10 @@
       const sharedText = decodeSharedUrlText(imported).trim();
       if (!sharedText) return false;
       pendingUrlQuickGrabText = sharedText;
-      pendingUrlQuickGrabTags = quickGrabTagsFromParams(params);
-      pendingUrlQuickGrabUrgency = normalizeUrgencyParam(params.get("quickgrabUrgency") || params.get("urgency") || "");
+      pendingUrlQuickGrabTags = [];
+      pendingUrlQuickGrabUrgency = "";
       pendingUrlQuickGrabParams = params;
+      view.quickGrabDraftSource = "shared";
       view.screen = "quick";
       view.quickGrabId = null;
       view.processPreset = [];
@@ -3821,16 +3876,6 @@
       pendingUrlQuickGrabText = "";
       view.quickGrabDraftText = nextText;
       textarea.value = nextText;
-      if (pendingUrlQuickGrabTags.length) {
-        document.querySelectorAll("#quick-tags .chip").forEach(button => {
-          button.classList.toggle("active", pendingUrlQuickGrabTags.includes(button.dataset.tag));
-        });
-      }
-      if (pendingUrlQuickGrabUrgency) {
-        document.querySelectorAll("#urgency-tags .chip").forEach(button => {
-          button.classList.toggle("active", pendingUrlQuickGrabUrgency === button.dataset.urgency);
-        });
-      }
       pendingUrlQuickGrabTags = [];
       pendingUrlQuickGrabUrgency = "";
       scheduleAutosave();
@@ -3842,8 +3887,8 @@
       afterVisibleTextareaUpdate(() => showToast("Shared text added to Quick Grab draft."));
     }
 
-    function startDictation() {
-      const textarea = document.getElementById("quick-text");
+    function startDictation(targetId = "quick-text") {
+      const textarea = document.getElementById(targetId);
       const Recognition = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
       if (!textarea || !Recognition) {
         showToast("Dictation is not available in this browser.");
@@ -3856,6 +3901,8 @@
       recognition.onresult = event => {
         const spoken = Array.from(event.results).map(result => result[0].transcript).join(" ").trim();
         textarea.value = [textarea.value.trim(), spoken].filter(Boolean).join("\n");
+        textarea.dataset.captureMethod = "dictation";
+        scheduleAutosave();
         showToast("Dictation added.");
       };
       recognition.onerror = () => showToast("Dictation stopped.");
@@ -4698,53 +4745,72 @@
       `;
     }
 
-    function renderQuickGrab() {
-      const recent = db.quickGrabs.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8);
-      const promptItems = promptQuickGrabs();
+    function captureTextareaId(source = "main") {
+      if (source === "today") return "today-capture-text";
+      if (source === "profile") return "profile-capture-text";
+      return "quick-text";
+    }
+
+    function captureDraftKey(source = "main", personId = "") {
+      if (source === "today") return "capture:today";
+      if (source === "profile") return `capture:profile:${personId}`;
+      return "capture:main";
+    }
+
+    function renderCaptureComposer(options = {}) {
+      const source = ["today", "profile"].includes(options.source) ? options.source : "main";
+      const person = source === "profile" ? personById(options.personId) : null;
+      const targetId = captureTextareaId(source);
+      const placeholder = options.placeholder || (person ? `Add something about ${personFirstName(person)}…` : "What do you need to remember?");
+      const initialValue = source === "main" ? view.quickGrabDraftText || "" : "";
       return `
-        ${renderTopbar("Quick Grab", "Grab it and keep moving. Sort it when you have a little more room.", false)}
-        <div class="grid two">
-          <section class="section">
-            <div class="surface quick-box">
-              <div class="field">
-                <label for="quick-text">Quick Grab</label>
-                <textarea class="textarea" id="quick-text" placeholder="Dump it here...">${escapeHtml(view.quickGrabDraftText || "")}</textarea>
-              </div>
-              <div class="field">
-                <label>Quick buttons</label>
-                <div class="chip-row" id="quick-tags">
-                  ${["People", "Prayer", "Donors", "Teaching", "Events", "Admin", "Personal"].map(tag => `<button class="chip" data-tag="${tag}">${tag}</button>`).join("")}
-                </div>
-              </div>
-              <div class="field">
-                <label>Urgency</label>
-                <div class="chip-row" id="urgency-tags">
-                  ${["Today", "Soon", "Important"].map(tag => `<button class="chip urgent" data-urgency="${tag}">${tag}</button>`).join("")}
-                </div>
-              </div>
-              <div class="action-row">
-                <button class="button primary full" data-action="grab-create">Grab It</button>
-                ${settings.enableVoiceCapture ? `<button class="button full" data-action="voice-capture">Dictate</button>` : ""}
-              </div>
-            </div>
-          </section>
-          <section class="section">
-            <div class="section-header">
-              <h2 class="section-title">Prompt Me</h2>
-              <div class="action-row">
-                <span class="pill green">${promptItems.length} ready</span>
-                <button class="button small" data-action="nav" data-screen="review">Review Queue</button>
-              </div>
-            </div>
-            ${promptItems.length ? promptItems.map(renderQuickGrabCard).join("") : emptyState("You're clear for now. Grab something when it pops into your head.")}
-          </section>
-        </div>
-        <section class="section">
-          <div class="section-header">
-            <h2 class="section-title">Recent Grabs</h2>
+        <div class="capture-composer" data-capture-composer="${escapeHtml(source)}" data-person-id="${escapeHtml(person?.id || "")}">
+          ${person ? `<div class="row wrap"><strong>For ${escapeHtml(person.name)}</strong><span class="meta">Person locked for this capture</span><button class="button quiet small" data-action="capture-change-person" data-id="${escapeHtml(person.id)}">Change person</button></div>` : ""}
+          <label class="visually-hidden" for="${targetId}">${person ? `Add something about ${escapeHtml(person.name)}` : "Capture what you need to remember"}</label>
+          <textarea class="textarea" id="${targetId}" rows="1" placeholder="${escapeHtml(placeholder)}" data-capture-source="${escapeHtml(source)}">${escapeHtml(initialValue)}</textarea>
+          <div class="action-row">
+            <button class="button primary" data-action="capture-submit" data-mode="process" data-source="${escapeHtml(source)}" data-person-id="${escapeHtml(person?.id || "")}" data-target="${targetId}">Process</button>
+            ${settings.enableVoiceCapture ? `<button class="button quiet" data-action="voice-capture" data-target="${targetId}">Dictate</button>` : ""}
+            ${source === "profile" || options.allowSaveForLater ? `<button class="button quiet" data-action="capture-submit" data-mode="later" data-source="${escapeHtml(source)}" data-person-id="${escapeHtml(person?.id || "")}" data-target="${targetId}">Save for later</button>` : ""}
           </div>
-          ${recent.length ? recent.map(renderQuickGrabCard).join("") : emptyState("No Quick Grabs yet.")}
+          <div class="meta">Capture first. Calm OS will suggest how to sort it, and nothing becomes a permanent record without your approval.</div>
+        </div>
+      `;
+    }
+
+    function renderCaptureWaitingRow(grab) {
+      const person = personById(grab.relatedPersonId);
+      const preview = maskedText(grab.sensitiveFlag, "Sensitive capture hidden.", grab.rawContent);
+      return `
+        <article class="calm-list-row">
+          <div>
+            <strong>${escapeHtml(preview)}</strong>
+            <div class="meta">${person ? `${escapeHtml(person.name)} · ` : ""}${escapeHtml(formatHistoryDate(grab.createdAt, "Captured") || "Captured")}</div>
+            ${grab.processingState === "failed" ? `<div class="meta" role="status">Not processed yet. ${escapeHtml(grab.processingError || "Retry when ready.")}</div>` : ""}
+          </div>
+          <button class="button quiet small" data-action="qg-mock-ai" data-id="${escapeHtml(grab.id)}">${grab.processingState === "failed" ? "Retry" : "Process"}</button>
+        </article>
+      `;
+    }
+
+    function renderQuickGrab() {
+      const waiting = db.quickGrabs
+        .filter(grab => !["Converted", "Done", "Archived"].includes(grab.status))
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+        .slice(0, 5);
+      return `
+        ${renderTopbar("Capture", "What do I need to remember?", false)}
+        <section class="section" data-calm-section="capture">
+          ${renderCaptureComposer({ source: "main", allowSaveForLater: true })}
         </section>
+        ${waiting.length ? `
+          <section class="section" data-calm-section="waiting-captures">
+            <details class="disclosure">
+              <summary>Waiting to be sorted (${waiting.length})</summary>
+              <div class="calm-list">${waiting.map(renderCaptureWaitingRow).join("")}</div>
+            </details>
+          </section>
+        ` : ""}
       `;
     }
 
@@ -6565,11 +6631,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         "Low Confidence": (db.aiProposals || []).filter(item => item.confidence === "low").length
       };
       return `
-        ${renderTopbar("AI Review", "Draft suggestions for careful human review before anything becomes a real record.")}
+        ${renderTopbar("Suggested updates", "Review before saving anything to ministry records.")}
         <section class="section">
           <div class="surface">
-            <div class="notice secure">AI suggestions are drafts. Review before saving anything to ministry records.</div>
-            <p class="page-kicker" style="margin-top:12px;">This inbox is local and review-only. Approving selected actions opens a final confirmation before any local record is saved.</p>
+            <div class="notice secure">RUF Hub sorted this into suggestions. Choose only what is accurate and useful.</div>
+            <p class="page-kicker" style="margin-top:12px;">Your selections stay local. A final review is required before approved updates are saved.</p>
             ${settings.aiMockMode ? "" : `<div class="notice danger" style="margin-top:12px;">Mock AI is off in Settings. Turn it on before continuing with mock review flows.</div>`}
             <div class="tabs" style="margin-top:14px;">
               ${AI_REVIEW_FILTERS.map(filter => `<button class="tab ${view.aiReviewFilter === filter ? "active" : ""}" data-action="ai-review-filter" data-filter="${escapeHtml(filter)}">${escapeHtml(filter)} (${counts[filter] || 0})</button>`).join("")}
@@ -6605,7 +6671,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         <article class="item compact focus-card ${focused ? "important" : ""}">
           <div class="item-title-row">
             <div>
-              <div class="item-title">${escapeHtml(proposal.title || "Untitled AI suggestion")}</div>
+              <div class="item-title">${escapeHtml(proposal.title || "Untitled suggestion")}</div>
               <div class="meta">${escapeHtml(labelFromCamel(proposal.proposalType))}</div>
             </div>
             <div class="row wrap">
@@ -6635,16 +6701,17 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             ${warnings.length ? `<div class="settings-list">${warnings.map(warning => `<div class="notice danger">${escapeHtml(warning)}</div>`).join("")}</div>` : `<div class="meta">No warnings attached.</div>`}
           </div>
           <div class="field">
-            <label>Proposed actions</label>
+            <label>RUF Hub sorted this into…</label>
             ${executableCount ? `<div class="meta">${selectedActionCount} selected · ${skippedActionCount} skipped. Your choices are saved on this device before final approval.</div>` : ""}
             ${actions.length ? `<div class="settings-list">${actions.map((action, index) => renderAiProposalActionRow(proposal, action, index)).join("")}</div>` : `<div class="meta">No proposed action beyond review.</div>`}
           </div>
           ${timestampLine(proposal)}
           <div class="action-row focus-actions">
-            ${canExecute && executableCount ? `<button class="button small primary" data-action="ai-proposal-approve-selected" data-id="${escapeHtml(proposal.id)}">Approve selected actions</button>` : ""}
-            ${canExecute && executableCount ? `<button class="button small" data-action="ai-proposal-approve-all" data-id="${escapeHtml(proposal.id)}">Approve all actions</button>` : ""}
+            ${canExecute && executableCount ? `<button class="button small primary" data-action="ai-proposal-approve-selected" data-id="${escapeHtml(proposal.id)}">Review selected</button>` : ""}
+            ${canExecute && executableCount ? `<button class="button small" data-action="ai-proposal-approve-all" data-id="${escapeHtml(proposal.id)}">Approve all</button>` : ""}
             ${proposal.status !== "approved" && !executableCount ? `<button class="button small primary" data-action="ai-proposal-approve" data-id="${escapeHtml(proposal.id)}">Approve proposal</button>` : ""}
             ${proposal.status !== "rejected" ? `<button class="button small" data-action="ai-proposal-reject" data-id="${escapeHtml(proposal.id)}">Reject proposal</button>` : ""}
+            ${sourceTier === "Normal" ? `<button class="button small" data-action="ai-proposal-mark-sensitive" data-id="${escapeHtml(proposal.id)}">Mark sensitive</button>` : ""}
             ${proposal.status !== "archived" ? `<button class="button small" data-action="ai-proposal-archive" data-id="${escapeHtml(proposal.id)}">Archive proposal</button>` : ""}
             ${canOpenSource ? `<button class="button small" data-action="ai-proposal-open-source" data-id="${escapeHtml(proposal.id)}">Open Related Source</button>` : ""}
             ${settings.inlineEditing ? `<button class="button small" data-action="edit-record-field" data-collection="aiProposals" data-field="title" data-label="AI proposal title" data-id="${escapeHtml(proposal.id)}">Edit Title</button>` : ""}
@@ -6998,7 +7065,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const proposal = aiProposalById(state.proposalId);
       if (!proposal) {
         return `
-          ${renderTopbar("Confirm AI Actions", "The selected AI suggestion could not be found.", false)}
+          ${renderTopbar("Review before saving", "The selected suggestion could not be found.", false)}
           <section class="section">
             <div class="surface">
               <div class="notice danger">The proposal is no longer available. Return to AI Review and choose another suggestion.</div>
@@ -7015,20 +7082,24 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const proposalWarnings = Array.isArray(proposal.warnings) ? proposal.warnings : [];
       const visibleErrors = Array.from(new Set([...(validation.errors || []), ...((state.validationErrors || []).filter(Boolean))]));
       const visibleWarnings = Array.from(new Set([...proposalWarnings, ...(validation.warnings || []), ...((state.validationWarnings || []).filter(Boolean))]));
-      const needsPersonChoice = validation.needsPersonResolution || validation.willCreatePerson || validation.personResolutionErrors.length;
+      const needsPersonChoice = selected.some(item => aiActionNeedsPerson(item.action) || aiActionType(item.action) === "createNote")
+        || validation.needsPersonResolution
+        || validation.willCreatePerson
+        || validation.personResolutionErrors.length;
       const suggestedName = validation.newPersonName || validation.suggestedPersonName || "";
       const duplicateNames = validation.duplicatePeople.map(person => person.name).join(", ");
+      const selectedPersonId = personChoice.existingPersonId || validation.existingPersonId || "";
       const peopleOptions = db.people
         .slice()
         .sort((a, b) => a.name.localeCompare(b.name))
-        .map(person => `<option value="${escapeHtml(person.id)}" ${personChoice.existingPersonId === person.id ? "selected" : ""}>${escapeHtml(person.name)} - ${escapeHtml(person.personType)}</option>`)
+        .map(person => `<option value="${escapeHtml(person.id)}" ${selectedPersonId === person.id ? "selected" : ""}>${escapeHtml(person.name)} - ${escapeHtml(person.personType)}</option>`)
         .join("");
       const disabled = validation.errors.length ? "disabled" : "";
       return `
-        ${renderTopbar("Confirm AI Actions", "Final local review before anything becomes a record.", false)}
+        ${renderTopbar("Review before saving", "Only the approved updates below will become local records.", false)}
         <section class="section">
           <div class="surface">
-            <div class="item-title">${escapeHtml(proposal.title || "Untitled AI suggestion")}</div>
+              <div class="item-title">${escapeHtml(proposal.title || "Untitled suggestion")}</div>
             <p class="item-preview">${escapeHtml(proposal.summary || "Review this suggestion before saving selected actions.")}</p>
             <div class="row wrap" style="margin-top:10px;">
               <span class="pill ${aiProposalStatusTone(proposal.status)}">${escapeHtml(labelFromCamel(proposal.status || "pending"))}</span>
@@ -7050,13 +7121,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               ${visibleWarnings.length ? `<div class="settings-list">${visibleWarnings.map(warning => `<div class="notice sensitive">${escapeHtml(warning)}</div>`).join("")}</div>` : `<div class="meta">No warnings attached.</div>`}
             </div>
             <div class="field">
-              <label>Links that will be added</label>
-              <div class="meta">Created records will store sourceAIProposalId ${escapeHtml(proposal.id)}${validation.sourceQuickGrabId ? ` and createdFromQuickGrabId ${escapeHtml(validation.sourceQuickGrabId)}` : ""}.</div>
+              <label>Local source link</label>
+              <div class="meta">Calm OS will keep a private local link back to this suggestion${validation.sourceQuickGrabId ? " and its original capture" : ""} so retries stay safe.</div>
             </div>
             ${needsPersonChoice ? `
               <div class="field">
-                <label for="ai-confirm-person-choice">Choose or create person</label>
-                <div class="notice sensitive">Selected actions need a person. Choose an existing local person or explicitly choose Create new person before saving.</div>
+                <label for="ai-confirm-person-choice">Person for these updates</label>
+                <div class="notice sensitive">Keep the suggested person, choose a different local person, or explicitly choose Create new person before saving.</div>
                 <select class="select" id="ai-confirm-person-choice">
                   <option value="">Choose a person</option>
                   ${peopleOptions}
@@ -7074,10 +7145,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               ${checkbox("ai-confirm-duplicate-confirm", "Create the suggested person anyway after reviewing similar people.", false)}
             ` : ""}
             ${validation.sourceQuickGrab ? checkbox("ai-confirm-convert-quickgrab", "Mark the original Quick Grab Converted after saving these actions.", true) : ""}
-            ${checkbox("ai-confirm-action-confirm", "I reviewed the selected actions and want to save only these local changes.", false)}
+            ${checkbox("ai-confirm-action-confirm", "I reviewed these updates and want to save only the selected local changes.", false)}
             <div class="action-row" style="margin-top:14px;">
               <button class="button" data-action="ai-action-confirm-cancel">Cancel</button>
-              <button class="button primary" data-action="ai-action-confirm-save" data-id="${escapeHtml(proposal.id)}" ${disabled}>Save Selected Actions</button>
+              <button class="button primary" data-action="ai-action-confirm-save" data-id="${escapeHtml(proposal.id)}" ${disabled}>Save approved updates</button>
             </div>
           </div>
         </section>
@@ -7439,6 +7510,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         ...source,
         sourceType: "quickGrab",
         sourceId: grab.id,
+        proposalKey: captureProposalKey(grab),
+        sourceCaptureRevision: grab.captureRevision,
+        processorVersion: CAPTURE_PROCESSOR_VERSION,
         proposalType: "quickGrabParse",
         status: "pending",
         requiresReview: true,
@@ -7468,15 +7542,45 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function saveQuickGrabAiProposal(proposal, undoLabel, toastMessage) {
+      const grab = db.quickGrabs.find(item => item.id === proposal?.sourceId);
+      if (grab) {
+        proposal.proposalKey = proposal.proposalKey || captureProposalKey(grab);
+        proposal.sourceCaptureRevision = grab.captureRevision;
+        proposal.processorVersion = CAPTURE_PROCESSOR_VERSION;
+      }
+      const existing = proposal?.proposalKey
+        ? (db.aiProposals || []).find(item => item.proposalKey === proposal.proposalKey)
+        : null;
+      if (existing) {
+        if (grab) {
+          grab.proposalKey = existing.proposalKey;
+          grab.processingState = "review";
+          grab.processingError = "";
+          grab.updatedAt = nowISO();
+          saveData();
+        }
+        showToast("Suggested updates already exist for this capture.");
+        openCaptureProposal(existing);
+        return existing;
+      }
       recordUndo(undoLabel);
       db.aiProposals.unshift(proposal);
+      if (grab) {
+        grab.proposalKey = proposal.proposalKey;
+        grab.processingState = "review";
+        grab.processingError = "";
+        grab.updatedAt = nowISO();
+      }
       saveData();
       view.sheet = null;
       view.screen = "aiReview";
-      view.aiReviewFilter = "Pending";
+      view.aiReviewFilter = ["approved", "partiallyApproved"].includes(proposal.status)
+        ? "Approved"
+        : proposal.status === "rejected" ? "Rejected" : proposal.status === "archived" ? "Archived" : "Pending";
       view.aiReviewFocusId = proposal.id;
       showToast(toastMessage);
       render();
+      return proposal;
     }
 
     function backendQuickGrabSafeErrorMessage() {
@@ -7493,7 +7597,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         showToast("This Quick Grab is marked Do Not Send to AI.");
         return;
       }
+      if (grab.processingState === "processing") {
+        showToast("This capture is already processing. Your text is safe.");
+        return;
+      }
       const payload = buildQuickGrabBackendPayload(grab);
+      grab.processingState = "processing";
+      grab.processingError = "";
+      grab.lastProcessingAttemptAt = nowISO();
+      saveData();
       try {
         const response = await fetch("/api/ai/quick-grab", {
           method: "POST",
@@ -7508,10 +7620,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         saveQuickGrabAiProposal(proposal, "backend Quick Grab AI proposal", "Backend Quick Grab proposal created. Review before saving anything.");
       } catch {
         if (settings.aiMockMode) {
+          markCaptureProcessingFailure(grabId, "Backend processing was unavailable. Your capture is safe.");
           showToast("Backend Quick Grab was unavailable. Creating a local mock proposal instead.");
           createQuickGrabMockAiProposal(grabId);
           return;
         }
+        markCaptureProcessingFailure(grabId, "Processing is unavailable. Your capture is saved and can be retried.");
         showToast(backendQuickGrabSafeErrorMessage());
       }
     }
@@ -7531,9 +7645,19 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return;
       }
       if (aiPrivacyTierForRecord(grab, "quickGrabs") === "Do Not Send to AI") {
+        markCaptureProcessingFailure(grabId, "This capture is marked Do Not Send to AI.");
         showToast("This Quick Grab is marked Do Not Send to AI.");
         return;
       }
+      const existing = existingCaptureProposal(grab);
+      if (existing) {
+        showToast("Suggested updates already exist for this capture.");
+        openCaptureProposal(existing);
+        return existing;
+      }
+      grab.processingState = "processing";
+      grab.processingError = "";
+      grab.lastProcessingAttemptAt = nowISO();
       const flags = quickGrabMockFlags(grab);
       const proposedActions = quickGrabMockProposedActions(grab, flags);
       const confidence = quickGrabMockConfidence(flags, proposedActions);
@@ -7554,6 +7678,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const proposal = emptyAiProposal({
         sourceType: "quickGrab",
         sourceId: grab.id,
+        proposalKey: captureProposalKey(grab),
+        sourceCaptureRevision: grab.captureRevision,
+        processorVersion: CAPTURE_PROCESSOR_VERSION,
         proposalType: "quickGrabParse",
         status: "pending",
         title: `Mock parse: ${grab.category || "Quick Grab"}`,
@@ -7573,15 +7700,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           mockOnly: true
         }
       });
-      recordUndo("mock AI Quick Grab proposal");
-      db.aiProposals.unshift(proposal);
-      saveData();
-      view.sheet = null;
-      view.screen = "aiReview";
-      view.aiReviewFilter = "Pending";
-      view.aiReviewFocusId = proposal.id;
-      showToast("Mock AI proposal created. Review before saving anything.");
-      render();
+      return saveQuickGrabAiProposal(proposal, "mock AI capture proposal", "Suggested updates created. Review before saving anything.");
     }
 
     function buildPersonBriefingMockResult(context, warnings = []) {
@@ -10625,6 +10744,22 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       render();
     }
 
+    function markAiProposalSensitive(id) {
+      const proposal = aiProposalById(id);
+      if (!proposal) {
+        showToast("That suggestion is no longer available.");
+        return;
+      }
+      recordUndo("suggestion sensitivity");
+      const target = markAiActionTargetSensitive(proposal, aiProposalSourceRecord(proposal));
+      proposal.sensitivityRisk = "high";
+      proposal.warnings = Array.from(new Set([...(proposal.warnings || []), "Marked sensitive during review."]));
+      proposal.updatedAt = nowISO();
+      saveData();
+      showToast(target ? "Marked sensitive." : "Sensitivity could not be updated.");
+      render();
+    }
+
     function selectedAiActionIndexes(proposalId) {
       const proposal = aiProposalById(proposalId);
       const selection = aiCurrentActionSelection(proposal);
@@ -10803,7 +10938,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         .find(Boolean) || aiActionExistingPersonId(proposal, sourceQuickGrab, {});
       const personChoice = normalizeAiSheetPersonChoice(options.personChoice || {});
       const chosenExistingPersonId = personChoice.existingPersonId || "";
-      const resolvedPersonId = existingPersonId || chosenExistingPersonId;
+      const resolvedPersonId = chosenExistingPersonId || existingPersonId;
       const suggestedPersonName = aiBestDetectedPersonName(proposal, sourceQuickGrab, selected)
         || (createPersonItem ? aiActionPersonName(proposal, sourceQuickGrab, createPersonItem.action) : "");
       const newPersonName = personChoice.newPersonName || suggestedPersonName;
@@ -10876,10 +11011,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       };
     }
 
-    function aiAttachSourceLinks(record, proposal, sourceQuickGrabId) {
+    function aiActionExecutionKey(proposal, action = {}, index = 0) {
+      return `${proposal?.id || "proposal"}:${aiActionStableId(action, index)}`;
+    }
+
+    function aiAttachSourceLinks(record, proposal, sourceQuickGrabId, executionKey = "") {
       if (!record || !proposal) return;
       record.sourceAIProposalId = proposal.id;
       record.createdFromAIProposalId = proposal.id;
+      if (executionKey) record.sourceAIActionId = executionKey;
       if (sourceQuickGrabId && "createdFromQuickGrabId" in record) record.createdFromQuickGrabId = sourceQuickGrabId;
       record.updatedAt = nowISO();
     }
@@ -10899,6 +11039,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function applyAiProposalActions(proposal, validation, options = {}) {
+      if (!proposal || !aiProposalCanExecute(proposal) || proposal.result?.executedAt) {
+        throw new Error("These approved updates were already saved.");
+      }
       const createdIds = [];
       const createdTypes = [];
       const executedActions = [];
@@ -10911,8 +11054,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
       if (validation.willCreatePerson) {
         const person = createPerson(validation.newPersonName, createPersonItem?.action?.phone || "");
+        const personExecutionKey = aiActionExecutionKey(proposal, createPersonItem?.action || { actionType: "createPerson" }, createPersonItem?.index || 0);
         person.sourceAIProposalId = proposal.id;
         person.createdFromAIProposalId = proposal.id;
+        person.sourceAIActionId = personExecutionKey;
         if (sourceQuickGrabId) person.createdFromQuickGrabId = sourceQuickGrabId;
         person.updatedAt = nowISO();
         relatedPersonId = person.id;
@@ -10925,7 +11070,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       for (const item of selected) {
         const action = item.action;
         const type = aiActionType(action);
-        const personId = aiActionExistingPersonId(proposal, validation.sourceQuickGrab, action) || relatedPersonId;
+        const executionKey = aiActionExecutionKey(proposal, action, item.index);
+        const personId = validation.chosenExistingPersonId || aiActionExistingPersonId(proposal, validation.sourceQuickGrab, action) || relatedPersonId;
         const sensitiveFlag = Boolean(action.sensitiveFlag || validation.sourceQuickGrab?.sensitiveFlag || markSensitiveSelected);
         if (type === "createPerson") continue;
         if (type === "createNote") {
@@ -10935,7 +11081,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             sensitiveFlag
           });
           if (!note) throw new Error("Could not create the note.");
-          aiAttachSourceLinks(note, proposal, sourceQuickGrabId);
+          aiAttachSourceLinks(note, proposal, sourceQuickGrabId, executionKey);
           createdIds.push(note.id);
           createdTypes.push(note.noteType || "Note");
           executedActions.push(aiActionRecordResult(type, note, "Note"));
@@ -10949,10 +11095,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             prayerRequestText: action.prayerRequestText || "",
             nextFaithfulStep: action.nextFaithfulStep || "",
             followUpDate: aiSafeDate(action.followUpDate || ""),
-            sensitiveFlag
+            sensitiveFlag,
+            updatePersonDates: false
           });
           if (!meeting) throw new Error("Could not create the meeting note.");
-          aiAttachSourceLinks(meeting, proposal, sourceQuickGrabId);
+          aiAttachSourceLinks(meeting, proposal, sourceQuickGrabId, executionKey);
           createdIds.push(meeting.id);
           createdTypes.push("Meeting Note");
           executedActions.push(aiActionRecordResult(type, meeting, "Meeting Note"));
@@ -10966,7 +11113,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             shareableStatus: action.shareableStatus || settings.defaultShareableStatus
           });
           if (!prayer) throw new Error("Could not create the prayer request.");
-          aiAttachSourceLinks(prayer, proposal, sourceQuickGrabId);
+          aiAttachSourceLinks(prayer, proposal, sourceQuickGrabId, executionKey);
           createdIds.push(prayer.id);
           createdTypes.push("Prayer Request");
           executedActions.push(aiActionRecordResult(type, prayer, "Prayer Request"));
@@ -10975,10 +11122,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           const task = createProfileFollowUpRecord(personId, {
             title: aiActionText(action, ["title", "task", "label"]) || validation.sourceQuickGrab?.detectedFollowUp || "Follow up",
             dueDate: aiSafeDate(action.dueDate || proposal.result?.detectedFollowUpDate, daysFromNow(3)),
-            status: action.status || "Today / Soon"
+            status: action.status || "Today / Soon",
+            updatePersonDates: false
           });
           if (!task) throw new Error("Could not create the follow-up task.");
-          aiAttachSourceLinks(task, proposal, sourceQuickGrabId);
+          aiAttachSourceLinks(task, proposal, sourceQuickGrabId, executionKey);
           task.sourceType = sourceQuickGrabId ? "Quick Grab" : "AI Proposal";
           createdIds.push(task.id);
           createdTypes.push("Follow-Up Task");
@@ -11010,6 +11158,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         grab.updatedAt = nowISO();
       }
 
+      if (validation.sourceQuickGrab) {
+        validation.sourceQuickGrab.processingState = "saved";
+        validation.sourceQuickGrab.processingError = "";
+        validation.sourceQuickGrab.updatedAt = nowISO();
+      }
+
       const actionIndexes = selected.map(item => item.index);
       const actionReview = aiActionSelectionFromIndexes(proposal, actionIndexes);
       const allExecutableSelected = allExecutableAiActionIndexes(proposal).every(index => actionIndexes.includes(index));
@@ -11029,6 +11183,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         savedAt: timestamp,
         approvedAt: timestamp,
         executedActions,
+        executionKey: `${proposal.id}:${actionReview.selectedActionIds.slice().sort().join("+")}`,
+        executedActionKeys: selected.map(item => aiActionExecutionKey(proposal, item.action, item.index)),
         executedActionIndexes: actionIndexes,
         selectedActionIds: actionReview.selectedActionIds,
         skippedActionIds: actionReview.skippedActionIds,
@@ -11081,6 +11237,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const state = currentAiActionConfirmState();
       if (!state) return;
       const proposal = aiProposalById(state.proposalId);
+      if (!proposal || !aiProposalCanExecute(proposal) || proposal.result?.executedAt) {
+        showToast("These approved updates were already saved.");
+        clearAiActionConfirmState();
+        view.screen = "aiReview";
+        render();
+        return;
+      }
       const personChoice = aiSheetPersonChoiceFromDom();
       state.personChoice = personChoice;
       const validation = validateAiActionExecution(proposal, state.actionIndexes || [], {
@@ -11122,7 +11285,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         clearAiActionConfirmState();
         view.screen = "aiReview";
         view.aiReviewFocusId = proposal.id;
-        showToast(`Saved ${result.executedActions.length} selected AI action${result.executedActions.length === 1 ? "" : "s"}.`);
+        showToast(`Saved ${result.executedActions.length} approved update${result.executedActions.length === 1 ? "" : "s"}.`);
         render();
       } catch (error) {
         db = before;
@@ -11308,6 +11471,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "ai-proposal-approve-all") openAiActionConfirmSheet(id, "all");
       if (action === "ai-proposal-approve") updateAiProposalStatus(id, "approved");
       if (action === "ai-proposal-reject") updateAiProposalStatus(id, "rejected");
+      if (action === "ai-proposal-mark-sensitive") markAiProposalSensitive(id);
       if (action === "ai-proposal-archive") updateAiProposalStatus(id, "archived");
       if (action === "ai-proposal-open-source") openAiProposalSource(id);
       if (action === "unlock-app") unlockApp();
@@ -11318,9 +11482,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "lock-app") lockApp();
       if (action === "toggle-focus") toggleFocusMode();
       if (action === "grab-create") createQuickGrab();
-      if (action === "voice-capture") startDictation();
+      if (action === "capture-submit") submitUnifiedCapture(button.dataset.source, button.dataset.personId, button.dataset.mode, button);
+      if (action === "voice-capture") startDictation(button.dataset.target || "quick-text");
       if (action === "qg-process") openProcessing(id, []);
-      if (action === "qg-mock-ai") openQuickGrabMockAiGate(id);
+      if (action === "qg-mock-ai") beginCaptureProcessing(id);
       if (action === "qg-preset") openProcessing(id, [button.dataset.type]);
       if (action === "qg-toggle-more") toggleExpanded("expandedQuickGrabIds", id);
       if (action === "qg-done") updateQuickGrab(id, { status: "Done" }, "Marked done.");
@@ -11633,32 +11798,115 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       render();
     }
 
-    function createQuickGrab() {
-      const text = document.getElementById("quick-text").value.trim();
-      if (!text) {
-        showToast("Add a note first.");
-        return;
-      }
-      const tags = Array.from(document.querySelectorAll("#quick-tags .chip.active")).map(el => el.dataset.tag);
-      const urgencyButton = document.querySelector("#urgency-tags .chip.active");
-      const urgency = urgencyButton ? urgencyButton.dataset.urgency : "Whenever";
-      const grab = makeQuickGrab(text, tags, urgency);
-	      recordUndo("Quick Grab");
-	      db.quickGrabs.unshift(grab);
-	      saveData();
-	      clearAutosaveDraft("screen:quick");
-	      view.quickGrabDraftText = "";
-	      if (settings.autoOpenQuickGrabReview) {
-        view.screen = "process";
-        view.quickGrabId = grab.id;
-        view.processPreset = inferActions(grab);
-      } else {
-        view.screen = "quick";
-        view.quickGrabId = null;
-        view.processPreset = [];
-        showToast("Grabbed. You can process it later.");
-      }
+    function clearCaptureDraft(source = "main", personId = "") {
+      clearAutosaveDraft(captureDraftKey(source, personId));
+      if (source === "main") clearAutosaveDraft("screen:quick");
+    }
+
+    function captureProposalKey(grab) {
+      if (!grab) return "";
+      return `${grab.id}:${Math.max(1, Number(grab.captureRevision) || 1)}:${CAPTURE_PROCESSOR_VERSION}`;
+    }
+
+    function existingCaptureProposal(grab) {
+      if (!grab) return null;
+      const key = grab.proposalKey || captureProposalKey(grab);
+      return (db.aiProposals || []).find(proposal => proposal.proposalKey === key)
+        || (db.aiProposals || []).find(proposal => proposal.sourceType === "quickGrab" && proposal.sourceId === grab.id && proposal.sourceCaptureRevision === grab.captureRevision)
+        || (db.aiProposals || []).find(proposal => proposal.sourceType === "quickGrab" && proposal.sourceId === grab.id && proposal.proposalType === "quickGrabParse")
+        || null;
+    }
+
+    function markCaptureProcessingFailure(grabId, message = "Processing is unavailable right now.") {
+      const grab = db.quickGrabs.find(item => item.id === grabId);
+      if (!grab) return false;
+      grab.processingState = "failed";
+      grab.processingError = String(message || "Processing is unavailable right now.");
+      grab.lastProcessingAttemptAt = nowISO();
+      grab.updatedAt = nowISO();
+      saveData();
+      return true;
+    }
+
+    function openCaptureProposal(proposal) {
+      if (!proposal) return false;
+      view.sheet = null;
+      view.screen = "aiReview";
+      view.aiReviewFilter = ["approved", "partiallyApproved"].includes(proposal.status)
+        ? "Approved"
+        : proposal.status === "rejected" ? "Rejected" : proposal.status === "archived" ? "Archived" : "Pending";
+      view.aiReviewFocusId = proposal.id;
       render();
+      return true;
+    }
+
+    function beginCaptureProcessing(grabId) {
+      const grab = db.quickGrabs.find(item => item.id === grabId);
+      if (!grab) {
+        showToast("That capture is no longer available.");
+        return false;
+      }
+      const existing = existingCaptureProposal(grab);
+      if (existing) {
+        grab.proposalKey = existing.proposalKey || captureProposalKey(grab);
+        grab.processingState = "review";
+        grab.processingError = "";
+        saveData();
+        showToast("The existing suggested updates are ready to review.");
+        return openCaptureProposal(existing);
+      }
+      grab.proposalKey = captureProposalKey(grab);
+      grab.processingState = "awaitingApproval";
+      grab.processingError = "";
+      grab.lastProcessingAttemptAt = nowISO();
+      grab.updatedAt = nowISO();
+      saveData();
+      openQuickGrabMockAiGate(grab.id);
+      return true;
+    }
+
+    function submitUnifiedCapture(source = "main", personId = "", mode = "process", button = null) {
+      if (button?.dataset?.submitted === "true") return null;
+      const targetId = button?.dataset?.target || captureTextareaId(source);
+      const textarea = document.getElementById(targetId);
+      const text = String(textarea?.value || "").trim();
+      if (!text) {
+        showToast("Add what you want to remember first.");
+        return null;
+      }
+      if (button) {
+        button.dataset.submitted = "true";
+        button.disabled = true;
+      }
+      const captureMethod = textarea?.dataset?.captureMethod || (source === "main" ? view.quickGrabDraftSource : "") || source;
+      const captureSource = CAPTURE_SOURCES.includes(captureMethod) ? captureMethod : source;
+      const grab = makeQuickGrab(text, [], "Whenever", null, {
+        captureSource,
+        personId,
+        personLocked: source === "profile" && Boolean(personId)
+      });
+      grab.captureOrigin = source;
+      recordUndo("capture");
+      db.quickGrabs.unshift(grab);
+      saveData();
+      clearCaptureDraft(source, personId);
+      view.quickGrabDraftText = "";
+      view.quickGrabDraftSource = "";
+      if (textarea) textarea.value = "";
+      if (mode === "process") {
+        beginCaptureProcessing(grab.id);
+        return grab;
+      }
+      view.screen = source === "profile" ? "person" : source === "today" ? "today" : "quick";
+      view.quickGrabId = null;
+      view.processPreset = [];
+      showToast(personId ? "Saved for later with this person. No profile records changed." : "Saved for later. You can process it when ready.");
+      render();
+      return grab;
+    }
+
+    function createQuickGrab() {
+      return submitUnifiedCapture("main", "", "later");
     }
 
     function openProcessing(id, preset) {
@@ -12175,7 +12423,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         updatedAt: nowISO()
       };
       db.meetingNotes.unshift(meeting);
-      if (person) {
+      if (person && options.updatePersonDates !== false) {
         person.lastMeaningfulInteraction = meetingDate;
         person.updatedAt = nowISO();
       }
@@ -12224,7 +12472,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       };
       db.tasks.unshift(task);
       const person = personById(personId);
-      if (person) {
+      if (person && options.updatePersonDates !== false) {
         person.nextFollowUpDate = dueDate;
         person.followUpReason = title;
         person.updatedAt = nowISO();

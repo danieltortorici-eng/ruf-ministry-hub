@@ -111,3 +111,17 @@ Status: implemented locally on 2026-07-15; verification recorded with the phase 
 - Administrative Created/Updated timestamps are now hidden in normal UI and available only in collapsed Record details when both advanced actions and inline editing are deliberately enabled.
 - Added synthetic regression coverage for today/yesterday/tomorrow/weekday/overdue/next-week/same-year/prior-year/date-only boundaries, schema markers, old backup import, dormant-field round trip, and timestamp dormancy.
 - Verification: the focused app syntax, profile, deployment-contract, and regression commands exited 0; `npm test` then completed all maintained checks and audits with exit code 0.
+
+## Phase 5 — Unified capture and proposal processing
+
+Status: implemented locally on 2026-07-15; verification recorded with the phase commit.
+
+- Rebuilt the main Capture screen around one expanding field, one Process action, optional dictation, and quiet Save for later; visible category, urgency, and record-type selection was removed.
+- Added one capture composer/service contract for main, Today, profile, dictation, shared, imported, and future inputs. Raw text is persisted before the privacy/context gate opens.
+- Added additive capture source, revision, submission, processing, error, proposal, and person-lock metadata while retaining the existing `quickGrabs` collection.
+- Added deterministic proposal keys and safe retry routing. A refresh-interrupted processing state becomes a clear failed/retry state; backend failure keeps raw text and can fall back to the local mock without structured writes.
+- Reused `aiProposals` and its independent selections, action editing, partial approval, rejection, person change, and final confirmation. Review language is now Suggested updates, Review before saving, RUF Hub sorted this into…, and Save approved updates.
+- Added explicit Mark sensitive control and per-action source links. Repeated proposal execution is blocked.
+- Removed proposal-constructor side effects: approved create-meeting/create-follow-up actions no longer update person dates unless a separate selected `updatePerson` action does so.
+- Updated iPhone manual QA for unified capture and proposal review. No Pages Function, external AI contract, production setting, or secret changed.
+- Verification: `npm test` completed all maintained syntax, deployment, service-worker, profile, AI, backup, security, coordination, incident, asset, generated-output, and secret-boundary checks with exit code 0.

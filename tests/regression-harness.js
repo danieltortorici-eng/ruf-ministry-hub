@@ -318,8 +318,8 @@ function testQuickGrabSharedUrlImport() {
 
   assert(view().screen === "quick", "shared URL opens Quick Grab");
   assert(view().quickGrabDraftText === "Prayer capture", "shared URL populates Quick Grab draft");
-  assert(quickTagChips.find(chip => chip.dataset.tag === "Prayer").classList.contains("active"), "quickgrabCategory selects Prayer chip");
-  assert(urgencyChips.find(chip => chip.dataset.urgency === "Soon").classList.contains("active"), "quickgrabUrgency selects urgency chip");
+  assert(!quickTagChips.some(chip => chip.classList.contains("active")), "shared URL does not preselect a visible category");
+  assert(!urgencyChips.some(chip => chip.classList.contains("active")), "shared URL does not preselect visible urgency");
   assert(location.search === "", "shared URL params are removed after import");
 
   appEval("importQuickGrabFromCurrentUrl(); applyPendingUrlQuickGrabText();");
@@ -333,9 +333,112 @@ function testQuickGrabSharedUrlImport() {
 
   appEval("createQuickGrab();");
   const grab = db().quickGrabs[0];
-  assert(grab.rawContent === "Prayer capture", "shared draft saves as Quick Grab");
-  assert(grab.category === "Prayer", "shared category is used when saving");
-  assert(grab.urgency === "Soon", "shared urgency is used when saving");
+  assert(grab.rawContent === "Prayer capture", "shared draft saves through unified capture");
+  assert(grab.captureSource === "shared", "shared draft keeps its capture source");
+  assert(grab.category === "Prayer", "classification happens after shared text is captured");
+  assert(grab.urgency === "Whenever", "legacy urgency query input is dormant in the calm capture flow");
+}
+
+function testUnifiedCaptureAndProposalSafety() {
+  resetApp("emptyData()");
+  const captureMarkup = appEval('view.screen = "quick"; renderQuickGrab()');
+  assert(captureMarkup.includes("What do I need to remember?") && captureMarkup.includes('data-mode="process"'), "Capture asks one question and exposes Process as its primary action");
+  assert(!captureMarkup.includes('id="quick-tags"') && !captureMarkup.includes('id="urgency-tags"'), "Capture has no upfront category or urgency chooser");
+
+  const personId = appEval(`(() => {
+    const person = createPerson("Capture Test Person", "");
+    person.lastMeaningfulInteraction = "2026-07-01";
+    person.nextFollowUpDate = "2026-07-20";
+    person.followUpReason = "Existing reason";
+    return person.id;
+  })()`);
+  makeElement("profile-capture-text").value = "Remember that Capture Test Person is considering leadership.";
+  const beforeProfile = JSON.parse(JSON.stringify(db().people[0]));
+  appEval(`submitUnifiedCapture("profile", "${personId}", "later")`);
+  const savedLater = db().quickGrabs[0];
+  assert(savedLater.relatedPersonId === personId && savedLater.personLocked === true && savedLater.captureSource === "profile", "profile Save for later creates one locked person-linked capture");
+  assert(db().notes.length === 0 && db().meetingNotes.length === 0 && db().prayerRequests.length === 0 && db().tasks.length === 0, "profile Save for later creates no structured records");
+  assert(db().people[0].lastMeaningfulInteraction === beforeProfile.lastMeaningfulInteraction && db().people[0].nextFollowUpDate === beforeProfile.nextFollowUpDate && db().people[0].followUpReason === beforeProfile.followUpReason, "profile Save for later does not change person dates or permanent details");
+
+  makeElement("quick-text").value = "Met with Capture Test Person. Pray for wisdom and check in tomorrow.";
+  appEval('view.screen = "quick"; submitUnifiedCapture("main", "", "process")');
+  const processingGrab = db().quickGrabs[0];
+  assert(processingGrab.processingState === "awaitingApproval" && view().sheet?.type === "ai-gate", "Process saves raw capture before opening the privacy review");
+  assert(db().aiProposals.length === 0 && db().meetingNotes.length === 0 && db().prayerRequests.length === 0 && db().tasks.length === 0, "processing creates no proposal or permanent records before approval");
+
+  makeElement("sheet-ai-gate-confirm").checked = true;
+  appEval("submitAiGateContinue()");
+  assert(db().aiProposals.length === 1 && db().quickGrabs[0].processingState === "review", "approved local processing creates one review-only proposal");
+  const proposalId = db().aiProposals[0].id;
+  appEval(`beginCaptureProcessing("${processingGrab.id}")`);
+  assert(db().aiProposals.length === 1 && appEval("view.aiReviewFocusId") === proposalId, "retry reopens the existing proposal without duplication");
+  const reviewMarkup = appEval("renderAiReview()");
+  assert(reviewMarkup.includes("Suggested updates") && reviewMarkup.includes("RUF Hub sorted this into") && reviewMarkup.includes("Review selected"), "proposal review uses Calm OS approval language and independent selections");
+
+  appEval(`markAiProposalSensitive("${proposalId}")`);
+  assert(db().quickGrabs.find(item => item.id === processingGrab.id).sensitiveFlag === true, "review can explicitly mark the source capture sensitive");
+
+  const failedId = appEval(`(() => {
+    const grab = makeQuickGrab("Unprocessed text stays safe", [], "Whenever", null, { captureSource: "main" });
+    db.quickGrabs.unshift(grab);
+    markCaptureProcessingFailure(grab.id, "Network unavailable. Retry later.");
+    return grab.id;
+  })()`);
+  const failed = db().quickGrabs.find(item => item.id === failedId);
+  assert(failed.rawContent === "Unprocessed text stays safe" && failed.processingState === "failed", "failed processing preserves a clearly unprocessed raw capture");
+  const interrupted = appEval(`(() => {
+    const grab = makeQuickGrab("Interrupted processing", [], "Whenever", null, { captureSource: "main" });
+    grab.processingState = "processing";
+    return normalizeData({ ...emptyData(), quickGrabs: [grab] }).quickGrabs[0];
+  })()`);
+  assert(interrupted.processingState === "failed" && interrupted.processingError.includes("interrupted"), "interrupted processing becomes a safe retry state after reload");
+
+  appEval('view.screen = "quick"; settings.enableAutoSave = true');
+  makeElement("quick-text").value = "Half-written capture survives refresh";
+  appEval("saveCurrentDraftNow()");
+  makeElement("quick-text").value = "";
+  appEval("restoreAutosaveDraft()");
+  assert(makeElement("quick-text").value === "Half-written capture survives refresh", "main capture draft restores after interruption");
+}
+
+function testProposalActionsDoNotHidePersonDateUpdates() {
+  resetApp("emptyData()");
+  const result = appEval(`(() => {
+    const person = createPerson("Approval Boundary", "");
+    person.lastMeaningfulInteraction = "2026-06-01";
+    person.nextFollowUpDate = "2026-08-01";
+    person.followUpReason = "Keep this reason";
+    const grab = makeQuickGrab("Met with Approval Boundary and follow up tomorrow", [], "Whenever", null, { captureSource: "main" });
+    grab.relatedPersonId = person.id;
+    db.quickGrabs.unshift(grab);
+    const proposal = emptyAiProposal({
+      sourceType: "quickGrab",
+      sourceId: grab.id,
+      proposalKey: captureProposalKey(grab),
+      sourceCaptureRevision: grab.captureRevision,
+      proposedActions: [
+        { actionId: "meeting", actionType: "createMeetingNote", summary: "A grounded meeting summary", meetingDate: "2026-07-15" },
+        { actionId: "follow-up", actionType: "createFollowUpTask", title: "Send a check-in", dueDate: "2026-07-16" }
+      ]
+    });
+    db.aiProposals.unshift(proposal);
+    const validation = validateAiActionExecution(proposal, [0, 1], { personChoice: { mode: "existing", existingPersonId: person.id }, enforcePersonChoice: true });
+    applyAiProposalActions(proposal, validation, { convertQuickGrab: true });
+    const afterFirst = {
+      last: person.lastMeaningfulInteraction,
+      next: person.nextFollowUpDate,
+      reason: person.followUpReason,
+      meetings: db.meetingNotes.length,
+      tasks: db.tasks.length,
+      sourceActionIds: [db.meetingNotes[0].sourceAIActionId, db.tasks[0].sourceAIActionId]
+    };
+    let duplicateBlocked = false;
+    try { applyAiProposalActions(proposal, validation, { convertQuickGrab: true }); } catch (error) { duplicateBlocked = true; }
+    return { afterFirst, duplicateBlocked, meetingsAfterRetry: db.meetingNotes.length, tasksAfterRetry: db.tasks.length };
+  })()`);
+  assert(result.afterFirst.last === "2026-06-01" && result.afterFirst.next === "2026-08-01" && result.afterFirst.reason === "Keep this reason", "create meeting and follow-up approvals do not silently update unselected person fields");
+  assert(result.afterFirst.meetings === 1 && result.afterFirst.tasks === 1 && result.afterFirst.sourceActionIds.every(Boolean), "approved records store per-action idempotency links");
+  assert(result.duplicateBlocked && result.meetingsAfterRetry === 1 && result.tasksAfterRetry === 1, "repeated proposal execution cannot duplicate structured records");
 }
 
 function testCoreLocalActions() {
@@ -733,6 +836,8 @@ function testCurrentDocsDoNotClaimRemovedScreens() {
 async function run() {
   testCurrentScreensRender();
   testQuickGrabSharedUrlImport();
+  testUnifiedCaptureAndProposalSafety();
+  testProposalActionsDoNotHidePersonDateUpdates();
   testCoreLocalActions();
   testAdhdModeAndTodaySectionVisibility();
   testAutopilotAndAttentionPresets();

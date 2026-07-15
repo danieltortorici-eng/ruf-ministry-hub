@@ -95,3 +95,13 @@ This is the decision record for the Calm OS redesign. Decisions are constrained 
 - **Compatibility effect:** Synthetic pre-Calm version-2 import/export/re-import keeps the exact legacy field value; new people omit it.
 - **Files affected:** Authoritative deploy HTML, regression harness, migration/implementation records.
 - **Tests used:** Contextual date and legacy profile compatibility regression; full backup validation regression.
+
+### PD-010 — Save raw capture before any processing or classification review
+
+- **Decision:** Main, Today, profile, dictation, and shared/imported text all call one `submitUnifiedCapture` service that writes a normalized Quick Grab before opening the existing proposal privacy gate. Proposal identity is capture ID + revision + processor version.
+- **Alternatives considered:** Process text in memory before saving; keep profile and Today-specific capture handlers; add a new captures collection.
+- **Reason:** A saved raw capture is the safest interruption boundary and reuses the compatible Quick Grab/proposal stores.
+- **Cognitive-load effect:** Removes category and urgency choices before capture and gives every entry point the same Process / Save for later language.
+- **Compatibility effect:** Existing Quick Grabs normalize additively; old proposals are reused by source ID; new proposal/action keys prevent duplicate proposals and repeated structured writes.
+- **Files affected:** Authoritative deploy HTML, service-worker/CSP/package identities, focused regressions, iPhone manual QA.
+- **Tests used:** Unified capture, failure/retry, draft recovery, proposal reuse, per-action link, hidden person-date side-effect, AI function, profile, and deployment-contract regressions.
