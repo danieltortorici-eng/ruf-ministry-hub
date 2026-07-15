@@ -104,19 +104,21 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 - With a synthetic person marked Sensitive, confirm a saved follow-up reason is masked; clear or corrupt the follow-up date and confirm a stale reason is not shown.
 - Test a long fictional name, no photo, and a synthetic large local image. Confirm the 48px image area does not resize or shift while the card loads and the name wraps without overlap.
 - Create or open a person.
-- Tap Create New Person and confirm it opens an in-app sheet.
+- Tap Add person and confirm it opens an in-app sheet.
 - Try creating a likely duplicate and confirm the sheet asks you to confirm before saving.
 - Create a new non-duplicate person and confirm the new profile opens.
-- Edit phone, email, involvement, and follow-up reason.
-- Confirm each edit opens an in-app sheet instead of a browser popup.
-- Add a note, meeting note, prayer request, and follow-up task from the profile.
-- Confirm each quick action opens an in-app sheet instead of a browser popup.
-- Confirm closing the sheet does not save a blank record.
-- Save each sheet and confirm the item appears on the profile.
-- Confirm each item appears on the profile and in Search.
-- Pin and unpin the person.
-- Mark the person followed up and confirm the next follow-up clears.
-- Add and remove a profile photo if photo testing is in scope.
+- Confirm the top answers who this person is, why they need care, the contextual last/next timing, reason, and phone only when populated.
+- Confirm Right Now contains only Pray, Next thing, Remember, and Reminder; each statement must be traceable to a saved synthetic record, and sensitive text stays masked.
+- Confirm the shared capture says Add something about the person's first name, locks that person, and exposes Process plus quiet Dictate/Save for later choices.
+- Type an unfinished profile capture, choose Change person, and confirm the draft follows the new locked person without navigating away, creating records, or updating either profile.
+- Refresh with an unfinished profile capture and confirm the correct person-linked draft returns.
+- Tap Brief Me with AI unavailable. Confirm recent interaction, active prayer, current follow-up, useful questions, sensitivity warnings, and a plain low-information state are grounded locally; no Suggested update or permanent record is created.
+- Tap Follow Up and confirm a useful Short draft appears immediately, with quiet Casual/Pastoral variants. Copy a draft and confirm nothing is sent or completed.
+- Use the explicit quiet Mark followed up action and confirm only then does the next follow-up clear.
+- Open Profile Details. Edit phone, email, involvement, and follow-up reason; add/remove a profile photo; and confirm preferred contact and normal administrative timestamps remain absent.
+- Open More actions inside Profile Details and confirm Pin/Unpin and Mark followed up are secondary administration rather than top-level actions.
+- Confirm Notes, Meetings, Prayer Requests, Follow-Ups, and Timeline remain separate, empty sections are hidden, only three recent records appear initially, and View all restores every full record without Created/Updated clutter.
+- Create hundreds of synthetic history items and confirm the profile top stays the same length and initial history rendering remains bounded.
 - Open Duplicate People and confirm Merge opens an in-app sheet before removing a duplicate.
 
 ## Prayer

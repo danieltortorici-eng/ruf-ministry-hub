@@ -125,3 +125,13 @@ This is the decision record for the Calm OS redesign. Decisions are constrained 
 - **Compatibility effect:** Existing local photos, person fields, pinned settings, and follow-up data are read without migration. Pin and record administration remain available outside the list and are relocated through later Profile/Navigation phases.
 - **Files affected:** Authoritative deploy HTML/CSS, service-worker/CSP/package identities, People regression, iPhone manual QA, implementation record.
 - **Tests used:** Person-type-aware identity selection, initials/photo fallback, fixed image geometry, whole-card semantics, contextual date/reason, sensitive/stale reason handling, search focus restoration, sparse/long-name rendering, and forbidden metadata/action assertions; full maintained suite.
+
+### PD-013 — Ground profiles in present care and make history opt-in
+
+- **Decision:** Rebuild the normal profile as essential identity, a four-row grounded Right Now summary, the shared person-locked capture, local Brief Me/Follow Up actions, collapsed Profile Details, and five independently bounded history sections.
+- **Alternatives considered:** Preserve the field/stat grid and Quick Actions; create a new profile-record pipeline; generate briefing/drafts as AI Review proposals; render every historical record and a duplicate full timeline.
+- **Reason:** The profile must answer who, why, what next, and what to remember within seconds while keeping every saved record available without letting history dominate the top.
+- **Cognitive-load effect:** Removes the four-card stat grid, 11-field top grid, and 11-action cluster. One primary Process action remains; administration is under Profile Details/More, and each history section initially renders no more than three records.
+- **Compatibility effect:** Existing notes, meetings, prayers, tasks, photos, person fields, pin settings, and record-editing primitives are preserved. Profile input still writes `quickGrabs` through the shared approval pipeline; person switching moves only the recoverable draft. Briefs and drafts are local/copy-only and create no proposals or records.
+- **Files affected:** Authoritative deploy HTML/CSS, service-worker/CSP/package identities, profile and regression suites, iPhone manual QA, implementation record.
+- **Tests used:** Essential header, four grounded/masked Right Now rows, one-primary-action, linked capture/person switching, local Brief Me/Follow Up no-write guarantees, collapsed details, empty-section hiding, three-record caps, View all/full content, corrupt dates, and low-information regressions; full maintained suite.

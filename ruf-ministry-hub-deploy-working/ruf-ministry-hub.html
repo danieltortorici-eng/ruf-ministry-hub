@@ -916,6 +916,188 @@
       line-height: 1.05;
     }
 
+    .profile-back {
+      margin-bottom: var(--space-3);
+    }
+
+    .profile-essential {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
+      gap: var(--space-4);
+      align-items: center;
+      padding: var(--space-6);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .profile-essential-copy {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .profile-identity-line {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .profile-meta-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px var(--space-3);
+      color: var(--soft-ink);
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    .profile-meta-line span + span::before {
+      content: "·";
+      margin-right: var(--space-3);
+      color: var(--muted);
+    }
+
+    .profile-followup-reason {
+      margin: 0;
+      color: var(--soft-ink);
+      line-height: 1.4;
+    }
+
+    .right-now {
+      display: grid;
+      gap: 0;
+      padding: 0 var(--space-4);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .right-now-row {
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr);
+      gap: var(--space-3);
+      padding: var(--space-3) 0;
+      align-items: start;
+    }
+
+    .right-now-row + .right-now-row {
+      border-top: 1px solid var(--line);
+    }
+
+    .right-now-label {
+      color: var(--accent-strong);
+      font-weight: 820;
+    }
+
+    .right-now-value {
+      min-width: 0;
+      color: var(--soft-ink);
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
+    .profile-secondary-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+
+    .profile-details {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .profile-details > summary {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      padding: var(--space-3) var(--space-4);
+      color: var(--accent-strong);
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .profile-details-content {
+      display: grid;
+      gap: var(--space-4);
+      padding: 0 var(--space-4) var(--space-4);
+    }
+
+    .profile-history-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-4);
+      align-items: start;
+    }
+
+    .profile-history-section {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-3);
+    }
+
+    .profile-history-section.full-width {
+      grid-column: 1 / -1;
+    }
+
+    .profile-preview-list {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .profile-preview-row {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-1);
+      padding: var(--space-3);
+      border-radius: var(--radius-sm);
+      background: var(--surface-muted);
+    }
+
+    .profile-preview-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: var(--space-2);
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+
+    .profile-preview-title {
+      color: var(--ink);
+      font-weight: 780;
+    }
+
+    .profile-preview-text {
+      margin: 0;
+      color: var(--soft-ink);
+      line-height: 1.42;
+      overflow-wrap: anywhere;
+    }
+
+    .brief-grid {
+      display: grid;
+      gap: var(--space-3);
+    }
+
+    .draft-variant-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+
+    .draft-copy {
+      padding: var(--space-4);
+      border-radius: var(--radius);
+      background: var(--surface-muted);
+      color: var(--soft-ink);
+      line-height: 1.5;
+    }
+
     .stat-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1340,6 +1522,24 @@
         align-items: stretch;
       }
 
+      .profile-essential {
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: var(--space-3);
+        padding: var(--space-4);
+      }
+
+      .profile-history-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .profile-history-section.full-width {
+        grid-column: auto;
+      }
+
+      .right-now-row {
+        grid-template-columns: 76px minmax(0, 1fr);
+      }
+
       .top-actions {
         justify-content: flex-start;
         overflow-x: auto;
@@ -1463,7 +1663,7 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-people-v1";
+    const APP_VERSION = "2026.07.15-calm-os-profile-v1";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CAPTURE_PROCESSOR_VERSION = "calm-os-capture-v1";
@@ -1733,6 +1933,11 @@
       aiConfirmValidationWarnings: [],
       search: "",
       quickGrabDraftText: "",
+	      profileCaptureOwnerId: "",
+	      profileCapturePersonId: "",
+	      profileCaptureDraftText: "",
+	      profileCaptureDraftTargetId: "",
+	      profileHistoryExpanded: [],
 	      globalSearch: "",
 	      focusMode: settings.calmMode,
 	      locked: Boolean(settings.appLockEnabled && settings.pinHash),
@@ -2990,6 +3195,11 @@
         aiConfirmValidationWarnings: [],
         search: "",
         quickGrabDraftText: "",
+        profileCaptureOwnerId: "",
+        profileCapturePersonId: "",
+        profileCaptureDraftText: "",
+        profileCaptureDraftTargetId: "",
+        profileHistoryExpanded: [],
         globalSearch: "",
         focusMode: settings.calmMode,
         locked: Boolean(settings.appLockEnabled && settings.pinHash),
@@ -3051,7 +3261,7 @@
     function autosaveDraftKey() {
       if (view.screen === "quick") return "capture:main";
       if (view.screen === "today") return "capture:today";
-      if (view.screen === "person" && view.personId) return `capture:profile:${view.personId}`;
+      if (view.screen === "person" && (view.profileCapturePersonId || view.personId)) return `capture:profile:${view.profileCapturePersonId || view.personId}`;
       if (view.screen === "process" && view.quickGrabId) return "process:" + view.quickGrabId;
       if (view.screen === "snooze" && view.quickGrabId) return "snooze:" + view.quickGrabId;
       if (view.screen === "search") return "screen:search";
@@ -5335,12 +5545,25 @@
       return "capture:main";
     }
 
+    function profileCaptureOwnerKey(personId = "") {
+      return `capture:profile-owner:${personId}`;
+    }
+
+    function savedProfileCaptureTarget(personId = "") {
+      const targetId = String(loadAutosaveDrafts()[profileCaptureOwnerKey(personId)]?.targetPersonId || "");
+      return personById(targetId) ? targetId : "";
+    }
+
     function renderCaptureComposer(options = {}) {
       const source = ["today", "profile"].includes(options.source) ? options.source : "main";
       const person = source === "profile" ? personById(options.personId) : null;
       const targetId = captureTextareaId(source);
       const placeholder = options.placeholder || (person ? `Add something about ${personFirstName(person)}…` : "What do you need to remember?");
-      const initialValue = source === "main" ? view.quickGrabDraftText || "" : "";
+      const initialValue = source === "main"
+        ? view.quickGrabDraftText || ""
+        : source === "profile" && view.profileCaptureDraftTargetId === person?.id
+          ? view.profileCaptureDraftText || ""
+          : "";
       const processClass = options.compact ? "button" : "button primary";
       return `
         <div class="capture-composer" data-capture-composer="${escapeHtml(source)}" data-person-id="${escapeHtml(person?.id || "")}">
@@ -8972,7 +9195,300 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
+    function profileRecordIsSensitive(record, collection = "") {
+      return ["Private", "Sensitive", "Highly Sensitive", "Do Not Send to AI"].includes(aiPrivacyTierForRecord(record, collection));
+    }
+
+    function profileDateSort(items, fields = []) {
+      return [...items].sort((a, b) => {
+        const aValue = fields.map(field => a?.[field]).find(calendarDateParts) || "";
+        const bValue = fields.map(field => b?.[field]).find(calendarDateParts) || "";
+        const aDay = calendarDayNumber(aValue);
+        const bDay = calendarDayNumber(bValue);
+        if (aDay === null && bDay === null) return String(b?.updatedAt || "").localeCompare(String(a?.updatedAt || ""));
+        if (aDay === null) return 1;
+        if (bDay === null) return -1;
+        return bDay - aDay;
+      });
+    }
+
+    function profileRightNowEntry(text, sourceType = "", sourceId = "", sensitive = false, empty = false) {
+      return { text: String(text || ""), sourceType, sourceId, sensitive: Boolean(sensitive), empty: Boolean(empty) };
+    }
+
+    function buildProfileRightNow(personId, reference = new Date(), data = db) {
+      const person = data.people.find(item => item.id === personId);
+      if (!person) return null;
+      const prayers = profileDateSort(
+        data.prayerRequests.filter(item => item.relatedPersonId === personId && ["Follow-Up Needed", "Active"].includes(item.status)),
+        ["dateAdded", "updatedAt"]
+      ).sort((a, b) => Number(b.status === "Follow-Up Needed") - Number(a.status === "Follow-Up Needed"));
+      const tasks = data.tasks
+        .filter(item => item.relatedPersonId === personId && !["Done / Archived", "Done", "Archived"].includes(item.status))
+        .sort((a, b) => {
+          const aDue = calendarDayNumber(a.dueDate);
+          const bDue = calendarDayNumber(b.dueDate);
+          if (aDue === null && bDue === null) return String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""));
+          if (aDue === null) return 1;
+          if (bDue === null) return -1;
+          return aDue - bDue;
+        });
+      const meetings = profileDateSort(data.meetingNotes.filter(item => item.relatedPersonId === personId), ["meetingDate", "updatedAt"]);
+      const notes = profileDateSort(data.notes.filter(item => item.relatedPersonId === personId), ["noteDate", "updatedAt"]);
+      const prayer = prayers[0];
+      const nextTask = tasks[0];
+      const rememberedMeeting = meetings.find(item => String(item.whatToRemember || "").trim());
+      const rememberedNote = notes.find(item => String(item.content || "").trim());
+      const nextMeeting = meetings.find(item => String(item.nextFaithfulStep || "").trim());
+      const prayerReminder = prayers.find(item => calendarDateParts(item.followUpDate));
+      const personSensitive = profileRecordIsSensitive(person, "people");
+
+      const pray = prayer
+        ? profileRightNowEntry(prayer.request, "prayerRequests", prayer.id, profileRecordIsSensitive(prayer, "prayerRequests"))
+        : profileRightNowEntry("No active prayer concern saved.", "", "", false, true);
+      const nextThing = nextTask
+        ? profileRightNowEntry(nextTask.title, "tasks", nextTask.id, profileRecordIsSensitive(nextTask, "tasks"))
+        : calendarDateParts(person.nextFollowUpDate) && String(person.followUpReason || "").trim()
+          ? profileRightNowEntry(person.followUpReason, "people", person.id, personSensitive)
+          : nextMeeting
+            ? profileRightNowEntry(nextMeeting.nextFaithfulStep, "meetingNotes", nextMeeting.id, profileRecordIsSensitive(nextMeeting, "meetingNotes"))
+            : profileRightNowEntry("No current action saved.", "", "", false, true);
+      const remember = rememberedMeeting
+        ? profileRightNowEntry(rememberedMeeting.whatToRemember, "meetingNotes", rememberedMeeting.id, profileRecordIsSensitive(rememberedMeeting, "meetingNotes"))
+        : rememberedNote
+          ? profileRightNowEntry(rememberedNote.content, "notes", rememberedNote.id, profileRecordIsSensitive(rememberedNote, "notes"))
+          : profileRightNowEntry("No current detail saved.", "", "", false, true);
+      const reminder = calendarDateParts(person.nextFollowUpDate)
+        ? profileRightNowEntry(formatFollowUpDate(person.nextFollowUpDate, reference), "people", person.id, personSensitive)
+        : prayerReminder
+          ? profileRightNowEntry(`Prayer: ${formatFollowUpDate(prayerReminder.followUpDate, reference)}`, "prayerRequests", prayerReminder.id, profileRecordIsSensitive(prayerReminder, "prayerRequests"))
+          : profileRightNowEntry("No reminder saved.", "", "", false, true);
+      return { pray, nextThing, remember, reminder };
+    }
+
+    function renderProfileRightNowValue(entry, hiddenText) {
+      if (!entry) return "";
+      return escapeHtml(maskedText(entry.sensitive, hiddenText, entry.text));
+    }
+
+    function renderProfileRightNow(summary) {
+      if (!summary) return "";
+      const rows = [
+        ["Pray", summary.pray, "Sensitive prayer concern hidden."],
+        ["Next thing", summary.nextThing, "Sensitive action detail hidden."],
+        ["Remember", summary.remember, "Sensitive saved detail hidden."],
+        ["Reminder", summary.reminder, "Sensitive reminder hidden."]
+      ];
+      return `
+        <div class="right-now" data-profile-right-now>
+          ${rows.map(([label, entry, hiddenText]) => `
+            <div class="right-now-row" data-right-now-key="${escapeHtml(label.toLowerCase().replace(/\s+/g, "-"))}">
+              <span class="right-now-label">${escapeHtml(label)}:</span>
+              <span class="right-now-value">${renderProfileRightNowValue(entry, hiddenText)}</span>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function profilePreviewBody(kind, record, expanded = false) {
+      if (kind === "notes") return record.content || "";
+      if (kind === "meetings") {
+        const values = expanded
+          ? [record.whatWeTalkedAbout && `Talked about: ${record.whatWeTalkedAbout}`, record.whatToRemember && `Remember: ${record.whatToRemember}`, record.nextFaithfulStep && `Next: ${record.nextFaithfulStep}`]
+          : [record.whatToRemember || record.whatWeTalkedAbout || record.nextFaithfulStep];
+        return values.filter(Boolean).join(" · ");
+      }
+      if (kind === "prayers") return record.request || "";
+      if (kind === "tasks") return record.title || "";
+      if (kind === "timeline") return record.text || "";
+      return "";
+    }
+
+    function profilePreviewMeta(kind, record) {
+      if (kind === "notes") return formatHistoryDate(record.noteDate, "Note added") || "Note";
+      if (kind === "meetings") return formatHistoryDate(record.meetingDate, "Met") || "Meeting";
+      if (kind === "prayers") return formatHistoryDate(record.dateAdded, "Prayer added") || "Prayer";
+      if (kind === "tasks") return ["Done / Archived", "Done", "Archived"].includes(record.status)
+        ? formatHistoryDate(record.updatedAt || record.dueDate, "Completed") || "Completed"
+        : formatDueDate(record.dueDate);
+      if (kind === "timeline") return record.dateLabel || "Saved care history";
+      return "";
+    }
+
+    function profilePreviewTitle(kind, record) {
+      if (kind === "notes") return record.noteType || "Note";
+      if (kind === "meetings") return `${record.meetingType || "Ministry"} meeting`;
+      if (kind === "prayers") return record.status === "Answered" ? "Answered prayer" : record.status || "Prayer request";
+      if (kind === "tasks") return record.status || "Follow-up";
+      if (kind === "timeline") return record.title || "Care update";
+      return "Saved item";
+    }
+
+    function profilePreviewSensitive(kind, record) {
+      if (kind === "timeline") return Boolean(record.sensitive);
+      const collection = { notes: "notes", meetings: "meetingNotes", prayers: "prayerRequests", tasks: "tasks" }[kind] || "";
+      return profileRecordIsSensitive(record, collection);
+    }
+
+    function renderProfilePreview(kind, record, expanded = false) {
+      const body = profilePreviewBody(kind, record, expanded);
+      const hidden = kind === "prayers" ? "Sensitive prayer concern hidden." : "Sensitive saved detail hidden.";
+      const visibleBody = expanded ? body : conciseText(body, 180);
+      return `
+        <article class="profile-preview-row" data-profile-preview="${escapeHtml(kind)}">
+          <div class="profile-preview-head">
+            <span class="profile-preview-title">${escapeHtml(profilePreviewTitle(kind, record))}</span>
+            <span>${escapeHtml(profilePreviewMeta(kind, record))}</span>
+          </div>
+          ${visibleBody ? `<p class="profile-preview-text">${escapeHtml(maskedText(profilePreviewSensitive(kind, record), hidden, visibleBody))}</p>` : ""}
+        </article>
+      `;
+    }
+
+    function buildProfileTimeline(personId) {
+      const items = [];
+      db.meetingNotes.filter(item => item.relatedPersonId === personId).forEach(item => items.push({
+        id: item.id, kind: "meeting", date: item.meetingDate, dateLabel: formatHistoryDate(item.meetingDate, "Met"),
+        title: `${item.meetingType || "Ministry"} meeting`, text: item.whatToRemember || item.whatWeTalkedAbout || item.nextFaithfulStep || "", sensitive: profileRecordIsSensitive(item, "meetingNotes")
+      }));
+      db.notes.filter(item => item.relatedPersonId === personId).forEach(item => items.push({
+        id: item.id, kind: "note", date: item.noteDate, dateLabel: formatHistoryDate(item.noteDate, "Note added"),
+        title: item.noteType || "Note", text: item.content || "", sensitive: profileRecordIsSensitive(item, "notes")
+      }));
+      db.prayerRequests.filter(item => item.relatedPersonId === personId).filter(item => settings.showArchivedOnProfiles || item.status !== "Archived").forEach(item => items.push({
+        id: item.id, kind: "prayer", date: item.dateAdded, dateLabel: formatHistoryDate(item.dateAdded, item.status === "Answered" ? "Prayer answered" : "Prayer added"),
+        title: item.status === "Answered" ? "Answered prayer" : item.status || "Prayer request", text: item.request || "", sensitive: profileRecordIsSensitive(item, "prayerRequests")
+      }));
+      db.tasks.filter(item => item.relatedPersonId === personId).forEach(item => {
+        const createdDate = String(item.createdAt || "").slice(0, 10);
+        const date = calendarDateParts(createdDate) ? createdDate : item.dueDate;
+        items.push({
+          id: item.id, kind: "task", date, dateLabel: formatHistoryDate(date, "Follow-up planned"),
+          title: item.status === "Done / Archived" ? "Follow-up completed" : "Follow-up planned", text: item.title || "", sensitive: profileRecordIsSensitive(item, "tasks")
+        });
+      });
+      return profileDateSort(items, ["date"]);
+    }
+
+    function renderProfileHistorySection(key, title, items, options = {}) {
+      if (!items.length) return "";
+      const expanded = Array.isArray(view.profileHistoryExpanded) && view.profileHistoryExpanded.includes(key);
+      const visibleItems = expanded ? items : items.slice(0, 3);
+      return `
+        <section class="profile-history-section ${options.fullWidth ? "full-width" : ""}" data-profile-history="${escapeHtml(key)}" data-visible-count="${visibleItems.length}">
+          <div class="section-header">
+            <h2 class="section-title">${escapeHtml(title)}</h2>
+            <button class="button quiet small" data-action="profile-history-toggle" data-id="${escapeHtml(key)}" aria-expanded="${expanded}">${expanded ? "Show recent" : "View all"}</button>
+          </div>
+          <div class="profile-preview-list">${visibleItems.map(item => renderProfilePreview(options.kind || key, item, expanded)).join("")}</div>
+        </section>
+      `;
+    }
+
+    function renderProfileDetails(person) {
+      const pinned = isPinnedPerson(person.id);
+      return `
+        <details class="profile-details" data-profile-details>
+          <summary>Profile Details</summary>
+          <div class="profile-details-content">
+            <div class="form-grid">
+              ${profileField("Person type", person.personType || "Not set")}
+              ${profileField("Phone number", person.phone || "Not set")}
+              ${profileField("Email", person.email || "Not set")}
+              ${profileField("Class year", person.classYear || "Not applicable")}
+              ${profileField("Fraternity/sorority", person.fraternitySorority || "Not applicable")}
+              ${profileField("Major", person.major || "Not set")}
+              ${profileField("Hometown", person.hometown || "Not set")}
+              ${profileField("RUF involvement", person.rufInvolvement || "Not set")}
+              ${profileField("Donor status", person.donorStatus || "Not applicable")}
+              ${profileField("Follow-up reason", person.followUpReason || "Not set")}
+              <div class="field wide">
+                <label for="profile-photo-input">Profile picture</label>
+                <input class="input" id="profile-photo-input" type="file" accept="image/*" data-person-id="${escapeHtml(person.id)}">
+                <div class="meta">Photos stay on this device and are resized before local storage.</div>
+                ${person.photoDataUrl ? `<button class="button quiet small danger" data-action="person-remove-photo" data-id="${escapeHtml(person.id)}">Remove photo</button>` : ""}
+              </div>
+            </div>
+            <details class="disclosure">
+              <summary>More actions</summary>
+              <div class="action-row">
+                <button class="button quiet" data-action="person-pin" data-id="${escapeHtml(person.id)}">${pinned ? "Unpin person" : "Pin person"}</button>
+                <button class="button quiet" data-action="person-followed-up" data-id="${escapeHtml(person.id)}">Mark followed up</button>
+                ${settings.inlineEditing ? `<button class="button quiet" data-action="person-edit-field" data-id="${escapeHtml(person.id)}" data-field="name" data-label="Name">Edit name</button>` : ""}
+              </div>
+              ${timestampLine(person)}
+            </details>
+          </div>
+        </details>
+      `;
+    }
+
+    function renderCalmPersonProfile(person) {
+      if (view.profileCaptureOwnerId !== person.id) {
+        view.profileCaptureOwnerId = person.id;
+        view.profileCapturePersonId = savedProfileCaptureTarget(person.id) || person.id;
+        view.profileCaptureDraftText = "";
+        view.profileCaptureDraftTargetId = "";
+        view.profileHistoryExpanded = [];
+      }
+      const capturePerson = personById(view.profileCapturePersonId) || person;
+      view.profileCapturePersonId = capturePerson.id;
+      const notes = profileDateSort(db.notes.filter(item => item.relatedPersonId === person.id), ["noteDate", "updatedAt"]);
+      const meetings = profileDateSort(db.meetingNotes.filter(item => item.relatedPersonId === person.id), ["meetingDate", "updatedAt"]);
+      const prayers = profileDateSort(
+        db.prayerRequests.filter(item => item.relatedPersonId === person.id).filter(item => settings.showArchivedOnProfiles || item.status !== "Archived"),
+        ["dateAdded", "updatedAt"]
+      );
+      const tasks = profileDateSort(db.tasks.filter(item => item.relatedPersonId === person.id), ["dueDate", "updatedAt"]);
+      const timeline = buildProfileTimeline(person.id);
+      const followUpReason = usefulFollowUpReason(person);
+      const phone = String(person.phone || "").trim();
+      return `
+        <button class="button quiet small profile-back" data-action="nav" data-screen="people">Back to People</button>
+        <header class="profile-essential" data-profile-essential>
+          ${renderPersonPhoto(person)}
+          <div class="profile-essential-copy">
+            <h1 class="profile-name">${escapeHtml(person.name || "Unnamed person")}</h1>
+            <p class="profile-identity-line">${escapeHtml(personIdentityLine(person))}</p>
+            <div class="profile-meta-line">
+              <span>${escapeHtml(person.careLevel || "Care level not set")}</span>
+              <span>${escapeHtml(formatInteractionDate(person.lastMeaningfulInteraction))}</span>
+              <span>${escapeHtml(formatFollowUpDate(person.nextFollowUpDate))}</span>
+              ${phone ? `<span>Phone ${escapeHtml(phone)}</span>` : ""}
+            </div>
+            ${followUpReason ? `<p class="profile-followup-reason">${escapeHtml(followUpReason)}</p>` : ""}
+          </div>
+        </header>
+        <section class="section" aria-labelledby="right-now-title">
+          <div class="section-header"><h2 class="section-title" id="right-now-title">Right Now</h2></div>
+          ${renderProfileRightNow(buildProfileRightNow(person.id))}
+        </section>
+        <section class="section" aria-label="Add something about this person">
+          ${renderCaptureComposer({ source: "profile", personId: capturePerson.id })}
+          <div class="profile-secondary-actions" style="margin-top:var(--space-3);">
+            <button class="button quiet" data-action="profile-brief-open" data-id="${escapeHtml(person.id)}">Brief Me</button>
+            <button class="button quiet" data-action="profile-followup-open" data-id="${escapeHtml(person.id)}">Follow Up</button>
+          </div>
+        </section>
+        <section class="section">${renderProfileDetails(person)}</section>
+        <div class="profile-history-grid">
+          ${renderProfileHistorySection("notes", "Notes", notes)}
+          ${renderProfileHistorySection("meetings", "Meetings", meetings)}
+          ${renderProfileHistorySection("prayers", "Prayer Requests", prayers)}
+          ${renderProfileHistorySection("tasks", "Follow-Ups", tasks)}
+          ${renderProfileHistorySection("timeline", "Timeline", timeline, { fullWidth: true, kind: "timeline" })}
+        </div>
+      `;
+    }
+
     function renderPersonProfile() {
+      const person = personById(view.personId);
+      if (!person) return `${renderTopbar("Person Profile", "That profile could not be found.")}${emptyState("Open a person from the People screen.")}`;
+      return renderCalmPersonProfile(person);
+    }
+
+    function legacyRenderPersonProfile() {
       const person = personById(view.personId);
       if (!person) return `${renderTopbar("Person Profile", "That profile could not be found.")}${emptyState("Open a person from the People screen.")}`;
       const notes = db.notes.filter(note => note.relatedPersonId === person.id).sort((a, b) => b.noteDate.localeCompare(a.noteDate));
@@ -10650,6 +11166,257 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
+    function captureDraftText(draft) {
+      return String(draft?.fields?.["profile-capture-text"] || "");
+    }
+
+    function openProfileCapturePersonSheet(currentPersonId) {
+      const currentId = personById(currentPersonId) ? currentPersonId : view.profileCapturePersonId || view.personId;
+      const textarea = document.getElementById("profile-capture-text");
+      const text = String(textarea?.value || view.profileCaptureDraftText || "");
+      view.profileCaptureDraftText = text;
+      view.profileCaptureDraftTargetId = currentId;
+      saveCurrentDraftNow();
+      view.sheet = { type: "capture-person", currentPersonId: currentId, error: "" };
+      render();
+    }
+
+    function renderProfileCapturePersonSheet(sheet) {
+      const currentId = personById(sheet.currentPersonId) ? sheet.currentPersonId : view.personId;
+      const options = [...db.people]
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
+        .map(person => `<option value="${escapeHtml(person.id)}" ${person.id === currentId ? "selected" : ""}>${escapeHtml(person.name || "Unnamed person")}</option>`)
+        .join("");
+      return `
+        <div class="sheet-backdrop" data-action="sheet-close">
+          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="capture-person-title" data-sheet-panel>
+            <div class="sheet-head">
+              <div><div class="eyebrow">Capture context</div><h2 id="capture-person-title">Change person</h2></div>
+              <button class="button quiet" data-action="sheet-close" aria-label="Close">Close</button>
+            </div>
+            <div class="sheet-body">
+              ${sheetField("Person for this capture", `<select class="select" id="sheet-capture-person">${options}</select>`)}
+              <div class="meta">The profile stays open. Only this unsaved capture's locked person changes.</div>
+              ${sheet.error ? `<div class="notice danger" role="alert">${escapeHtml(sheet.error)}</div>` : ""}
+            </div>
+            <div class="sheet-actions">
+              <button class="button quiet" data-action="sheet-close">Cancel</button>
+              <button class="button primary" data-action="capture-person-save">Use this person</button>
+            </div>
+          </section>
+        </div>
+      `;
+    }
+
+    function submitProfileCapturePersonSheet() {
+      const sheet = view.sheet;
+      if (!sheet || sheet.type !== "capture-person") return;
+      const oldId = personById(sheet.currentPersonId) ? sheet.currentPersonId : view.profileCapturePersonId || view.personId;
+      const nextId = document.getElementById("sheet-capture-person")?.value || "";
+      const ownerId = personById(view.profileCaptureOwnerId) ? view.profileCaptureOwnerId : view.personId;
+      if (!personById(nextId)) {
+        sheet.error = "Choose an available person.";
+        render();
+        return;
+      }
+      if (nextId === oldId) {
+        view.sheet = null;
+        render();
+        return;
+      }
+      const drafts = loadAutosaveDrafts();
+      const oldKey = captureDraftKey("profile", oldId);
+      const nextKey = captureDraftKey("profile", nextId);
+      const pendingText = String(view.profileCaptureDraftText || captureDraftText(drafts[oldKey]) || "");
+      const existingText = captureDraftText(drafts[nextKey]);
+      if (pendingText.trim() && existingText.trim() && pendingText !== existingText) {
+        sheet.error = "That person already has a different saved draft. Process or clear one draft before moving this text.";
+        render();
+        return;
+      }
+      if (settings.enableAutoSave) {
+        if (pendingText.trim()) {
+          const moved = cloneJson(drafts[oldKey] || {
+            key: nextKey,
+            fields: { "profile-capture-text": pendingText },
+            screen: "person",
+            updatedAt: nowISO()
+          });
+          moved.key = nextKey;
+          moved.fields = { ...(moved.fields || {}), "profile-capture-text": pendingText };
+          moved.updatedAt = nowISO();
+          drafts[nextKey] = moved;
+        }
+        delete drafts[oldKey];
+        drafts[profileCaptureOwnerKey(ownerId)] = {
+          key: profileCaptureOwnerKey(ownerId),
+          targetPersonId: nextId,
+          screen: "person",
+          updatedAt: nowISO()
+        };
+        saveAutosaveDrafts(drafts);
+      }
+      view.profileCapturePersonId = nextId;
+      view.profileCaptureDraftText = pendingText || existingText;
+      view.profileCaptureDraftTargetId = nextId;
+      view.sheet = null;
+      showToast(`Capture linked to ${personById(nextId).name}. No profile records changed.`);
+      render();
+    }
+
+    function buildLocalPersonBriefing(personId) {
+      const person = personById(personId);
+      if (!person) return null;
+      const contextReview = buildPersonBriefingContextReview(personId);
+      const context = contextReview.blocked
+        ? { person: null, notes: [], meetings: [], prayers: [], tasks: [] }
+        : personBriefingAllowedContext(personId);
+      const meeting = context.meetings[0];
+      const prayer = context.prayers[0];
+      const task = context.tasks[0];
+      const recentInteraction = contextReview.blocked
+        ? profileRightNowEntry("This profile is excluded from briefing context by its privacy setting.", "", "", false, true)
+        : meeting
+        ? profileRightNowEntry(`${formatInteractionDate(meeting.meetingDate)} · ${meeting.whatToRemember || meeting.whatWeTalkedAbout || "Saved meeting"}`, "meetingNotes", meeting.id, profileRecordIsSensitive(meeting, "meetingNotes"))
+        : profileRightNowEntry(formatInteractionDate(person.lastMeaningfulInteraction), "people", person.id, profileRecordIsSensitive(person, "people"));
+      const activePrayer = prayer
+        ? profileRightNowEntry(prayer.request, "prayerRequests", prayer.id, profileRecordIsSensitive(prayer, "prayerRequests"))
+        : profileRightNowEntry("No active prayer request is available in the approved local context.", "", "", false, true);
+      const currentFollowUp = contextReview.blocked
+        ? profileRightNowEntry("No follow-up detail is included in this briefing context.", "", "", false, true)
+        : task
+        ? profileRightNowEntry(`${task.title}${calendarDateParts(task.dueDate) ? ` · ${formatDueDate(task.dueDate)}` : ""}`, "tasks", task.id, profileRecordIsSensitive(task, "tasks"))
+        : calendarDateParts(person.nextFollowUpDate)
+          ? profileRightNowEntry(`${formatFollowUpDate(person.nextFollowUpDate)}${usefulFollowUpReason(person) ? ` · ${usefulFollowUpReason(person)}` : ""}`, "people", person.id, profileRecordIsSensitive(person, "people"))
+          : profileRightNowEntry("No current follow-up is saved.", "", "", false, true);
+      const informationCount = context.notes.length + context.meetings.length + context.prayers.length + context.tasks.length;
+      return {
+        person,
+        recentInteraction,
+        activePrayer,
+        currentFollowUp,
+        usefulQuestions: [
+          "What feels most important to talk about today?",
+          prayer ? "How would you like me to keep praying about this?" : "How can I pray for you right now?",
+          "What would be a helpful next step after today?"
+        ],
+        warnings: Array.from(new Set(contextReview.warnings || [])),
+        littleInformation: informationCount === 0 && !calendarDateParts(person.lastMeaningfulInteraction) && !calendarDateParts(person.nextFollowUpDate)
+      };
+    }
+
+    function openProfileBrief(personId) {
+      if (!personById(personId)) return;
+      view.sheet = { type: "person-brief", personId };
+      render();
+    }
+
+    function renderProfileBriefSheet(sheet) {
+      const briefing = buildLocalPersonBriefing(sheet.personId);
+      if (!briefing) return "";
+      const briefRows = [
+        ["Recent interaction", briefing.recentInteraction, "Sensitive interaction detail hidden."],
+        ["Active prayer", briefing.activePrayer, "Sensitive prayer concern hidden."],
+        ["Current follow-up", briefing.currentFollowUp, "Sensitive follow-up detail hidden."]
+      ];
+      return `
+        <div class="sheet-backdrop" data-action="sheet-close">
+          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="person-brief-title" data-sheet-panel data-profile-brief>
+            <div class="sheet-head">
+              <div><div class="eyebrow">Grounded local briefing</div><h2 id="person-brief-title">Brief Me on ${escapeHtml(briefing.person.name)}</h2></div>
+              <button class="button quiet" data-action="sheet-close" aria-label="Close">Close</button>
+            </div>
+            <div class="sheet-body brief-grid">
+              ${briefing.littleInformation ? `<div class="notice">There is very little saved about this person yet. This brief stays general rather than guessing.</div>` : ""}
+              ${briefing.warnings.length ? `<div class="notice danger"><strong>Sensitive context warning.</strong><ul>${briefing.warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul></div>` : ""}
+              ${briefRows.map(([label, entry, hidden]) => `<div class="notice"><strong>${escapeHtml(label)}</strong><div class="meta">${renderProfileRightNowValue(entry, hidden)}</div></div>`).join("")}
+              <div class="notice"><strong>Useful questions</strong><ul>${briefing.usefulQuestions.map(question => `<li>${escapeHtml(question)}</li>`).join("")}</ul></div>
+              <div class="meta">Built only from saved, approved local context. No AI or network connection is required, and no records were changed.</div>
+            </div>
+            <div class="sheet-actions"><button class="button quiet" data-action="sheet-close">Close</button></div>
+          </section>
+        </div>
+      `;
+    }
+
+    function buildLocalProfileFollowUp(personId) {
+      const person = personById(personId);
+      if (!person) return null;
+      const contextReview = buildFollowUpDraftContextReview("person", personId);
+      const allowed = followUpDraftAllowedContext("person", personId);
+      const context = {
+        ...allowed,
+        sourceType: "person",
+        source: allowed.source || {},
+        person: allowed.person || { name: person.name }
+      };
+      return {
+        person,
+        drafts: buildFollowUpDraftOptions(context, contextReview),
+        warnings: Array.from(new Set(contextReview.warnings || []))
+      };
+    }
+
+    function openProfileFollowUp(personId) {
+      if (!personById(personId)) return;
+      view.sheet = { type: "profile-followup", personId, draftIndex: 0 };
+      render();
+    }
+
+    function renderProfileFollowUpSheet(sheet) {
+      const result = buildLocalProfileFollowUp(sheet.personId);
+      if (!result) return "";
+      const selectedIndex = Math.max(0, Math.min(result.drafts.length - 1, Number(sheet.draftIndex) || 0));
+      const selected = result.drafts[selectedIndex];
+      return `
+        <div class="sheet-backdrop" data-action="sheet-close">
+          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="profile-followup-title" data-sheet-panel data-profile-followup>
+            <div class="sheet-head">
+              <div><div class="eyebrow">Copy-only draft</div><h2 id="profile-followup-title">Follow Up with ${escapeHtml(result.person.name)}</h2></div>
+              <button class="button quiet" data-action="sheet-close" aria-label="Close">Close</button>
+            </div>
+            <div class="sheet-body brief-grid">
+              ${result.warnings.length ? `<div class="notice danger"><strong>Privacy reminder.</strong> Keep sensitive details vague unless this person expects them.</div>` : ""}
+              <div class="draft-copy" role="status">${escapeHtml(selected?.text || "No draft is available.")}</div>
+              <div class="draft-variant-row" aria-label="Draft tone">
+                ${result.drafts.map((draft, index) => `<button class="button quiet small" data-action="profile-followup-variant" data-id="${escapeHtml(result.person.id)}" data-draft-index="${index}" aria-pressed="${index === selectedIndex}">${escapeHtml(draft.tone)}</button>`).join("")}
+              </div>
+              <div class="meta">Nothing is sent automatically. Opening or copying a draft does not mark this follow-up complete.</div>
+            </div>
+            <div class="sheet-actions">
+              <button class="button quiet" data-action="profile-followup-mark" data-id="${escapeHtml(result.person.id)}">Mark followed up</button>
+              <button class="button primary" data-action="profile-followup-copy" data-id="${escapeHtml(result.person.id)}" data-draft-index="${selectedIndex}">Copy draft</button>
+            </div>
+          </section>
+        </div>
+      `;
+    }
+
+    function setProfileFollowUpVariant(index) {
+      if (!view.sheet || view.sheet.type !== "profile-followup") return;
+      view.sheet.draftIndex = Math.max(0, Number(index) || 0);
+      render();
+    }
+
+    function copyProfileFollowUpDraft(personId, index) {
+      const result = buildLocalProfileFollowUp(personId);
+      const draft = result?.drafts?.[Math.max(0, Number(index) || 0)];
+      copyPlainText(draft?.text || "", "Draft copied. Nothing was sent or completed.", "Follow-up draft:");
+    }
+
+    function markProfileFollowedUp(personId) {
+      view.sheet = null;
+      markFollowedUp(personId);
+    }
+
+    function toggleProfileHistory(key) {
+      const expanded = new Set(Array.isArray(view.profileHistoryExpanded) ? view.profileHistoryExpanded : []);
+      if (expanded.has(key)) expanded.delete(key);
+      else expanded.add(key);
+      view.profileHistoryExpanded = Array.from(expanded);
+      render();
+    }
+
     function renderSheet() {
       if (!view.sheet) return "";
       if (view.sheet.type === "profile-action") return renderProfileActionSheet(view.sheet);
@@ -10662,6 +11429,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (view.sheet.type === "ai-action-edit") return renderAiActionEditSheet(view.sheet);
       if (view.sheet.type === "create-person") return renderCreatePersonSheet();
       if (view.sheet.type === "today-later") return renderTodayLaterSheet(view.sheet);
+      if (view.sheet.type === "capture-person") return renderProfileCapturePersonSheet(view.sheet);
+      if (view.sheet.type === "person-brief") return renderProfileBriefSheet(view.sheet);
+      if (view.sheet.type === "profile-followup") return renderProfileFollowUpSheet(view.sheet);
       if (view.sheet.type === "donor-update-builder") return renderDonorUpdateBuilderSheet(view.sheet);
       if (view.sheet.type === "ai-gate") return renderAiGateSheet(view.sheet);
       if (view.sheet.type === "ai-action-confirm") return renderAiActionConfirmSheet(view.sheet);
@@ -12030,6 +12800,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         submitCreatePersonSheet();
         return;
       }
+      if (action === "capture-person-save") {
+        submitProfileCapturePersonSheet();
+        return;
+      }
       if (action === "prayer-sheet-save") {
         submitPrayerActionSheet(button.dataset.kind, id);
         return;
@@ -12117,6 +12891,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "toggle-focus") toggleFocusMode();
       if (action === "grab-create") createQuickGrab();
       if (action === "capture-submit") submitUnifiedCapture(button.dataset.source, button.dataset.personId, button.dataset.mode, button);
+      if (action === "capture-change-person") openProfileCapturePersonSheet(id);
       if (action === "voice-capture") startDictation(button.dataset.target || "quick-text");
       if (action === "qg-process") openProcessing(id, []);
       if (action === "qg-mock-ai") beginCaptureProcessing(id);
@@ -12144,6 +12919,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         recordRecentPerson(id);
         view.screen = "person";
         view.personId = id;
+        view.profileCaptureOwnerId = "";
+        view.profileCapturePersonId = "";
+        view.profileCaptureDraftText = "";
+        view.profileCaptureDraftTargetId = "";
+        view.profileHistoryExpanded = [];
         render();
       }
       if (action === "person-pin") togglePinnedPerson(id);
@@ -12154,6 +12934,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "person-add-prayer") openProfileActionSheet("prayer", id);
       if (action === "person-add-followup") openProfileActionSheet("followup", id);
       if (action === "person-brief") openPersonBriefingMockAiGate(id);
+      if (action === "profile-brief-open") openProfileBrief(id);
+      if (action === "profile-followup-open") openProfileFollowUp(id);
+      if (action === "profile-followup-variant") setProfileFollowUpVariant(button.dataset.draftIndex);
+      if (action === "profile-followup-copy") copyProfileFollowUpDraft(id, button.dataset.draftIndex);
+      if (action === "profile-followup-mark") markProfileFollowedUp(id);
+      if (action === "profile-history-toggle") toggleProfileHistory(id);
       if (action === "followup-draft") openFollowUpDraftMockAiGate(button.dataset.sourceType, id);
       if (action === "person-copy-briefing") copyLocalBriefing(id);
       if (action === "person-copy-drafts") copyTextDrafts(id);
@@ -12526,6 +13312,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       clearCaptureDraft(source, personId);
       view.quickGrabDraftText = "";
       view.quickGrabDraftSource = "";
+      if (source === "profile") {
+        clearAutosaveDraft(profileCaptureOwnerKey(view.profileCaptureOwnerId || view.personId));
+        view.profileCapturePersonId = view.profileCaptureOwnerId || view.personId || personId;
+        view.profileCaptureDraftText = "";
+        view.profileCaptureDraftTargetId = "";
+      }
       if (textarea) textarea.value = "";
       if (mode === "process") {
         beginCaptureProcessing(grab.id);
@@ -13564,6 +14356,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         aiConfirmValidationWarnings: [],
         search: "",
 	        quickGrabDraftText: "",
+	        profileCaptureOwnerId: "",
+	        profileCapturePersonId: "",
+	        profileCaptureDraftText: "",
+	        profileCaptureDraftTargetId: "",
+	        profileHistoryExpanded: [],
 	        globalSearch: "",
 	        focusMode: settings.calmMode,
 	        locked: Boolean(settings.appLockEnabled && settings.pinHash),

@@ -221,7 +221,9 @@ function run() {
 
   const profileHtml = appEval("renderPersonProfile()");
   assert(profileHtml.includes("Phone number") && profileHtml.includes("555-1111"), "profile renders phone number");
-  assert(profileHtml.includes("Quick Actions"), "profile renders quick actions");
+  assert(profileHtml.includes("Right Now") && profileHtml.includes("Brief Me") && profileHtml.includes("Follow Up"), "profile renders present-care actions");
+  assert(!profileHtml.includes("Quick Actions"), "profile removes the parallel direct-create action cluster");
+  assert(profileHtml.includes("Profile Details") && !profileHtml.includes("Preferred contact"), "profile keeps administration collapsed without dormant contact preference");
 
   setPrompts(["555-2222"]);
   appEval(`editPersonField("${personId}", "phone", "Phone number")`);

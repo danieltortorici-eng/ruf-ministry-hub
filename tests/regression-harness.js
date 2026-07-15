@@ -621,6 +621,93 @@ function testPeopleCardCalmContract() {
   assert(!peopleMarkup.includes("Preferred contact") && !peopleMarkup.includes("Created") && !peopleMarkup.includes("Updated"), "People list omits dormant and administrative metadata");
 }
 
+function testCalmProfileContract() {
+  resetApp("emptyData()");
+  const ids = appEval(`(() => {
+    const person = createPerson("Jordan Rivera", "555-0188");
+    person.personType = "Student";
+    person.rufInvolvement = "Leadership team";
+    person.careLevel = "Check in soon";
+    person.lastMeaningfulInteraction = daysAgo(14);
+    person.nextFollowUpDate = daysFromNow(1);
+    person.followUpReason = "Ask how the transition is going";
+    for (let index = 0; index < 5; index += 1) {
+      createProfileNoteRecord(person.id, { content: index === 0 ? "Saved note 0 " + "x".repeat(220) + " FULL END" : "Saved note " + index, noteDate: daysAgo(index), noteType: "Care note" });
+    }
+    const meeting = createProfileMeetingRecord(person.id, {
+      summary: "Synthetic meeting summary",
+      whatToRemember: "Private grounded memory",
+      nextFaithfulStep: "Ask about the saved next step",
+      meetingDate: daysAgo(2),
+      sensitiveFlag: true,
+      updatePersonDates: false
+    });
+    const prayer = createProfilePrayerRecord(person.id, { request: "Private grounded prayer concern", sensitiveFlag: true });
+    const task = createProfileFollowUpRecord(person.id, { title: "Send the saved check-in", dueDate: todayISO(), updatePersonDates: false });
+    for (let index = 0; index < 3; index += 1) {
+      createProfileMeetingRecord(person.id, { summary: "Older meeting " + index, whatToRemember: "Older memory " + index, meetingDate: daysAgo(index + 5), updatePersonDates: false });
+      createProfilePrayerRecord(person.id, { request: "Older prayer " + index, dateAdded: daysAgo(index + 5) });
+      createProfileFollowUpRecord(person.id, { title: "Later task " + index, dueDate: daysFromNow(index + 3), updatePersonDates: false });
+    }
+    view.screen = "person";
+    view.personId = person.id;
+    return { person: person.id, meeting: meeting.id, prayer: prayer.id, task: task.id };
+  })()`);
+
+  const profile = appEval("renderPersonProfile()");
+  assert(profile.includes('data-profile-essential') && profile.includes("Jordan Rivera") && profile.includes("Student · Leadership team"), "profile header answers who this person is");
+  assert(profile.includes("Check in soon") && profile.includes("Met 2 weeks ago") && profile.includes("Follow up tomorrow") && profile.includes("Phone 555-0188"), "profile header shows grounded care and contextual contact timing");
+  assert((profile.match(/data-right-now-key=/g) || []).length === 4 && profile.includes("Pray:") && profile.includes("Next thing:") && profile.includes("Remember:") && profile.includes("Reminder:"), "Right Now contains exactly four grounded care prompts");
+  assert(profile.includes("Sensitive prayer concern hidden.") && profile.includes("Sensitive saved detail hidden.") && profile.includes("Send the saved check-in"), "Right Now masks sensitive evidence and keeps a grounded next action");
+  assert(profile.includes('data-capture-composer="profile"') && profile.includes("Add something about Jordan…") && profile.includes("Person locked for this capture") && profile.includes("Change person"), "profile uses the shared person-locked capture composer");
+  assert((profile.match(/class="button primary"/g) || []).length === 1 && profile.includes("Brief Me") && profile.includes("Follow Up"), "profile has one primary Process action and two visible secondary care actions");
+  assert(profile.includes('<details class="profile-details"') && profile.includes("More actions"), "profile administration stays inside collapsed Profile Details and More");
+  assert(!profile.includes("Quick Actions") && !profile.includes("Preferred contact") && !profile.includes("Created:") && !profile.includes("Updated:"), "normal profile removes direct-create, dormant, and timestamp clutter");
+
+  ["notes", "meetings", "prayers", "tasks", "timeline"].forEach(key => {
+    assert(profile.includes(`data-profile-history="${key}"`), `nonempty ${key} profile history stays separate`);
+    assert((profile.match(new RegExp(`data-profile-preview="${key}"`, "g")) || []).length <= 3, `${key} profile history starts with at most three records`);
+  });
+  assert((profile.match(/data-profile-preview="notes"/g) || []).length === 3, "profile initially shows at most three recent notes");
+  assert(profile.includes('data-action="profile-history-toggle" data-id="notes"') && profile.includes("View all"), "profile offers View all when more history exists");
+  const expanded = appEval('toggleProfileHistory("notes"); renderPersonProfile()');
+  assert((expanded.match(/data-profile-preview="notes"/g) || []).length === 5 && expanded.includes("Show recent") && expanded.includes("FULL END"), "View all restores complete untruncated note access on demand");
+
+  const countsBefore = `${db().notes.length}|${db().meetingNotes.length}|${db().prayerRequests.length}|${db().tasks.length}|${db().aiProposals.length}`;
+  appEval(`settings.aiMockMode = false; openProfileBrief("${ids.person}")`);
+  const briefMarkup = appEval("renderSheet()");
+  assert(view().sheet?.type === "person-brief" && briefMarkup.includes("Grounded local briefing") && briefMarkup.includes("Useful questions"), "Brief Me opens a useful local briefing immediately");
+  assert(briefMarkup.includes("Sensitive context warning") && briefMarkup.includes("No AI or network connection is required"), "Brief Me warns about sensitive context and works without AI");
+  assert(`${db().notes.length}|${db().meetingNotes.length}|${db().prayerRequests.length}|${db().tasks.length}|${db().aiProposals.length}` === countsBefore, "Brief Me creates no proposals or permanent records");
+
+  appEval(`openProfileFollowUp("${ids.person}")`);
+  const followMarkup = appEval("renderSheet()");
+  assert(view().sheet?.type === "profile-followup" && followMarkup.includes("Hey Jordan") && followMarkup.includes("Short") && followMarkup.includes("Casual") && followMarkup.includes("Pastoral"), "Follow Up opens an immediate draft with quiet tone variants");
+  const datesBeforeDraft = `${db().people[0].lastMeaningfulInteraction}|${db().people[0].nextFollowUpDate}`;
+  appEval(`copyProfileFollowUpDraft("${ids.person}", 0)`);
+  assert(`${db().people[0].lastMeaningfulInteraction}|${db().people[0].nextFollowUpDate}` === datesBeforeDraft && db().aiProposals.length === 0, "copying a Follow Up draft sends nothing and completes nothing");
+
+  appEval("settings.enableAutoSave = true");
+  const otherId = appEval('createPerson("Taylor Morgan").id');
+  makeElement("profile-capture-text").value = "Transfer this interrupted profile draft";
+  appEval(`view.sheet = null; openProfileCapturePersonSheet("${ids.person}")`);
+  assert(view().sheet?.type === "capture-person", "Change person opens a quiet locked-context chooser");
+  makeElement("sheet-capture-person").value = otherId;
+  const structuredBeforeChange = `${db().notes.length}|${db().meetingNotes.length}|${db().prayerRequests.length}|${db().tasks.length}`;
+  appEval("submitProfileCapturePersonSheet()");
+  assert(appEval("view.profileCapturePersonId") === otherId && appEval(`loadAutosaveDrafts()[captureDraftKey("profile", "${otherId}")].fields["profile-capture-text"]`) === "Transfer this interrupted profile draft", "Change person moves the recoverable draft to the new locked target");
+  assert(`${db().notes.length}|${db().meetingNotes.length}|${db().prayerRequests.length}|${db().tasks.length}` === structuredBeforeChange, "Change person creates no records and updates no profile");
+  const recoveredTargetMarkup = appEval(`view.profileCaptureOwnerId = ""; view.profileCapturePersonId = ""; view.profileCaptureDraftText = ""; view.profileCaptureDraftTargetId = ""; renderPersonProfile()`);
+  assert(appEval("view.profileCapturePersonId") === otherId && recoveredTargetMarkup.includes("For Taylor Morgan"), "profile capture restores its changed locked person after a refresh-like view reset");
+
+  resetApp("emptyData()");
+  appEval(`const sparse = createPerson("Sparse Person"); sparse.lastMeaningfulInteraction = "bad-date"; sparse.nextFollowUpDate = "also-bad"; view.screen = "person"; view.personId = sparse.id;`);
+  const sparseProfile = appEval("renderPersonProfile()");
+  assert(!sparseProfile.includes("data-profile-history=") && sparseProfile.includes("No active prayer concern saved.") && sparseProfile.includes("No current action saved."), "empty or corrupt-date profiles stay calm without invented history");
+  appEval(`openProfileBrief(view.personId)`);
+  assert(appEval("renderSheet()").includes("very little saved"), "Brief Me states plainly when little information exists");
+}
+
 function testExportAndPrivacyHelpers() {
   resetApp("demoData()");
   const payload = appEval("currentPortablePayload()");
@@ -952,6 +1039,7 @@ async function run() {
   testAutopilotAndAttentionPresets();
   testTodayRecommendationPriorityAndActions();
   testPeopleCardCalmContract();
+  testCalmProfileContract();
   testExportAndPrivacyHelpers();
   testAutoMemoryVault();
   await testSecuritySheets();

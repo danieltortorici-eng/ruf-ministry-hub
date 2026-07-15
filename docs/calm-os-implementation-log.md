@@ -150,3 +150,16 @@ Status: implemented locally on 2026-07-15; verification recorded with the phase 
 - Simplified the People entry question and search toolbar. Person creation stays available as a quiet secondary action; whole-card opening is the repeated primary behavior.
 - Preserved all person records, local photos, pin settings, follow-up data, search behavior, storage keys, backup compatibility, and existing profile access. Administrative controls are handled in Profile/Navigation phases, not duplicated on cards.
 - Verification: focused syntax and People regression passed before the full maintained suite; final exact commands and exit results are recorded in the Phase 7 commit evidence.
+
+## Phase 8 — Profiles around present care
+
+Status: implemented locally on 2026-07-15; verification recorded with the phase commit.
+
+- Replaced the normal profile stat/field/action dashboard with an essential photo-or-initial header, two-piece identity, care level, contextual interaction/follow-up timing, useful reason, and phone only when populated.
+- Added a grounded Right Now selector for Pray, Next thing, Remember, and Reminder. It ranks only saved active prayers, open tasks, explicit follow-up reasons, meeting next steps/memories, notes, and dated reminders; calm empty states replace guesses and sensitive evidence uses existing preview masking.
+- Made the shared capture composer the sole normal creation path. The profile person is preselected and locked; Change person safely transfers the interrupted draft to another person key, persists that lock across a refresh-like view reset, refuses to overwrite a different existing draft, and creates or updates no profile records.
+- Replaced proposal-producing profile briefing/draft entry points with immediate local-only sheets. Brief Me uses existing context privacy gates, warns on excluded/sensitive context, works with AI disabled, and states when little information exists. Follow Up shows a Short draft immediately, offers Casual/Pastoral variants, copies only, never sends, and never marks complete without the explicit action.
+- Moved profile fields, photo controls, Pin, Mark followed up, editing, and optional audit details under collapsed Profile Details and More actions. Preferred contact remains dormant.
+- Kept Notes, Meetings, Prayer Requests, Follow-Ups, and Timeline separate. Empty sections do not render; each starts with at most three compact story-oriented records, and View all expands full untruncated access on demand without administrative timestamp clutter.
+- Kept all existing record collections, editing/merge primitives, storage keys, version-2 backups, schema marker, encryption, IndexedDB, localStorage, offline shell, and human approval boundaries unchanged.
+- Verification: focused syntax, Calm profile regression, and maintained person-profile regression passed before the full maintained suite; final exact commands and exit results are recorded in the Phase 8 commit evidence.
