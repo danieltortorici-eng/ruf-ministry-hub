@@ -848,7 +848,8 @@ function testAutopilotAndAttentionPresets() {
 function testTodayRecommendationPriorityAndActions() {
   resetApp("emptyData()");
   const ids = appEval(`(() => {
-    settings.backupReminderDays = "0";
+    settings.backupReminderDays = "7";
+    settings.lastBackupAt = daysAgo(14);
     const overdue = createPerson("Overdue Person");
     overdue.nextFollowUpDate = daysAgo(4);
     overdue.followUpReason = "Ask about the saved follow-up";
@@ -898,6 +899,7 @@ function testTodayRecommendationPriorityAndActions() {
   assert(queue.find(item => item.recordId === ids.importantCapture).detail === "Sensitive capture hidden.", "Today masks sensitive capture details");
   assert(queue.find(item => item.recordId === ids.prayer).detail === "Sensitive prayer concern hidden.", "Today masks sensitive prayer details");
   assert(!queue.some(item => item.title.includes("Completed hidden") || item.title.includes("Snoozed hidden") || item.title.includes("Malformed snooze hidden")), "Today excludes completed, snoozed, and malformed-snooze records");
+  assert(!queue.some(item => item.reasonCode === "maintenance-backup-only"), "Today defers backup maintenance while meaningful ministry work exists");
 
   const linkedSensitiveToday = appEval(`(() => {
     const taskPerson = createPerson("Secret Task Person");
@@ -960,6 +962,17 @@ function testTodayRecommendationPriorityAndActions() {
   const alertMarkup = appEval("renderTodayCriticalAlert()");
   assert((alertMarkup.match(/data-critical-alert/g) || []).length === 1 && alertMarkup.includes("Update ready"), "Today shows at most one compact critical alert");
   appEval("updateAvailable = false");
+
+  const maintenanceOnly = appEval(`(() => {
+    db.people = [];
+    db.tasks = [];
+    db.prayerRequests = [];
+    db.quickGrabs = [{ id: uid("archived-backup-fixture"), status: "Archived", createdAt: nowISO(), updatedAt: nowISO() }];
+    settings.backupReminderDays = "1";
+    settings.lastBackupAt = daysAgo(3);
+    return buildTodayRecommendations();
+  })()`);
+  assert(maintenanceOnly.length === 1 && maintenanceOnly[0].reasonCode === "maintenance-backup-only", "Today shows backup maintenance only when no meaningful ministry work exists");
 }
 
 function testPeopleCardCalmContract() {
@@ -1273,6 +1286,34 @@ function testCalmProfileContract() {
   assert(profile.includes("Check in soon") && profile.includes("Met 2 weeks ago") && profile.includes("Follow up tomorrow") && profile.includes("Phone 555-0188"), "profile header shows grounded care and contextual contact timing");
   assert((profile.match(/data-right-now-key=/g) || []).length === 4 && profile.includes("Pray:") && profile.includes("Next thing:") && profile.includes("Remember:") && profile.includes("Reminder:"), "Right Now contains exactly four grounded care prompts");
   assert(profile.includes("Sensitive prayer concern hidden.") && profile.includes("Sensitive saved detail hidden.") && profile.includes("Send the saved check-in"), "Right Now masks sensitive evidence and keeps a grounded next action");
+
+  const linkedPrayerPrivacy = appEval(`(() => {
+    const person = createPerson("Prayer-linked privacy person");
+    const prayer = createProfilePrayerRecord(person.id, { request: "Sensitive prayer-linked task source", sensitiveFlag: true, updatePersonDates: false });
+    const task = createProfileFollowUpRecord(person.id, { title: "Raw linked prayer task detail", dueDate: todayISO(), updatePersonDates: false });
+    task.relatedPrayerRequestId = prayer.id;
+    const rightNowMarkup = renderProfileRightNow(buildProfileRightNow(person.id));
+    const previewMarkup = renderProfilePreview("tasks", task);
+    const briefing = buildLocalPersonBriefing(person.id);
+    const followReview = buildFollowUpDraftContextReview("followUpTask", task.id);
+    const followContext = followUpDraftAllowedContext("followUpTask", task.id);
+    const janitor = dataJanitorAllowedRecordsByCollection();
+    const weekly = weeklyResetAllowedRecordsByCollection();
+    return {
+      tier: aiPrivacyTierForRecord(task, "tasks"),
+      rightNowMarkup,
+      previewMarkup,
+      briefingText: JSON.stringify(briefing),
+      followBlocked: followReview.blocked,
+      followSourceAllowed: Boolean(followContext.source),
+      janitorAllowed: janitor.tasks.allowed.some(record => record.id === task.id),
+      weeklyAllowed: weekly.tasks.allowed.some(record => record.id === task.id)
+    };
+  })()`);
+  assert(linkedPrayerPrivacy.tier === "Sensitive" && linkedPrayerPrivacy.rightNowMarkup.includes("Sensitive action detail hidden.") && !linkedPrayerPrivacy.rightNowMarkup.includes("Raw linked prayer task detail"), "Right Now masks a normal task linked to a sensitive prayer");
+  assert(linkedPrayerPrivacy.previewMarkup.includes("Sensitive saved detail hidden.") && !linkedPrayerPrivacy.previewMarkup.includes("Raw linked prayer task detail"), "profile history masks a normal task linked to a sensitive prayer");
+  assert(!linkedPrayerPrivacy.briefingText.includes("Raw linked prayer task detail") && linkedPrayerPrivacy.followBlocked && !linkedPrayerPrivacy.followSourceAllowed, "Brief Me and Follow Up block a task linked to a sensitive prayer");
+  assert(!linkedPrayerPrivacy.janitorAllowed && !linkedPrayerPrivacy.weeklyAllowed, "Data Janitor and Weekly Reset exclude tasks linked to a sensitive prayer");
   assert(profile.includes('data-capture-composer="profile"') && profile.includes("Add something about Jordan…") && profile.includes("Person locked for this capture") && profile.includes("Change person"), "profile uses the shared person-locked capture composer");
   assert((profile.match(/class="button primary"/g) || []).length === 1 && profile.includes("Brief Me") && profile.includes("Follow Up"), "profile has one primary Process action and two visible secondary care actions");
   assert(profile.includes('<details class="profile-details"') && profile.includes("More actions"), "profile administration stays inside collapsed Profile Details and More");

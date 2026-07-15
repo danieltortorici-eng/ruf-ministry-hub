@@ -1712,7 +1712,7 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-qa-v3";
+    const APP_VERSION = "2026.07.15-calm-os-qa-v4";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
@@ -2159,14 +2159,33 @@
     function aiPrivacyTierForRecord(record = {}, collection = "") {
       if (!record || typeof record !== "object") return "Normal";
       const explicitTier = normalizeAiPrivacyTier(record.aiPrivacyTier || record.aiContextPrivacyTier || "", "");
-      if (explicitTier && explicitTier !== "Normal") return explicitTier;
-      if (record.aiDoNotSendToAi === true) return "Do Not Send to AI";
       const sensitivity = normalizeAiPrivacyTier(record.sensitivityLevel || "", "");
-      if (sensitivity && sensitivity !== "Normal") return sensitivity;
-      if (record.sensitivityLevel === "Sensitive" || record.sensitiveFlag === true) return "Sensitive";
-      if (explicitTier) return explicitTier;
-      if (sensitivity) return sensitivity;
-      return collection === "prayerRequests" && record.sensitivityLevel === "Sensitive" ? "Sensitive" : "Normal";
+      let baseTier = "Normal";
+      if (explicitTier && explicitTier !== "Normal") baseTier = explicitTier;
+      else if (record.aiDoNotSendToAi === true) baseTier = "Do Not Send to AI";
+      else if (sensitivity && sensitivity !== "Normal") baseTier = sensitivity;
+      else if (record.sensitivityLevel === "Sensitive" || record.sensitiveFlag === true) baseTier = "Sensitive";
+      else if (explicitTier) baseTier = explicitTier;
+      else if (sensitivity) baseTier = sensitivity;
+
+      const linkedTiers = [baseTier];
+      try {
+        if (record.relatedPersonId && Array.isArray(db?.people)) {
+          const linkedPerson = db.people.find(person => person.id === record.relatedPersonId);
+          if (linkedPerson && linkedPerson !== record) linkedTiers.push(aiPrivacyTierForRecord(linkedPerson, "people"));
+        }
+        if (collection === "tasks" && record.relatedPrayerRequestId && Array.isArray(db?.prayerRequests)) {
+          const linkedPrayer = db.prayerRequests.find(prayer => prayer.id === record.relatedPrayerRequestId);
+          if (linkedPrayer && linkedPrayer !== record) linkedTiers.push(aiPrivacyTierForRecord(linkedPrayer, "prayerRequests"));
+        }
+      } catch (error) {
+        // Storage hydration can call this helper before the live graph is assigned.
+      }
+      return linkedTiers.reduce((strongest, tier) => {
+        const strongestIndex = AI_PRIVACY_TIERS.indexOf(strongest);
+        const tierIndex = AI_PRIVACY_TIERS.indexOf(tier);
+        return tierIndex > strongestIndex ? tier : strongest;
+      }, "Normal");
     }
 
     function recordIsSensitive(record = {}, collection = "") {
@@ -5283,7 +5302,8 @@
         });
       }
 
-      if (data.people?.length || data.quickGrabs?.length || data.tasks?.length || data.prayerRequests?.length) {
+      const hasMeaningfulMinistryRecommendation = Array.from(candidatesByTier.keys()).some(tier => Number(tier) < 9);
+      if (!hasMeaningfulMinistryRecommendation && (data.people?.length || data.quickGrabs?.length || data.tasks?.length || data.prayerRequests?.length)) {
         if (backupReminderDue()) add({
           id: "maintenance:backup",
           tier: 9,
@@ -8725,6 +8745,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       const privacyTier = aiPrivacyTierForRecord(grab, "quickGrabs");
       if (privacyTier === "Do Not Send to AI") {
+        markCaptureProcessingFailure(grabId, "This Quick Grab is marked Do Not Send to AI.");
         showToast("This Quick Grab is marked Do Not Send to AI.");
         return;
       }
