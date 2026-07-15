@@ -16,7 +16,7 @@
     :root {
       --ink: #17231f;
       --soft-ink: #394942;
-      --muted: #68756f;
+      --muted: #63706a;
       --paper: #f4f5f0;
       --surface: #fffefa;
       --surface-muted: #f8f9f5;
@@ -61,6 +61,23 @@
       color: var(--ink);
       min-height: 100vh;
       min-height: 100dvh;
+    }
+
+    .skip-link {
+      position: fixed;
+      top: calc(8px + env(safe-area-inset-top));
+      left: calc(8px + env(safe-area-inset-left));
+      z-index: 50;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      background: var(--ink);
+      color: #fff;
+      font-weight: 780;
+      transform: translateY(-180%);
+    }
+
+    .skip-link:focus {
+      transform: translateY(0);
     }
 
     button,
@@ -469,10 +486,10 @@
       display: inline-flex;
       align-items: center;
       min-width: 52px;
-      height: 30px;
+      min-height: 44px;
       border-radius: 999px;
       background: #d9e1eb;
-      padding: 3px;
+      padding: 10px 3px;
     }
 
     .switch input {
@@ -499,14 +516,37 @@
       background: var(--accent);
     }
 
+    .switch:focus-within {
+      outline: 3px solid #b56d00;
+      outline-offset: 3px;
+    }
+
     .field {
       display: grid;
       gap: 7px;
     }
 
-    .field label {
+    .field label,
+    .field-label {
       font-size: 0.86rem;
       color: var(--soft-ink);
+      font-weight: 760;
+    }
+
+    .field-group {
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      display: grid;
+      gap: 8px;
+    }
+
+    .field-group legend {
+      padding: 0;
+      margin-bottom: 7px;
+      color: var(--soft-ink);
+      font-size: 0.86rem;
       font-weight: 760;
     }
 
@@ -1090,13 +1130,13 @@
       z-index: 30;
       display: grid;
       place-items: end center;
-      padding: 18px;
+      padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
       background: rgba(23, 32, 42, 0.42);
     }
 
     .sheet-panel {
       width: min(100%, 620px);
-      max-height: min(88vh, 760px);
+      max-height: min(88dvh, 760px);
       overflow: auto;
       display: grid;
       gap: 14px;
@@ -1143,7 +1183,7 @@
       z-index: 10;
       background: #1f332d;
       color: white;
-      padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+      padding: 8px calc(10px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
       gap: 5px;
       grid-template-columns: repeat(5, minmax(0, 1fr));
       overflow: hidden;
@@ -1161,7 +1201,8 @@
       font-weight: 750;
       font-size: 0.72rem;
       line-height: 1.1;
-      white-space: nowrap;
+      white-space: normal;
+      text-wrap: balance;
     }
 
     .mobile-nav button.active {
@@ -1169,7 +1210,7 @@
     }
 
     :where(button, [role="button"], a, input, select, textarea, summary):focus-visible {
-      outline: 3px solid #d18a22;
+      outline: 3px solid #b56d00;
       outline-offset: 3px;
     }
 
@@ -1427,7 +1468,7 @@
       }
 
       .content {
-        padding: calc(16px + env(safe-area-inset-top)) 14px calc(92px + env(safe-area-inset-bottom));
+        padding: calc(16px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(92px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
       }
 
       .app-frame.focus-mode .content {
@@ -1504,7 +1545,7 @@
       }
 
       .button.small {
-        min-height: 42px;
+        min-height: 44px;
         padding: 8px 11px;
       }
 
@@ -1540,7 +1581,7 @@
 
     @media (max-width: 560px) {
       .content {
-        padding: calc(14px + env(safe-area-inset-top)) 12px calc(92px + env(safe-area-inset-bottom));
+        padding: calc(14px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(92px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
       }
 
       .section {
@@ -1584,15 +1625,46 @@
       }
 
     }
+
+    @media (max-width: 980px) and (orientation: landscape) {
+      .mobile-nav button {
+        min-height: 44px;
+        font-size: clamp(0.7rem, 1.8vw, 0.82rem);
+      }
+
+      .content {
+        padding-bottom: calc(84px + env(safe-area-inset-bottom));
+      }
+    }
+
+    @media (forced-colors: active) {
+      .button,
+      .tab,
+      .surface,
+      .item,
+      .sheet-panel,
+      .setting-row {
+        border: 1px solid CanvasText;
+      }
+
+      .mobile-nav button.active,
+      .tab.active,
+      .switch.is-on {
+        forced-color-adjust: none;
+        background: Highlight;
+        color: HighlightText;
+      }
+    }
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <div id="app"></div>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-cleanup-v1";
+    const APP_VERSION = "2026.07.15-calm-os-recovery-v1";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CAPTURE_PROCESSOR_VERSION = "calm-os-capture-v1";
@@ -1608,6 +1680,7 @@
     const SETTINGS_KEY = "ruf_ministry_hub_settings_v1";
     const COPY_KEY = "ruf_ministry_hub_custom_copy_v1";
     const AUTOSAVE_KEY = "ruf_ministry_hub_autosave_drafts_v1";
+    const ACTIVE_WORKFLOW_DRAFT_KEY = "workflow:active";
     const AUTO_MEMORY_KEY = "ruf_ministry_hub_auto_memory_v1";
     const ENCRYPTED_STORAGE_KEY = "ruf_ministry_hub_encrypted_storage_v1";
     const IDB_NAME = "ruf_ministry_hub_local_store";
@@ -1686,6 +1759,12 @@
     function calmLaunchScreen(screen) {
       return NAV.some(([key]) => key === screen) ? screen : "today";
     }
+    let initialSettingsNeedsRecovery = false;
+    let initialSettingsWasInvalid = false;
+    let initialDataNeedsRecovery = false;
+    let initialDataWasInvalid = false;
+    let initialCopyNeedsRecovery = false;
+    let initialCopyWasInvalid = false;
     let settings = loadSettings();
     settings.launchScreen = calmLaunchScreen(settings.launchScreen);
     let customCopy = loadCustomCopy();
@@ -1717,11 +1796,16 @@
       reviewIndex: 0,
       expandedQuickGrabIds: [],
       expandedPrayerIds: [],
-      sheet: null
+      sheet: null,
+      startupHydrating: true,
+      startupRecoveryError: ""
     };
     let undoStack = [];
     let vaultPassphrase = "";
     let vaultSaveTimer = null;
+    let vaultSaveInFlight = null;
+    let vaultSaveRequestedRevision = 0;
+    let vaultSaveCompletedRevision = 0;
     let autosaveTimer = null;
     let autosaveDraftsCache = null;
     let memoryVaultCache = null;
@@ -1730,6 +1814,10 @@
     let reloadingForUpdate = false;
     let pendingUrlQuickGrabText = "";
     let pendingUrlQuickGrabParams = null;
+    let startupBootstrapPromise = null;
+    let sheetReturnFocusDescriptor = null;
+    let pendingPageHeadingFocus = false;
+    let toastTimer = null;
 
     function uid(prefix) {
       return prefix + "_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
@@ -2211,8 +2299,16 @@
     function loadSettings() {
       try {
         const raw = localStorage.getItem(SETTINGS_KEY);
-        if (raw) return normalizeSettings(JSON.parse(raw));
+        if (raw) {
+          initialSettingsNeedsRecovery = false;
+          initialSettingsWasInvalid = false;
+          return normalizeSettings(JSON.parse(raw));
+        }
+        initialSettingsNeedsRecovery = true;
+        initialSettingsWasInvalid = false;
       } catch (error) {
+        initialSettingsNeedsRecovery = true;
+        initialSettingsWasInvalid = true;
         console.warn("Could not load Ministry Hub settings", error);
       }
       return normalizeSettings({
@@ -2232,8 +2328,17 @@
       if (settings?.localEncryptionEnabled && encryptedVaultExists()) return {};
       try {
         const raw = localStorage.getItem(COPY_KEY);
-        if (raw) return JSON.parse(raw);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          initialCopyNeedsRecovery = false;
+          initialCopyWasInvalid = false;
+          return parsed && typeof parsed === "object" ? parsed : {};
+        }
+        initialCopyNeedsRecovery = true;
+        initialCopyWasInvalid = false;
       } catch (error) {
+        initialCopyNeedsRecovery = true;
+        initialCopyWasInvalid = true;
         console.warn("Could not load Ministry Hub wording", error);
       }
       return {};
@@ -2282,16 +2387,26 @@
     }
 
     function loadData() {
-      if (settings?.localEncryptionEnabled && encryptedVaultExists()) return emptyData();
+      if (settings?.localEncryptionEnabled && encryptedVaultExists()) {
+        initialDataNeedsRecovery = false;
+        initialDataWasInvalid = false;
+        return emptyData();
+      }
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) return normalizeData(JSON.parse(raw));
+        if (raw) {
+          initialDataNeedsRecovery = false;
+          initialDataWasInvalid = false;
+          return normalizeData(JSON.parse(raw));
+        }
+        initialDataNeedsRecovery = true;
+        initialDataWasInvalid = false;
       } catch (error) {
+        initialDataNeedsRecovery = true;
+        initialDataWasInvalid = true;
         console.warn("Could not load saved Ministry Hub data", error);
       }
-      const seed = normalizeData(demoData());
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-      return seed;
+      return normalizeData(demoData());
     }
 
     function canUseIndexedDb() {
@@ -2319,13 +2434,26 @@
         const transaction = database.transaction(IDB_STORE, mode);
         const store = transaction.objectStore(IDB_STORE);
         const request = mode === "readonly" ? store.get(key) : store.put(value, key);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-        transaction.oncomplete = () => database.close();
-        transaction.onerror = () => {
+        let requestResult;
+        let settled = false;
+        const fail = error => {
+          if (settled) return;
+          settled = true;
           database.close();
-          reject(transaction.error);
+          reject(error || new Error("IndexedDB transaction failed."));
         };
+        request.onsuccess = () => {
+          requestResult = request.result;
+        };
+        request.onerror = () => fail(request.error);
+        transaction.oncomplete = () => {
+          if (settled) return;
+          settled = true;
+          database.close();
+          resolve(requestResult);
+        };
+        transaction.onerror = () => fail(transaction.error);
+        transaction.onabort = () => fail(transaction.error || new Error("IndexedDB transaction was aborted."));
       }));
     }
 
@@ -2349,66 +2477,220 @@
       })).catch(() => {});
     }
 
-    async function hydrateFromIndexedDb() {
-      if (!canUseIndexedDb()) return;
+    function localObjectState(key) {
       try {
-        const hasLocalData = Boolean(localStorage.getItem(STORAGE_KEY));
-        const hasLocalSettings = Boolean(localStorage.getItem(SETTINGS_KEY));
-        const hasLocalCopy = Boolean(localStorage.getItem(COPY_KEY));
-        const hasLocalAutoMemory = Boolean(localStorage.getItem(AUTO_MEMORY_KEY));
-        const hasLocalEncrypted = Boolean(localStorage.getItem(ENCRYPTED_STORAGE_KEY));
-        let changed = false;
-        if (settings.localEncryptionEnabled) {
-          if (!hasLocalEncrypted) {
-            const storedEncrypted = await idbTransaction("readonly", ENCRYPTED_STORAGE_KEY);
-            if (storedEncrypted) {
-              localStorage.setItem(ENCRYPTED_STORAGE_KEY, JSON.stringify(storedEncrypted));
-              view.encryptionLocked = true;
-              changed = true;
-            }
-          }
-          if (changed) render();
-          return;
-        }
-        if (!hasLocalData) {
-          const storedDb = await idbTransaction("readonly", STORAGE_KEY);
-          if (storedDb) {
-            db = storedDb;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-            changed = true;
-          }
-        }
-        if (!hasLocalSettings) {
-          const storedSettings = await idbTransaction("readonly", SETTINGS_KEY);
-          if (storedSettings) {
-            settings = normalizeSettings(storedSettings);
-            view.focusMode = true;
-            view.locked = Boolean(settings.appLockEnabled && settings.pinHash);
-            view.encryptionLocked = Boolean(settings.localEncryptionEnabled && encryptedVaultExists());
-            localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-            changed = true;
-          }
-        }
-        if (!hasLocalCopy) {
-          const storedCopy = await idbTransaction("readonly", COPY_KEY);
-          if (storedCopy) {
-            customCopy = storedCopy;
-            localStorage.setItem(COPY_KEY, JSON.stringify(customCopy));
-            changed = true;
-          }
-        }
-        if (!hasLocalAutoMemory) {
-          const storedAutoMemory = await idbTransaction("readonly", AUTO_MEMORY_KEY);
-          if (storedAutoMemory) {
-            localStorage.setItem(AUTO_MEMORY_KEY, JSON.stringify(normalizeAutoMemoryVault(storedAutoMemory)));
-            changed = true;
-          }
-        }
-        if (changed) render();
+        const raw = localStorage.getItem(key);
+        if (!raw) return { state: "missing", raw: "", value: null };
+        const value = JSON.parse(raw);
+        if (!value || typeof value !== "object") return { state: "invalid", raw, value: null };
+        return { state: "valid", raw, value };
       } catch (error) {
-        console.warn("Could not hydrate from IndexedDB", error);
+        return { state: "invalid", raw: localStorage.getItem(key) || "", value: null };
       }
     }
+
+    async function hydrateFromIndexedDb() {
+      view.startupRecoveryError = "";
+      const localEnvelopeState = localObjectState(ENCRYPTED_STORAGE_KEY);
+      if (!canUseIndexedDb()) {
+        const orphanEnvelope = localEnvelopeState.state === "valid" && initialDataNeedsRecovery;
+        if (settings.localEncryptionEnabled || orphanEnvelope) {
+          if (localEnvelopeState.state !== "valid") {
+            view.startupRecoveryError = "Encrypted storage is enabled, but its local vault could not be recovered. Nothing was replaced.";
+            return false;
+          }
+          settings = normalizeSettings({ ...settings, localEncryptionEnabled: true });
+          settings.launchScreen = calmLaunchScreen(settings.launchScreen);
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(COPY_KEY);
+          localStorage.removeItem(AUTOSAVE_KEY);
+          localStorage.removeItem(AUTO_MEMORY_KEY);
+          db = emptyData();
+          customCopy = {};
+          autosaveDraftsCache = null;
+          memoryVaultCache = null;
+          view.focusMode = true;
+          view.locked = false;
+          view.encryptionLocked = true;
+          initialSettingsNeedsRecovery = false;
+          initialSettingsWasInvalid = false;
+          initialDataNeedsRecovery = false;
+          initialDataWasInvalid = false;
+          return true;
+        }
+        if (initialSettingsWasInvalid || initialDataWasInvalid || initialCopyWasInvalid) {
+          view.startupRecoveryError = "Local data is present but could not be read, and no recovery store is available. Nothing was replaced.";
+          return false;
+        }
+        if (initialSettingsNeedsRecovery) {
+          settings = normalizeSettings(settings);
+          settings.launchScreen = calmLaunchScreen(settings.launchScreen);
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+          initialSettingsNeedsRecovery = false;
+        }
+        if (initialDataNeedsRecovery) {
+          db = normalizeData(db);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+          initialDataNeedsRecovery = false;
+        }
+        view.screen = calmLaunchScreen(settings.launchScreen);
+        view.focusMode = true;
+        view.locked = Boolean(settings.appLockEnabled && settings.pinHash);
+        view.encryptionLocked = false;
+        return true;
+      }
+
+      try {
+        const staged = {
+          settings: settings,
+          data: db,
+          copy: customCopy,
+          envelope: localEnvelopeState.state === "valid" ? localEnvelopeState.value : null,
+          autoMemory: null,
+          autosave: null,
+          writeSettings: false,
+          seedSettings: false,
+          writeData: false,
+          seedData: false,
+          writeCopy: false,
+          writeEnvelope: false,
+          writeAutoMemory: false,
+          writeAutosave: false
+        };
+
+        if (initialSettingsNeedsRecovery) {
+          const storedSettings = await idbTransaction("readonly", SETTINGS_KEY);
+          if (storedSettings && typeof storedSettings === "object") {
+            staged.settings = normalizeSettings(storedSettings);
+            staged.writeSettings = true;
+          } else if (initialSettingsWasInvalid) {
+            throw new Error("Saved settings are unreadable and no valid recovery copy exists.");
+          } else {
+            staged.settings = normalizeSettings(settings);
+            staged.writeSettings = true;
+            staged.seedSettings = true;
+          }
+        }
+        staged.settings.launchScreen = calmLaunchScreen(staged.settings.launchScreen);
+
+        if (!staged.envelope) {
+          const storedEnvelope = await idbTransaction("readonly", ENCRYPTED_STORAGE_KEY);
+          if (storedEnvelope && typeof storedEnvelope === "object") {
+            staged.envelope = storedEnvelope;
+            staged.writeEnvelope = true;
+          }
+        }
+
+        const orphanEnvelope = Boolean(staged.envelope && initialDataNeedsRecovery);
+        if (staged.settings.localEncryptionEnabled || orphanEnvelope) {
+          if (!staged.envelope) throw new Error("Encrypted storage is enabled, but the encrypted vault could not be recovered.");
+          staged.settings = normalizeSettings({ ...staged.settings, localEncryptionEnabled: true });
+          staged.settings.launchScreen = calmLaunchScreen(staged.settings.launchScreen);
+          if (staged.seedSettings) await idbTransaction("readwrite", SETTINGS_KEY, staged.settings);
+          settings = staged.settings;
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+          if (staged.writeEnvelope || localEnvelopeState.state !== "valid") {
+            localStorage.setItem(ENCRYPTED_STORAGE_KEY, JSON.stringify(staged.envelope));
+          }
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(COPY_KEY);
+          localStorage.removeItem(AUTOSAVE_KEY);
+          localStorage.removeItem(AUTO_MEMORY_KEY);
+          db = emptyData();
+          customCopy = {};
+          autosaveDraftsCache = null;
+          memoryVaultCache = null;
+          view.screen = calmLaunchScreen(settings.launchScreen);
+          view.focusMode = true;
+          view.locked = false;
+          view.encryptionLocked = true;
+          initialSettingsNeedsRecovery = false;
+          initialSettingsWasInvalid = false;
+          initialDataNeedsRecovery = false;
+          initialDataWasInvalid = false;
+          return true;
+        }
+
+        if (initialDataNeedsRecovery) {
+          const storedDb = await idbTransaction("readonly", STORAGE_KEY);
+          if (storedDb) {
+            staged.data = normalizeData(storedDb);
+            staged.writeData = true;
+          } else if (initialDataWasInvalid) {
+            throw new Error("Saved ministry data is unreadable and no valid recovery copy exists.");
+          } else {
+            staged.data = normalizeData(db);
+            staged.writeData = true;
+            staged.seedData = true;
+          }
+        }
+
+        if (initialCopyNeedsRecovery) {
+          const storedCopy = await idbTransaction("readonly", COPY_KEY);
+          if (storedCopy && typeof storedCopy === "object") {
+            staged.copy = { ...storedCopy };
+            staged.writeCopy = true;
+          } else if (initialCopyWasInvalid) {
+            throw new Error("Saved custom wording is unreadable and no valid recovery copy exists.");
+          }
+        }
+
+        const localAutoMemory = localObjectState(AUTO_MEMORY_KEY);
+        if (localAutoMemory.state !== "valid") {
+          const storedAutoMemory = await idbTransaction("readonly", AUTO_MEMORY_KEY);
+          if (storedAutoMemory && typeof storedAutoMemory === "object") {
+            staged.autoMemory = normalizeAutoMemoryVault(storedAutoMemory);
+            staged.writeAutoMemory = true;
+          } else if (localAutoMemory.state === "invalid") {
+            throw new Error("Saved restore points are unreadable and no valid recovery copy exists.");
+          }
+        }
+
+        const localAutosave = localObjectState(AUTOSAVE_KEY);
+        if (localAutosave.state !== "valid") {
+          const storedAutosave = await idbTransaction("readonly", AUTOSAVE_KEY);
+          if (storedAutosave && typeof storedAutosave === "object") {
+            staged.autosave = { ...storedAutosave };
+            staged.writeAutosave = true;
+          } else if (localAutosave.state === "invalid") {
+            throw new Error("Saved drafts are unreadable and no valid recovery copy exists.");
+          }
+        }
+
+        if (staged.seedSettings) await idbTransaction("readwrite", SETTINGS_KEY, staged.settings);
+        if (staged.seedData) await idbTransaction("readwrite", STORAGE_KEY, staged.data);
+
+        settings = normalizeSettings(staged.settings);
+        settings.launchScreen = calmLaunchScreen(settings.launchScreen);
+        db = normalizeData(staged.data);
+        customCopy = staged.copy && typeof staged.copy === "object" ? staged.copy : {};
+        if (staged.writeSettings) localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+        if (staged.writeData) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+        }
+        if (staged.writeCopy) localStorage.setItem(COPY_KEY, JSON.stringify(customCopy));
+        if (staged.writeAutoMemory) localStorage.setItem(AUTO_MEMORY_KEY, JSON.stringify(staged.autoMemory));
+        if (staged.writeAutosave) localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(staged.autosave));
+
+        initialSettingsNeedsRecovery = false;
+        initialSettingsWasInvalid = false;
+        initialDataNeedsRecovery = false;
+        initialDataWasInvalid = false;
+        initialCopyNeedsRecovery = false;
+        initialCopyWasInvalid = false;
+        view.screen = calmLaunchScreen(settings.launchScreen);
+        view.focusMode = true;
+        view.locked = Boolean(settings.appLockEnabled && settings.pinHash);
+        view.encryptionLocked = false;
+        return true;
+      } catch (error) {
+        console.warn("Could not hydrate from IndexedDB", error);
+        view.startupRecoveryError = "Local recovery could not finish. Calm OS did not replace your ministry data. Retry before making changes.";
+        return false;
+      }
+    }
+
 
     function cloneJson(value) {
       return JSON.parse(JSON.stringify(value));
@@ -2673,34 +2955,93 @@
 
     function scheduleVaultSave() {
       if (!settings.localEncryptionEnabled || !vaultPassphrase) return;
+      vaultSaveRequestedRevision += 1;
       if (vaultSaveTimer) {
         const clear = window.clearTimeout || clearTimeout;
         clear(vaultSaveTimer);
       }
       const delay = window.setTimeout || setTimeout;
-      vaultSaveTimer = delay(() => persistEncryptedVault(), 250);
+      vaultSaveTimer = delay(() => {
+        vaultSaveTimer = null;
+        flushEncryptedVaultSaves();
+      }, 250);
     }
 
-    async function persistEncryptedVault() {
-      if (!settings.localEncryptionEnabled || !vaultPassphrase) return;
-      try {
-        const envelope = await encryptPayload({ data: db, customCopy, autosaveDrafts: loadAutosaveDrafts(), autoMemoryVault: loadAutoMemoryVault() }, vaultPassphrase);
-        localStorage.setItem(ENCRYPTED_STORAGE_KEY, JSON.stringify(envelope));
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(COPY_KEY);
-        localStorage.removeItem(AUTOSAVE_KEY);
-        localStorage.removeItem(AUTO_MEMORY_KEY);
-        settings.localEncryptionUpdatedAt = envelope.encryptedAt;
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-        mirrorToIndexedDb(ENCRYPTED_STORAGE_KEY, envelope);
-        deleteFromIndexedDb(STORAGE_KEY);
-        deleteFromIndexedDb(COPY_KEY);
-        deleteFromIndexedDb(AUTOSAVE_KEY);
-        deleteFromIndexedDb(AUTO_MEMORY_KEY);
-      } catch (error) {
-        console.warn("Could not save encrypted vault", error);
-        showToast("Encrypted save failed.");
+    function encryptedVaultPayloadSnapshot() {
+      return cloneJson({
+        data: db,
+        customCopy,
+        autosaveDrafts: loadAutosaveDrafts(),
+        autoMemoryVault: loadAutoMemoryVault()
+      });
+    }
+
+    function flushEncryptedVaultSaves() {
+      if (!settings.localEncryptionEnabled || !vaultPassphrase) return Promise.resolve(false);
+      if (vaultSaveInFlight) return vaultSaveInFlight;
+      let allowFollowup = true;
+      vaultSaveInFlight = (async () => {
+        let saved = false;
+        while (settings.localEncryptionEnabled && vaultPassphrase && vaultSaveCompletedRevision < vaultSaveRequestedRevision) {
+          const targetRevision = vaultSaveRequestedRevision;
+          const passphrase = vaultPassphrase;
+          const payload = encryptedVaultPayloadSnapshot();
+          try {
+            const envelope = await encryptPayload(payload, passphrase);
+            if (!settings.localEncryptionEnabled || !vaultPassphrase || passphrase !== vaultPassphrase) {
+              allowFollowup = false;
+              break;
+            }
+            localStorage.setItem(ENCRYPTED_STORAGE_KEY, JSON.stringify(envelope));
+            localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem(COPY_KEY);
+            localStorage.removeItem(AUTOSAVE_KEY);
+            localStorage.removeItem(AUTO_MEMORY_KEY);
+            settings.localEncryptionUpdatedAt = envelope.encryptedAt;
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+            if (canUseIndexedDb()) {
+              try {
+                await idbTransaction("readwrite", ENCRYPTED_STORAGE_KEY, envelope);
+              } catch (error) {
+                console.warn("Could not mirror the encrypted vault to IndexedDB", error);
+              }
+            }
+            deleteFromIndexedDb(STORAGE_KEY);
+            deleteFromIndexedDb(COPY_KEY);
+            deleteFromIndexedDb(AUTOSAVE_KEY);
+            deleteFromIndexedDb(AUTO_MEMORY_KEY);
+            vaultSaveCompletedRevision = targetRevision;
+            saved = true;
+          } catch (error) {
+            allowFollowup = false;
+            console.warn("Could not save encrypted vault", error);
+            showToast("Encrypted save failed.");
+            break;
+          }
+        }
+        return saved;
+      })().finally(() => {
+        vaultSaveInFlight = null;
+        if (allowFollowup && settings.localEncryptionEnabled && vaultPassphrase && vaultSaveCompletedRevision < vaultSaveRequestedRevision && !vaultSaveTimer) {
+          const delay = window.setTimeout || setTimeout;
+          vaultSaveTimer = delay(() => {
+            vaultSaveTimer = null;
+            flushEncryptedVaultSaves();
+          }, 250);
+        }
+      });
+      return vaultSaveInFlight;
+    }
+
+    function persistEncryptedVault() {
+      if (!settings.localEncryptionEnabled || !vaultPassphrase) return Promise.resolve(false);
+      vaultSaveRequestedRevision += 1;
+      if (vaultSaveTimer) {
+        const clear = window.clearTimeout || clearTimeout;
+        clear(vaultSaveTimer);
+        vaultSaveTimer = null;
       }
+      return flushEncryptedVaultSaves();
     }
 
     function currentPortablePayload() {
@@ -3011,6 +3352,7 @@
       if (view.screen === "quick") return "capture:main";
       if (view.screen === "today") return "capture:today";
       if (view.screen === "person" && (view.profileCapturePersonId || view.personId)) return `capture:profile:${view.profileCapturePersonId || view.personId}`;
+      if (view.screen === "aiConfirmActions" && view.aiConfirmProposalId) return `workflow:ai-confirm:${view.aiConfirmProposalId}`;
       if (view.screen === "snooze" && view.quickGrabId) return "snooze:" + view.quickGrabId;
       if (view.screen === "search") return "screen:search";
       if (view.screen === "people") return "screen:people";
@@ -3021,6 +3363,7 @@
       if (!settings.enableAutoSave || !el || !el.id) return false;
       if (el.type === "password" || el.type === "file") return false;
       if (el.id === "pin-input" || el.id === "vault-passphrase" || el.id === "import-backup-file") return false;
+      if (["ai-confirm-action-confirm", "ai-confirm-duplicate-confirm", "ai-confirm-convert-quickgrab"].includes(el.id)) return false;
       if (el.dataset.settingToggle || el.dataset.settingSelect || el.dataset.copyKey) return false;
       if (typeof el.closest === "function" && el.closest("[data-sheet-panel]")) return false;
       return ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
@@ -3030,10 +3373,13 @@
       const key = autosaveDraftKey();
       if (!key) return null;
       const fields = {};
+      let eligibleCount = 0;
       document.querySelectorAll("input, textarea, select").forEach(el => {
         if (!isAutosaveField(el)) return;
+        eligibleCount += 1;
         fields[el.id] = el.type === "checkbox" ? Boolean(el.checked) : el.value;
       });
+      if (!eligibleCount) return null;
       return { key, fields, updatedAt: nowISO(), screen: view.screen };
     }
 
@@ -3050,8 +3396,17 @@
       const draft = collectAutosaveDraft();
       if (!draft) return;
       const drafts = loadAutosaveDrafts();
-      if (hasDraftContent(draft.fields)) drafts[draft.key] = draft;
+      const workflowDraft = draft.key.startsWith("workflow:");
+      if (workflowDraft || hasDraftContent(draft.fields)) drafts[draft.key] = draft;
       else delete drafts[draft.key];
+      if (workflowDraft) {
+        drafts[ACTIVE_WORKFLOW_DRAFT_KEY] = {
+          type: "aiConfirmActions",
+          proposalId: view.aiConfirmProposalId,
+          draftKey: draft.key,
+          updatedAt: draft.updatedAt
+        };
+      }
       saveAutosaveDrafts(drafts);
     }
 
@@ -3085,9 +3440,54 @@
     function clearAutosaveDraft(key = autosaveDraftKey()) {
       if (!key) return;
       const drafts = loadAutosaveDrafts();
-      if (!drafts[key]) return;
+      if (!drafts[key] && drafts[ACTIVE_WORKFLOW_DRAFT_KEY]?.draftKey !== key) return;
       delete drafts[key];
+      if (drafts[ACTIVE_WORKFLOW_DRAFT_KEY]?.draftKey === key) delete drafts[ACTIVE_WORKFLOW_DRAFT_KEY];
       saveAutosaveDrafts(drafts);
+    }
+
+    function clearActiveWorkflowRecovery(proposalId = "") {
+      const drafts = loadAutosaveDrafts();
+      const active = drafts[ACTIVE_WORKFLOW_DRAFT_KEY];
+      const activeProposalId = String(active?.proposalId || "");
+      if (proposalId && activeProposalId && activeProposalId !== String(proposalId)) return false;
+      const expectedDraftKey = activeProposalId ? `workflow:ai-confirm:${activeProposalId}` : "";
+      if (expectedDraftKey && active?.draftKey === expectedDraftKey) delete drafts[expectedDraftKey];
+      delete drafts[ACTIVE_WORKFLOW_DRAFT_KEY];
+      saveAutosaveDrafts(drafts);
+      return true;
+    }
+
+    function restoreInterruptedWorkflow() {
+      if (!settings.enableAutoSave || view.encryptionLocked) return false;
+      const drafts = loadAutosaveDrafts();
+      const active = drafts[ACTIVE_WORKFLOW_DRAFT_KEY];
+      if (!active || active.type !== "aiConfirmActions" || !active.proposalId) return false;
+      const expectedDraftKey = `workflow:ai-confirm:${active.proposalId}`;
+      if (active.draftKey !== expectedDraftKey) {
+        clearActiveWorkflowRecovery(active.proposalId);
+        return false;
+      }
+      const proposal = aiProposalById(active.proposalId);
+      if (!proposal || !aiProposalCanExecute(proposal) || proposal.result?.executedAt) {
+        clearActiveWorkflowRecovery(active.proposalId);
+        return false;
+      }
+      const fields = drafts[active.draftKey]?.fields || {};
+      const selectedPerson = String(fields["ai-confirm-person-choice"] || "");
+      view.screen = "aiConfirmActions";
+      view.aiConfirmProposalId = proposal.id;
+      view.aiConfirmActionIndexes = selectedAiActionIndexes(proposal.id);
+      view.aiConfirmPersonChoice = selectedPerson === "new"
+        ? { mode: "new", newPersonName: String(fields["ai-confirm-new-person-name"] || "") }
+        : selectedPerson
+          ? { mode: "existing", existingPersonId: selectedPerson }
+          : {};
+      view.aiConfirmValidationErrors = [];
+      view.aiConfirmValidationWarnings = [];
+      view.sheet = null;
+      view.aiReviewFocusId = proposal.id;
+      return true;
     }
 
     function clearAllAutosaveDrafts() {
@@ -3488,6 +3888,102 @@
         .replace(/'/g, "&#039;");
     }
 
+    function focusDescriptorFor(element) {
+      if (!element?.dataset?.action) return null;
+      const descriptor = { action: element.dataset.action };
+      ["id", "screen", "kind", "filter", "from", "to", "sourceType", "actionIndex"].forEach(key => {
+        if (element.dataset[key] !== undefined) descriptor[key] = element.dataset[key];
+      });
+      return descriptor;
+    }
+
+    function rememberSheetReturnFocus(element) {
+      const descriptor = focusDescriptorFor(element);
+      if (descriptor) sheetReturnFocusDescriptor = descriptor;
+    }
+
+    function restoreSheetReturnFocus() {
+      const descriptor = sheetReturnFocusDescriptor;
+      sheetReturnFocusDescriptor = null;
+      if (!descriptor) return;
+      const restore = () => {
+        const controls = Array.from(document.querySelectorAll("[data-action]"));
+        const match = controls.find(control => Object.entries(descriptor).every(([key, value]) => (
+          key === "action" ? control.dataset.action === value : control.dataset[key] === value
+        )));
+        if (match && typeof match.focus === "function") match.focus({ preventScroll: true });
+      };
+      if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(restore);
+      else restore();
+    }
+
+    function requestPageHeadingFocus() {
+      pendingPageHeadingFocus = true;
+    }
+
+    function applyPendingPageHeadingFocus() {
+      if (!pendingPageHeadingFocus || view.sheet) return;
+      pendingPageHeadingFocus = false;
+      const heading = document.querySelector("#main-content h1");
+      if (!heading || typeof heading.focus !== "function") return;
+      heading.setAttribute("tabindex", "-1");
+      const focus = () => heading.focus({ preventScroll: true });
+      if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(focus);
+      else focus();
+    }
+
+    function bindSheetAccessibility() {
+      const panel = document.querySelector("[data-sheet-panel]");
+      if (!panel) return;
+      panel.setAttribute("tabindex", "-1");
+      [document.querySelector(".shell"), document.querySelector(".mobile-nav")].filter(Boolean).forEach(region => {
+        region.inert = true;
+        region.setAttribute("aria-hidden", "true");
+      });
+      const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+      const focusableControls = () => typeof panel.querySelectorAll === "function"
+        ? Array.from(panel.querySelectorAll(focusableSelector)).filter(control => control.getAttribute?.("aria-hidden") !== "true")
+        : [];
+      panel.addEventListener("keydown", event => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeSheet();
+          return;
+        }
+        if (event.key !== "Tab") return;
+        const controls = focusableControls();
+        if (!controls.length) {
+          event.preventDefault();
+          panel.focus();
+          return;
+        }
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+      const controls = focusableControls();
+      const preferred = typeof panel.querySelector === "function"
+        ? panel.querySelector("[autofocus], textarea, input, select")
+        : null;
+      const target = preferred || controls[0] || panel;
+      if (target && typeof target.focus === "function") target.focus({ preventScroll: true });
+    }
+
+    function bindDynamicAccessibility() {
+      document.querySelectorAll(".notice.danger").forEach(notice => {
+        notice.setAttribute("role", "alert");
+        notice.setAttribute("aria-atomic", "true");
+      });
+      bindSheetAccessibility();
+      applyPendingPageHeadingFocus();
+    }
+
     let personLookupSource = null;
     let personLookupSize = -1;
     let personLookupById = new Map();
@@ -3605,11 +4101,11 @@
       const input = document.getElementById("pin-input");
       const pin = input ? input.value.trim() : "";
       if (!pin) {
-        showToast("Enter your PIN.");
+        reportFieldError(input, "Enter your PIN.");
         return;
       }
       if (hashPin(pin) !== settings.pinHash) {
-        showToast("That PIN did not match.");
+        reportFieldError(input, "That PIN did not match.");
         return;
       }
       view.locked = false;
@@ -3621,7 +4117,7 @@
       const input = document.getElementById("vault-passphrase");
       const passphrase = input ? input.value : "";
       if (!passphrase) {
-        showToast("Enter your vault passphrase.");
+        reportFieldError(input, "Enter your vault passphrase.");
         return;
       }
       try {
@@ -3637,12 +4133,13 @@
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(COPY_KEY);
         localStorage.removeItem(AUTO_MEMORY_KEY);
+        restoreInterruptedWorkflow();
         initializeAutoMemoryVault();
         showToast("Encrypted storage unlocked.");
         render();
       } catch (error) {
         console.warn("Could not unlock encrypted storage", error);
-        showToast("Passphrase did not unlock storage.");
+        reportFieldError(input, "Passphrase did not unlock storage.");
       }
     }
 
@@ -3978,6 +4475,31 @@
     }
 
     function render() {
+      if (view.startupHydrating) {
+        document.getElementById("app").innerHTML = `
+          <div class="lock-screen" role="status" aria-live="polite" aria-busy="true">
+            <div class="lock-panel">
+              <h1 class="lock-title">Opening Calm OS</h1>
+              <p class="page-kicker">Checking this device for your latest private local data…</p>
+            </div>
+          </div>
+        `;
+        return;
+      }
+      if (view.startupRecoveryError) {
+        document.getElementById("app").innerHTML = `
+          <div class="lock-screen" role="alert">
+            <div class="lock-panel">
+              <h1 class="lock-title">Local data check paused</h1>
+              <p class="page-kicker">${escapeHtml(view.startupRecoveryError)}</p>
+              <button class="button primary full" data-action="startup-retry">Retry local recovery</button>
+              <p class="meta">Calm OS will not open or replace data until this check succeeds.</p>
+            </div>
+          </div>
+        `;
+        bindScreen();
+        return;
+      }
       applyAutoArchiveAnswered();
       if (view.encryptionLocked) {
         document.getElementById("app").innerHTML = renderVaultUnlockScreen();
@@ -3991,7 +4513,7 @@
       }
       const active = view.screen === "person"
         ? "people"
-        : ["process", "snooze", "review", "aiReview", "aiConfirmActions"].includes(view.screen)
+        : ["snooze", "review", "aiReview", "aiConfirmActions"].includes(view.screen)
           ? "quick"
           : ["search", "autopilot", "minutes", "weekly", "coach", "duplicates", "readiness", "manual", "advancedSettings"].includes(view.screen)
             ? "settings"
@@ -4014,7 +4536,7 @@
               <nav class="nav" aria-label="Primary">${navHtml}</nav>
               <div class="sidebar-note">${editableCopy("sidebar.privacy", "Private ministry notes belong here carefully. Use enough detail to care well, not everything.")}</div>
             </aside>
-	            <main class="content">
+            <main class="content" id="main-content" tabindex="-1">
 	              ${renderUpdateNotice()}
 	              ${renderScreen()}
 	            </main>
@@ -4023,6 +4545,7 @@
         </div>
       `;
       bindScreen();
+      bindDynamicAccessibility();
       applyPendingUrlQuickGrabText();
       maybeSendReminderNotification();
     }
@@ -4548,7 +5071,7 @@
       const recommendation = todayRecommendationById(id);
       const returnDate = document.getElementById("today-return-date")?.value || "";
       if (!recommendation || !isISODateString(returnDate) || calendarDayDelta(returnDate) < 1) {
-        showToast("Choose a future return date.");
+        reportFieldError("today-return-date", "Choose a future return date.");
         return;
       }
       settings.todayRecommendationDeferrals = {
@@ -6795,8 +7318,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             <div class="notice secure">RUF Hub sorted this into suggestions. Choose only what is accurate and useful.</div>
             <p class="page-kicker" style="margin-top:12px;">Your selections stay local. A final review is required before approved updates are saved.</p>
             ${settings.aiMockMode ? "" : `<div class="notice danger" style="margin-top:12px;">Mock AI is off in Settings. Turn it on before continuing with mock review flows.</div>`}
-            <div class="tabs" style="margin-top:14px;">
-              ${AI_REVIEW_FILTERS.map(filter => `<button class="tab ${view.aiReviewFilter === filter ? "active" : ""}" data-action="ai-review-filter" data-filter="${escapeHtml(filter)}">${escapeHtml(filter)} (${counts[filter] || 0})</button>`).join("")}
+            <div class="tabs" style="margin-top:14px;" role="group" aria-label="Suggested update filters">
+              ${AI_REVIEW_FILTERS.map(filter => `<button class="tab ${view.aiReviewFilter === filter ? "active" : ""}" data-action="ai-review-filter" data-filter="${escapeHtml(filter)}" aria-pressed="${view.aiReviewFilter === filter}">${escapeHtml(filter)} (${counts[filter] || 0})</button>`).join("")}
             </div>
           </div>
         </section>
@@ -6855,14 +7378,14 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           ${renderAiWeeklyResetResult(proposal)}
           ${renderAiDonorUpdateResult(proposal)}
           <div class="field">
-            <label>Warnings</label>
+            <div class="field-label">Warnings</div>
             ${warnings.length ? `<div class="settings-list">${warnings.map(warning => `<div class="notice danger">${escapeHtml(warning)}</div>`).join("")}</div>` : `<div class="meta">No warnings attached.</div>`}
           </div>
-          <div class="field">
-            <label>RUF Hub sorted this into…</label>
+          <fieldset class="field-group">
+            <legend>RUF Hub sorted this into…</legend>
             ${executableCount ? `<div class="meta">${selectedActionCount} selected · ${skippedActionCount} skipped. Your choices are saved on this device before final approval.</div>` : ""}
             ${actions.length ? `<div class="settings-list">${actions.map((action, index) => renderAiProposalActionRow(proposal, action, index)).join("")}</div>` : `<div class="meta">No proposed action beyond review.</div>`}
-          </div>
+          </fieldset>
           ${timestampLine(proposal)}
           <div class="action-row focus-actions">
             ${canExecute && executableCount ? `<button class="button small primary" data-action="ai-proposal-approve-selected" data-id="${escapeHtml(proposal.id)}">Review selected</button>` : ""}
@@ -6894,7 +7417,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const steward = proposal.result?.steward || {};
       return `
         <div class="field">
-          <label>Prayer Steward Audit</label>
+          <div class="field-label">Prayer Steward Audit</div>
           <div class="settings-list">
             ${steward.countsSummary ? `<div class="notice secure"><strong>Counts</strong><div class="meta">${escapeHtml(steward.countsSummary)}</div></div>` : ""}
             ${renderPrayerStewardItems("Active requests older than 30 days", steward.activeOlderThan30)}
@@ -6926,7 +7449,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       ];
       return `
         <div class="field">
-          <label>Data Janitor Audit</label>
+          <div class="field-label">Data Janitor Audit</div>
           <div class="settings-list">
             ${janitor.countsSummary ? `<div class="notice secure"><strong>Counts</strong><div class="meta">${escapeHtml(janitor.countsSummary)}</div></div>` : ""}
             ${sections.map(([title, items]) => renderPrayerStewardItems(title, items)).join("")}
@@ -6941,7 +7464,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const reset = proposal.result?.weeklyReset || {};
       return `
         <div class="field">
-          <label>Weekly Reset Agent</label>
+          <div class="field-label">Weekly Reset Agent</div>
           <div class="settings-list">
             ${reset.oneFaithfulNextStep ? `<div class="notice secure"><strong>One Faithful Next Step</strong><div class="meta">${escapeHtml(reset.oneFaithfulNextStep)}</div></div>` : ""}
             ${renderPrayerStewardItems("10-minute plan", reset.tenMinutePlan)}
@@ -6964,7 +7487,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const donorUpdate = proposal.result?.donorUpdate || {};
       return `
         <div class="field">
-          <label>Donor Update Builder</label>
+          <div class="field-label">Donor Update Builder</div>
           <div class="notice secure">Donor update drafts are not sent. Review carefully before copying or sharing.</div>
           <div class="settings-list" style="margin-top:12px;">
             ${renderPrayerStewardItems("Privacy warnings", donorUpdate.privacyWarnings)}
@@ -7000,7 +7523,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const drafts = Array.isArray(proposal.result?.drafts) ? proposal.result.drafts : [];
       return `
         <div class="field">
-          <label>Text Draft Options</label>
+          <div class="field-label">Text Draft Options</div>
           <div class="settings-list">
             ${drafts.length ? drafts.map((draft, index) => `
               <div class="notice">
@@ -7033,7 +7556,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (!briefing || typeof briefing !== "object") return "";
       return `
         <div class="field">
-          <label>Briefing</label>
+          <div class="field-label">Briefing</div>
           <div class="settings-list">
             ${renderAiBriefingList("Remember before meeting", briefing.rememberBeforeMeeting)}
             ${renderAiBriefingList("Good questions to ask", briefing.goodQuestionsToAsk)}
@@ -7271,15 +7794,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             <div class="notice secure">AI is still only proposing. These records are saved locally only after this confirmation.</div>
             ${visibleErrors.length ? `<div class="settings-list" style="margin-top:12px;">${visibleErrors.map(error => `<div class="notice danger">${escapeHtml(error)}</div>`).join("")}</div>` : ""}
             <div class="field" style="margin-top:12px;">
-              <label>Selected actions to save</label>
+              <div class="field-label">Selected actions to save</div>
               ${selected.length ? `<div class="settings-list">${selected.map(item => `<div class="notice"><strong>${escapeHtml(labelFromCamel(aiActionType(item.action)))}</strong>${aiActionSummary(item.action) ? ` - ${escapeHtml(aiActionSummary(item.action))}` : ""}</div>`).join("")}</div>` : `<div class="meta">No selected action is ready to save.</div>`}
             </div>
             <div class="field">
-              <label>Warnings</label>
+              <div class="field-label">Warnings</div>
               ${visibleWarnings.length ? `<div class="settings-list">${visibleWarnings.map(warning => `<div class="notice sensitive">${escapeHtml(warning)}</div>`).join("")}</div>` : `<div class="meta">No warnings attached.</div>`}
             </div>
             <div class="field">
-              <label>Local source link</label>
+              <div class="field-label">Local source link</div>
               <div class="meta">Calm OS will keep a private local link back to this suggestion${validation.sourceQuickGrabId ? " and its original capture" : ""} so retries stay safe.</div>
             </div>
             ${needsPersonChoice ? `
@@ -7298,12 +7821,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                 ` : `<div class="meta">No clear new-person name was detected, so choose an existing person before saving.</div>`}
               </div>
             ` : ""}
-            ${validation.duplicatePeople.length ? `
-              <div class="notice danger">Similar people already exist: ${escapeHtml(duplicateNames)}. Review before creating another person.</div>
-              ${checkbox("ai-confirm-duplicate-confirm", "Create the suggested person anyway after reviewing similar people.", false)}
-            ` : ""}
-            ${validation.sourceQuickGrab ? checkbox("ai-confirm-convert-quickgrab", "Mark the original Quick Grab Converted after saving these actions.", true) : ""}
-            ${checkbox("ai-confirm-action-confirm", "I reviewed these updates and want to save only the selected local changes.", false)}
+            <fieldset class="field-group">
+              <legend>Final approval</legend>
+              ${validation.duplicatePeople.length ? `
+                <div class="notice danger">Similar people already exist: ${escapeHtml(duplicateNames)}. Review before creating another person.</div>
+                ${checkbox("ai-confirm-duplicate-confirm", "Create the suggested person anyway after reviewing similar people.", false)}
+              ` : ""}
+              ${validation.sourceQuickGrab ? checkbox("ai-confirm-convert-quickgrab", "Mark the original Quick Grab Converted after saving these actions.", true) : ""}
+              ${checkbox("ai-confirm-action-confirm", "I reviewed these updates and want to save only the selected local changes.", false)}
+            </fieldset>
             <div class="action-row" style="margin-top:14px;">
               <button class="button" data-action="ai-action-confirm-cancel">Cancel</button>
               <button class="button primary" data-action="ai-action-confirm-save" data-id="${escapeHtml(proposal.id)}" ${disabled}>Save approved updates</button>
@@ -8639,7 +9165,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const edit = settings.inlineEditing && field && view.personId
         ? `<button class="button small" data-action="person-edit-field" data-id="${escapeHtml(view.personId)}" data-field="${field}" data-label="${escapeHtml(label)}">Edit</button>`
         : "";
-      return `<div class="field"><label>${escapeHtml(label)}</label><div class="row wrap"><div class="meta">${escapeHtml(value)}</div>${edit}</div></div>`;
+      return `<div class="field"><div class="field-label">${escapeHtml(label)}</div><div class="row wrap"><div class="meta">${escapeHtml(value)}</div>${edit}</div></div>`;
     }
 
     function renderPrayerRequests() {
@@ -8663,8 +9189,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             </div>
           </div>
         </section>
-        <div class="tabs">
-          ${filters.map(filter => `<button class="tab ${view.prayerFilter === filter ? "active" : ""}" data-action="prayer-filter" data-filter="${filter}">${escapeHtml(filter)}</button>`).join("")}
+        <div class="tabs" role="group" aria-label="Prayer filters">
+          ${filters.map(filter => `<button class="tab ${view.prayerFilter === filter ? "active" : ""}" data-action="prayer-filter" data-filter="${filter}" aria-pressed="${view.prayerFilter === filter}">${escapeHtml(filter)}</button>`).join("")}
         </div>
         <section class="section">
           ${filtered.length ? filtered.map(renderPrayerCard).join("") : emptyState(prayerEmptyState())}
@@ -9093,7 +9619,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             <h2 class="section-title">iOS Shortcut Capture</h2>
             <p class="item-preview">Create a Shortcut that accepts text from the Share Sheet, URL-encodes it, and opens this app URL with the text attached.</p>
             <div class="field">
-              <label>Shortcut URL template</label>
+              <div class="field-label">Shortcut URL template</div>
               <input class="input" value="${escapeHtml(shortcutUrl)}" readonly>
             </div>
             <div class="action-row">
@@ -9353,28 +9879,30 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function settingToggle(key, label, description) {
+      const fieldId = `setting-${slugifyCopyKey(key)}`;
       return `
         <div class="setting-row">
           <div>
-            <div class="item-title">${escapeHtml(label)}</div>
-            <div class="meta">${escapeHtml(description)}</div>
+            <div class="item-title" id="${fieldId}-label">${escapeHtml(label)}</div>
+            <div class="meta" id="${fieldId}-description">${escapeHtml(description)}</div>
           </div>
-          <label class="switch ${settings[key] ? "is-on" : ""}" title="${escapeHtml(label)}">
-            <input type="checkbox" data-setting-toggle="${escapeHtml(key)}" ${settings[key] ? "checked" : ""}>
-            <span></span>
+          <label class="switch ${settings[key] ? "is-on" : ""}">
+            <input id="${fieldId}" type="checkbox" data-setting-toggle="${escapeHtml(key)}" aria-labelledby="${fieldId}-label" aria-describedby="${fieldId}-description" ${settings[key] ? "checked" : ""}>
+            <span aria-hidden="true"></span>
           </label>
         </div>
       `;
     }
 
     function settingSelect(key, label, options, description) {
+      const fieldId = `setting-${slugifyCopyKey(key)}`;
       return `
         <div class="setting-row">
           <div>
-            <div class="item-title">${escapeHtml(label)}</div>
-            <div class="meta">${escapeHtml(description)}</div>
+            <label class="item-title" id="${fieldId}-label" for="${fieldId}">${escapeHtml(label)}</label>
+            <div class="meta" id="${fieldId}-description">${escapeHtml(description)}</div>
           </div>
-          <select class="select" data-setting-select="${escapeHtml(key)}">
+          <select class="select" id="${fieldId}" data-setting-select="${escapeHtml(key)}" aria-describedby="${fieldId}-description">
             ${options.map(([value, optionLabel]) => `<option value="${escapeHtml(value)}" ${String(settings[key]) === String(value) ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`).join("")}
           </select>
         </div>
@@ -9423,9 +9951,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function sheetField(label, control) {
+      const controlId = String(control).match(/\bid="([^"]+)"/)?.[1] || "";
       return `
         <div class="field">
-          <label>${escapeHtml(label)}</label>
+          <label${controlId ? ` for="${escapeHtml(controlId)}"` : ""}>${escapeHtml(label)}</label>
           ${control}
         </div>
       `;
@@ -9465,8 +9994,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                 ${sheetField("Custom start", `<input class="input" type="date" id="donor-update-custom-start" value="${escapeHtml(options.customStart)}">`)}
                 ${sheetField("Custom end", `<input class="input" type="date" id="donor-update-custom-end" value="${escapeHtml(options.customEnd)}">`)}
               </div>
-              <div class="field">
-                <label>Source categories</label>
+              <fieldset class="field-group">
+                <legend>Source categories</legend>
                 <div class="settings-list">
                   ${DONOR_UPDATE_SOURCE_CATEGORIES.map(category => `
                     <label class="check">
@@ -9475,7 +10004,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                     </label>
                   `).join("")}
                 </div>
-              </div>
+              </fieldset>
               <div class="notice">Student names are anonymized by default. Sensitive, Highly Sensitive, and Do Not Send to AI records are excluded before any donor-facing draft is shown.</div>
             </div>
             <div class="sheet-actions">
@@ -9862,8 +10391,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               <button class="button small" data-action="sheet-close" aria-label="Close">Close</button>
             </div>
             <div class="sheet-form">
-              ${sheetField("Name", `<input class="input" id="sheet-person-name" placeholder="First and last name">`)}
-              <div class="notice" id="sheet-duplicate-warning">Type a name to check for similar people.</div>
+              ${sheetField("Name", `<input class="input" id="sheet-person-name" aria-describedby="sheet-duplicate-warning" placeholder="First and last name">`)}
+              <div class="notice" id="sheet-duplicate-warning" role="status" aria-live="polite" aria-atomic="true">Type a name to check for similar people.</div>
               <label class="check" id="sheet-duplicate-confirm-row" style="display:none;">
                 <input type="checkbox" id="sheet-duplicate-confirm">
                 <span>Create a new person anyway.</span>
@@ -9910,15 +10439,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               <div class="notice secure">Ask every time is locked on. Current mode: ${escapeHtml(aiGateModeLabel(sheet))}. Review what would be used before continuing.</div>
               ${blocked ? `<div class="notice danger">This item cannot continue because its AI privacy tier blocks context use.</div>` : ""}
               <div class="field">
-                <label>What will be used</label>
+                <div class="field-label">What will be used</div>
                 ${renderAiContextList(context.used, "No record context is approved for this mock step.")}
               </div>
               <div class="field">
-                <label>What will not be used</label>
+                <div class="field-label">What will not be used</div>
                 ${renderAiContextList(context.notUsed, "No blocked or excluded context.")}
               </div>
               <div class="field">
-                <label>Sensitivity warnings</label>
+                <div class="field-label">Sensitivity warnings</div>
                 ${warnings.length ? `<div class="settings-list">${warnings.map(warning => `<div class="notice danger">${escapeHtml(warning)}</div>`).join("")}</div>` : `<div class="meta">No sensitivity warnings for this step.</div>`}
               </div>
               ${checkbox("sheet-ai-gate-confirm", gateConfirmLabel, false)}
@@ -9955,11 +10484,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               ${validation.errors.length ? `<div class="settings-list">${validation.errors.map(error => `<div class="notice danger">${escapeHtml(error)}</div>`).join("")}</div>` : ""}
               ${validation.warnings.length ? `<div class="settings-list">${validation.warnings.map(warning => `<div class="notice sensitive">${escapeHtml(warning)}</div>`).join("")}</div>` : ""}
               <div class="field">
-                <label>Selected actions to save</label>
+                <div class="field-label">Selected actions to save</div>
                 ${selected.length ? `<div class="settings-list">${selected.map(item => `<div class="notice"><strong>${escapeHtml(labelFromCamel(aiActionType(item.action)))}</strong>${aiActionSummary(item.action) ? ` - ${escapeHtml(aiActionSummary(item.action))}` : ""}</div>`).join("")}</div>` : `<div class="meta">No selected action is ready to save.</div>`}
               </div>
               <div class="field">
-                <label>Links that will be added</label>
+                <div class="field-label">Links that will be added</div>
                 <div class="meta">Created records will store sourceAIProposalId ${proposal ? escapeHtml(proposal.id) : ""}${validation.sourceQuickGrabId ? ` and createdFromQuickGrabId ${escapeHtml(validation.sourceQuickGrabId)}` : ""}.</div>
               </div>
               ${validation.duplicatePeople.length ? `
@@ -10302,11 +10831,16 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const globalSearch = document.getElementById("global-search");
       if (globalSearch) {
         globalSearch.addEventListener("input", event => {
+          const caret = Number.isFinite(event.target.selectionStart) ? event.target.selectionStart : event.target.value.length;
           view.globalSearch = event.target.value;
           saveCurrentDraftNow();
           render();
+          const restoredSearch = document.getElementById("global-search");
+          if (restoredSearch) {
+            restoredSearch.focus({ preventScroll: true });
+            restoredSearch.setSelectionRange(caret, caret);
+          }
         });
-        if (document.activeElement !== globalSearch) globalSearch.focus();
       }
       const quickText = document.getElementById("quick-text");
       if (quickText) {
@@ -10335,8 +10869,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           if (event.key === "Enter") unlockVault();
         });
       }
-      const sheetFirstField = document.querySelector("[data-sheet-panel] textarea, [data-sheet-panel] input, [data-sheet-panel] select");
-      if (sheetFirstField && typeof sheetFirstField.focus === "function") sheetFirstField.focus();
       const sheetPersonName = document.getElementById("sheet-person-name");
       if (sheetPersonName) {
         sheetPersonName.addEventListener("input", updateCreatePersonDuplicateWarning);
@@ -10379,6 +10911,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function closeSheet() {
       view.sheet = null;
       render();
+      restoreSheetReturnFocus();
     }
 
     function submitPrayerActionSheet(kind, prayerId) {
@@ -10392,7 +10925,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (kind === "answered-note") {
         const note = document.getElementById("sheet-prayer-answered-note")?.value.trim() || "";
         if (!note) {
-          showToast("Add an answered note first.");
+          reportFieldError("sheet-prayer-answered-note", "Add an answered note first.");
           return;
         }
         recordUndo("answered prayer note");
@@ -10402,7 +10935,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (kind === "follow-date") {
         const date = document.getElementById("sheet-prayer-action-follow-date")?.value || "";
         if (!isISODateString(date)) {
-          showToast("Use a valid follow-up date.");
+          reportFieldError("sheet-prayer-action-follow-date", "Use a valid follow-up date.");
           return;
         }
         recordUndo("prayer follow-up date");
@@ -10413,11 +10946,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         const title = document.getElementById("sheet-prayer-task-title")?.value.trim() || "";
         const dueDate = document.getElementById("sheet-prayer-task-due")?.value || "";
         if (!title) {
-          showToast("Add a follow-up task first.");
+          reportFieldError("sheet-prayer-task-title", "Add a follow-up task first.");
           return;
         }
         if (!isISODateString(dueDate)) {
-          showToast("Use a valid due date.");
+          reportFieldError("sheet-prayer-task-due", "Use a valid due date.");
           return;
         }
         recordUndo("prayer follow-up task");
@@ -10439,11 +10972,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           return;
         }
         if (passphrase.length < 8) {
-          showToast("Use at least 8 characters.");
+          reportFieldError("sheet-export-passphrase", "Use at least 8 characters.");
           return;
         }
         if (confirmPassphrase !== passphrase) {
-          showToast("Passphrases did not match.");
+          reportFieldError("sheet-export-confirm", "Passphrases did not match.");
           return;
         }
         try {
@@ -10462,11 +10995,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         const file = input && input.files ? input.files[0] : null;
         const passphrase = document.getElementById("sheet-import-passphrase")?.value || "";
         if (!file) {
-          showToast("Choose a backup file first.");
+          reportFieldError(input, "Choose a backup file first.");
           return;
         }
         if (!document.getElementById("sheet-import-confirm")?.checked) {
-          showToast("Confirm that this should replace local data.");
+          reportFieldError("sheet-import-confirm", "Confirm that this should replace local data.");
           return;
         }
         try {
@@ -10474,7 +11007,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           applyRestoredPayload(payload);
         } catch (error) {
           console.warn("Backup import failed", error);
-          showToast(error && error.message === "Encrypted backup needs passphrase." ? "Enter the backup passphrase." : "That backup could not be imported.");
+          const passphraseNeeded = error && error.message === "Encrypted backup needs passphrase.";
+          reportFieldError(passphraseNeeded ? "sheet-import-passphrase" : input, passphraseNeeded ? "Enter the backup passphrase." : "That backup could not be imported.");
         }
         return;
       }
@@ -10482,11 +11016,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         if (settings.resetProtection) {
           const typed = document.getElementById("sheet-reset-confirm-text")?.value.trim() || "";
           if (typed !== "RESET") {
-            showToast("Type RESET to continue.");
+            reportFieldError("sheet-reset-confirm-text", "Type RESET to continue.");
             return;
           }
         } else if (!document.getElementById("sheet-reset-confirm")?.checked) {
-          showToast("Confirm the demo reset first.");
+          reportFieldError("sheet-reset-confirm", "Confirm the demo reset first.");
           return;
         }
         performDemoDataReset();
@@ -10496,7 +11030,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function submitAutoMemorySheet(kind, snapshotId = "") {
       if (!["restore", "delete", "clear"].includes(kind)) return;
       if (!document.getElementById("sheet-auto-memory-confirm")?.checked) {
-        showToast("Confirm the Auto Memory action first.");
+        reportFieldError("sheet-auto-memory-confirm", "Confirm the Auto Memory action first.");
         return;
       }
       if (kind === "restore") {
@@ -10521,11 +11055,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         const pin = document.getElementById("sheet-pin-new")?.value.trim() || "";
         const confirmPin = document.getElementById("sheet-pin-confirm")?.value.trim() || "";
         if (!/^\d{4,}$/.test(pin)) {
-          showToast("Use at least 4 numbers.");
+          reportFieldError("sheet-pin-new", "Use at least 4 numbers.");
           return;
         }
         if (confirmPin !== pin) {
-          showToast("PINs did not match.");
+          reportFieldError("sheet-pin-confirm", "PINs did not match.");
           return;
         }
         recordUndo(settings.pinHash ? "PIN change" : "PIN setup");
@@ -10538,7 +11072,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (kind === "pin-clear") {
         const pin = document.getElementById("sheet-pin-current")?.value.trim() || "";
         if (!pin || hashPin(pin) !== settings.pinHash) {
-          showToast("PIN did not match.");
+          reportFieldError("sheet-pin-current", "PIN did not match.");
           return;
         }
         recordUndo("PIN removal");
@@ -10557,11 +11091,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           return;
         }
         if (passphrase.length < 8) {
-          showToast("Use at least 8 characters.");
+          reportFieldError("sheet-vault-passphrase", "Use at least 8 characters.");
           return;
         }
         if (confirmPassphrase !== passphrase) {
-          showToast("Passphrases did not match.");
+          reportFieldError("sheet-vault-confirm", "Passphrases did not match.");
           return;
         }
         recordUndo("Device Vault setup");
@@ -10574,7 +11108,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       if (kind === "vault-disable") {
         if (!document.getElementById("sheet-vault-disable-confirm")?.checked) {
-          showToast("Confirm Device Vault should turn off.");
+          reportFieldError("sheet-vault-disable-confirm", "Confirm Device Vault should turn off.");
           return;
         }
         recordUndo("Device Vault removal");
@@ -10587,7 +11121,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function submitMergePersonSheet(fromId, toId) {
       if (!document.getElementById("sheet-merge-confirm")?.checked) {
-        showToast("Confirm the merge first.");
+        reportFieldError("sheet-merge-confirm", "Confirm the merge first.");
         return;
       }
       if (mergePeopleRecord(fromId, toId)) {
@@ -10694,7 +11228,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function submitDonorUpdateBuilderSheet() {
       if (!document.querySelectorAll("[data-donor-update-category]:checked").length) {
-        showToast("Choose at least one source category.");
+        reportFieldError(document.querySelector("[data-donor-update-category]"), "Choose at least one source category.");
         return;
       }
       const options = readDonorUpdateBuilderOptions();
@@ -10716,12 +11250,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function submitCreatePersonSheet() {
       const name = document.getElementById("sheet-person-name")?.value.trim() || "";
       if (!name) {
-        showToast("Add a name first.");
+        reportFieldError("sheet-person-name", "Add a name first.");
         return;
       }
       const matches = similarPeople(name);
       if (matches.length && !document.getElementById("sheet-duplicate-confirm")?.checked) {
-        showToast("Check the similar person warning first.");
+        reportFieldError("sheet-duplicate-confirm", "Check the similar person warning first.");
         return;
       }
       recordUndo("person creation");
@@ -10763,7 +11297,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return;
       }
       if (!document.getElementById("sheet-ai-gate-confirm")?.checked) {
-        showToast("Review the AI context first.");
+        reportFieldError("sheet-ai-gate-confirm", "Review the AI context first.");
         return;
       }
       if (sheet.nextAction === "quickGrabParse") {
@@ -10825,6 +11359,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         showToast("That AI suggestion is no longer available.");
         return;
       }
+      clearActiveWorkflowRecovery(proposal.id);
       if (status === "approved" && settings.askBeforeAiEveryTime && !options.confirmedAiGate) {
         openAiGate(id, status);
         return;
@@ -10873,6 +11408,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function openAiActionConfirmSheet(proposalId, mode = "selected") {
+      clearActiveWorkflowRecovery();
       const proposal = aiProposalById(proposalId);
       if (!proposal) {
         view.screen = "aiConfirmActions";
@@ -10907,6 +11443,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       view.sheet = null;
       view.aiReviewFocusId = proposalId;
       render();
+      saveCurrentDraftNow();
     }
 
     function aiActionStableId(action = {}, index = 0) {
@@ -11334,9 +11871,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function submitAiActionConfirmSheet() {
       const state = currentAiActionConfirmState();
       if (!state) return;
+      saveCurrentDraftNow();
       const proposal = aiProposalById(state.proposalId);
       if (!proposal || !aiProposalCanExecute(proposal) || proposal.result?.executedAt) {
         showToast("These approved updates were already saved.");
+        clearActiveWorkflowRecovery(state.proposalId);
         clearAiActionConfirmState();
         view.screen = "aiReview";
         render();
@@ -11352,24 +11891,24 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         state.validationErrors = validation.errors;
         state.validationWarnings = validation.warnings;
         persistAiActionConfirmState(state);
-        showToast(validation.errors[0]);
         render();
+        reportFieldError(document.getElementById("ai-confirm-person-choice") || document.getElementById("ai-confirm-new-person-name"), validation.errors[0]);
         return;
       }
       if (validation.willCreatePerson && validation.duplicatePeople.length && !isCheckedInAiActionConfirm("ai-confirm-duplicate-confirm")) {
         state.validationErrors = ["Review the similar person warning first."];
         state.validationWarnings = validation.warnings;
         persistAiActionConfirmState(state);
-        showToast("Review the similar person warning first.");
         render();
+        reportFieldError("ai-confirm-duplicate-confirm", "Review the similar person warning first.");
         return;
       }
       if (!isCheckedInAiActionConfirm("ai-confirm-action-confirm")) {
         state.validationErrors = ["Confirm the selected actions first."];
         state.validationWarnings = validation.warnings;
         persistAiActionConfirmState(state);
-        showToast("Confirm the selected actions first.");
         render();
+        reportFieldError("ai-confirm-action-confirm", "Confirm the selected actions first.");
         return;
       }
       const convertQuickGrab = Boolean(validation.sourceQuickGrab && isCheckedInAiActionConfirm("ai-confirm-convert-quickgrab"));
@@ -11379,6 +11918,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       try {
         const result = applyAiProposalActions(proposal, validation, { convertQuickGrab });
         saveData();
+        clearActiveWorkflowRecovery(proposal.id);
         view.sheet = null;
         clearAiActionConfirmState();
         view.screen = "aiReview";
@@ -11397,6 +11937,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function cancelAiActionConfirmView() {
+      clearActiveWorkflowRecovery(view.aiConfirmProposalId);
       clearAiActionConfirmState();
       view.sheet = null;
       view.screen = "aiReview";
@@ -11478,8 +12019,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function handleAction(event) {
 	      const button = event.currentTarget;
-	      const action = button.dataset.action;
-	      const id = button.dataset.id;
+      const action = button.dataset.action;
+      const id = button.dataset.id;
+      if (!view.sheet && action !== "sheet-close") rememberSheetReturnFocus(button);
+      if (action === "startup-retry") {
+        bootstrapLocalState();
+        return;
+      }
       if (action === "sheet-close") {
         if (button.classList.contains("sheet-backdrop") && event.target !== button) return;
         closeSheet();
@@ -11557,10 +12103,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
 	      if (action === "unlock-vault") unlockVault();
       if (action === "nav") {
+        if (view.screen === "aiConfirmActions") clearActiveWorkflowRecovery(view.aiConfirmProposalId);
         view.screen = button.dataset.screen;
         view.quickGrabId = null;
         view.sheet = null;
         if (view.screen === "review") view.reviewIndex = 0;
+        requestPageHeadingFocus();
         render();
       }
       if (action === "ai-review-filter") {
@@ -11602,6 +12150,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "snooze-screen") {
         view.screen = "snooze";
         view.quickGrabId = id;
+        requestPageHeadingFocus();
         render();
       }
       if (action === "snooze-set") setSnooze(id, button.dataset.when);
@@ -11615,6 +12164,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         view.profileCaptureDraftText = "";
         view.profileCaptureDraftTargetId = "";
         view.profileHistoryExpanded = [];
+        requestPageHeadingFocus();
         render();
       }
       if (action === "person-pin") togglePinnedPerson(id);
@@ -11639,6 +12189,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "open-prayer-filter") {
         view.screen = "prayer";
         view.prayerFilter = button.dataset.filter;
+        requestPageHeadingFocus();
         render();
       }
       if (action === "prayer-toggle-more") toggleExpanded("expandedPrayerIds", id);
@@ -11924,7 +12475,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const textarea = document.getElementById(targetId);
       const text = String(textarea?.value || "").trim();
       if (!text) {
-        showToast("Add what you want to remember first.");
+        reportFieldError(textarea, "Add what you want to remember first.");
         return null;
       }
       if (button) {
@@ -12481,20 +13032,85 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       render();
     }
 
-    function showToast(message) {
+    function showToast(message, severity = "") {
       const toast = document.getElementById("toast");
+      const isError = severity === "error" || /^(add|choose|enter|use|type|select|confirm|could not|unable|invalid|no related|unlock|passphrases|pins|a valid)/i.test(String(message || ""));
       toast.textContent = message;
+      toast.setAttribute?.("role", isError ? "alert" : "status");
+      toast.setAttribute?.("aria-live", isError ? "assertive" : "polite");
       toast.classList.add("show");
-      window.setTimeout(() => toast.classList.remove("show"), 1800);
+      if (toastTimer) window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(() => {
+        toast.classList.remove("show");
+        toastTimer = null;
+      }, isError ? 5000 : 2800);
+    }
+
+    function reportFieldError(fieldOrId, message) {
+      const field = typeof fieldOrId === "string" ? document.getElementById(fieldOrId) : fieldOrId;
+      if (field) {
+        field.setAttribute?.("aria-invalid", "true");
+        field.focus?.({ preventScroll: false });
+        field.addEventListener?.("input", () => field.removeAttribute?.("aria-invalid"), { once: true });
+        field.addEventListener?.("change", () => field.removeAttribute?.("aria-invalid"), { once: true });
+      }
+      showToast(message, "error");
+      return false;
+    }
+
+    function flushRecoveryState() {
+      if (view.startupHydrating || view.startupRecoveryError || view.locked || view.encryptionLocked) return Promise.resolve(false);
+      if (autosaveTimer) {
+        const clear = window.clearTimeout || clearTimeout;
+        clear(autosaveTimer);
+        autosaveTimer = null;
+      }
+      saveCurrentDraftNow();
+      if (settings.localEncryptionEnabled && vaultPassphrase) return persistEncryptedVault();
+      return Promise.resolve(true);
+    }
+
+    function bootstrapLocalState() {
+      if (startupBootstrapPromise) return startupBootstrapPromise;
+      view.startupHydrating = true;
+      view.startupRecoveryError = "";
+      render();
+      startupBootstrapPromise = hydrateFromIndexedDb()
+        .then(recovered => {
+          view.startupHydrating = false;
+          if (recovered) {
+            restoreInterruptedWorkflow();
+            initializeAutoMemoryVault();
+          }
+          render();
+          return recovered;
+        })
+        .catch(error => {
+          console.warn("Could not finish local startup", error);
+          view.startupHydrating = false;
+          view.startupRecoveryError = "Local recovery could not finish. Calm OS did not replace your ministry data. Retry before making changes.";
+          render();
+          return false;
+        })
+        .finally(() => {
+          startupBootstrapPromise = null;
+        });
+      return startupBootstrapPromise;
     }
 
     registerServiceWorker();
     captureQuickGrabFromUrl();
-    render();
-    hydrateFromIndexedDb().then(() => initializeAutoMemoryVault());
+    bootstrapLocalState();
     if (typeof window !== "undefined") {
       window.addEventListener("pageshow", importQuickGrabFromCurrentUrl);
       window.addEventListener("focus", importQuickGrabFromCurrentUrl);
+      window.addEventListener("pagehide", flushRecoveryState);
+    }
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") flushRecoveryState();
+      });
+      document.addEventListener("freeze", flushRecoveryState);
     }
   </script>
 </body>

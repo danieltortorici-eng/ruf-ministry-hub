@@ -2,30 +2,41 @@
 
 Audit date: 2026-07-15
 
-## Observed strengths
+## Outcome
 
-- A main content landmark, desktop navigation element, headings, explicit form labels, dialog labels, safe-area padding, sensitive-preview masking, and fixed profile-photo geometry already exist.
-- Sampled foreground/background token pairs meet normal-text contrast, ranging from approximately 4.53:1 to 9.40:1.
+The Phase 11 source and synthetic audit found no unresolved high-severity accessibility defect. Calm OS now has named primary navigation, one main landmark with a skip link, explicit page-heading focus after intentional navigation, labeled controls, semantic filter/checkbox groups, non-color selected states, assertive field-error announcements, a shared focus indicator, 44px minimum repeated targets, reduced-motion and forced-color handling, and iPhone safe-area rules.
 
-## Defects and required corrections
+Real VoiceOver, Dynamic Type, keyboard, landscape, and one-handed iPhone evidence remains `NOT VERIFIED` until the manual matrix below is executed on named devices. Automated source checks are not represented as device evidence.
 
-| Area | Baseline defect | Calm OS requirement |
-| --- | --- | --- |
-| Mobile navigation | A `div`; active item lacks `aria-current`. | Semantic `nav` with label and current-page state. |
-| Selected states | Chips/tabs rely on class and color. | `aria-pressed` or `aria-selected` plus text/non-color state. |
-| Announcements | Toast disappears after 1.8 seconds and has no live role. | Persistent-enough `role="status"`/`aria-live`; inline error text for blocking errors. |
-| Dialog focus | First field is focused, but no trap, Escape close, inert background, or restoration. | Focus trap, Escape where safe, background isolation, return focus to opener. |
-| Touch targets | Buttons, chips, tabs, and switches can be 30–42px. | Minimum 44x44px; primary mobile actions 48px. |
-| Keyboard focus | No shared `:focus-visible` treatment. | High-contrast, non-color-dependent focus ring on every control/card action. |
-| Motion | No reduced-motion contract. | Remove nonessential transitions/scroll animation under `prefers-reduced-motion`. |
-| Large text | Seven nowrap mobile tabs may crowd/clip. | Five primary items, wrapping-safe labels, no horizontal page overflow. |
-| Navigation focus | New screen heading is not focused. | Move focus to the page heading after intentional navigation without disrupting typing. |
-| Errors | Transient toasts carry validation. | Associate inline errors with fields and announce them. |
-| Group labels | Checkbox groups lack fieldset/legend. | Semantic grouping where controls remain. |
-| Whole-card open | Planned card risks nested interactive controls. | One semantic link/button for the card; administration elsewhere. |
-| Search focus | Full rerender per key can drop focus. | Preserve value, selection, and focus or debounce without hiding results. |
-| Disabled state | No shared treatment. | Visual and semantic disabled style with sufficient contrast. |
+## Findings and disposition
 
-## Required evidence
+| Area | Baseline defect | Phase 11 disposition | Evidence |
+| --- | --- | --- | --- |
+| Landmarks | Mobile navigation lacked semantics and active state. | Both navigation surfaces are named `nav` landmarks; active destinations use `aria-current`; a skip link targets the focusable `main`. | Calm OS accessibility regression and existing navigation regression. |
+| Dialog focus | Sheets had initial-field focus but no containment, Escape behavior, background isolation, or opener restoration. | One shared sheet binding traps Tab/Shift+Tab, handles Escape, marks background regions inert/hidden, focuses field-or-close on open, and restores a stable action descriptor on close. | Modal static assertions; browser/manual behavior remains required. |
+| Labels | Sheet labels were siblings without `for`; settings relied on layout/title. | `sheetField` derives explicit `for`; settings controls use visible label and description IDs; display-only headings no longer misuse `label`. | Label association and stray-label regression. |
+| Control groups | Checkbox and filter groups relied on visual grouping. | Donor categories and approval sets use `fieldset`/`legend`; Prayer and Suggested update filters use named groups and `aria-pressed`. | Group-semantics regression. |
+| Navigation focus | Whole-app rerenders lost context. | Intentional route changes focus the new H1; People and global Search preserve field focus and caret without moving focus during ordinary typing/filtering. | Static and maintained search regressions. |
+| Errors | Blocking validation used a short polite toast. | `reportFieldError` applies `aria-invalid`, focuses the field, and announces through an assertive alert; rendered danger notices receive alert semantics. Errors persist five seconds and newer messages cancel older dismissal timers. | Error/focus/live-region regression; screen-reader cadence remains manual. |
+| Touch targets | Switches and small mobile buttons could be 30–42px. | Switches and small mobile buttons are at least 44px; primary mobile navigation remains 48px. | CSS target-size regression. |
+| Contrast/focus | Focus orange did not reliably meet a 3:1 adjacent-color threshold; muted text was marginal on paper. | Focus is `#b56d00` (3.72:1 on paper); muted text is `#63706a` (4.72:1 on paper). A shared three-pixel outline and switch focus-within treatment do not rely on color fill alone. | Calculated WCAG contrast regression. |
+| Motion/status | Reduced motion existed, but forced-colors and some selected states were incomplete. | Reduced-motion contract retained; forced-colors rules preserve boundaries/selection; filters expose state programmatically. | Accessibility regression. |
+| Safe areas/large text | Horizontal safe areas and landscape/Dynamic Type behavior were incomplete. | Content, sheets, and mobile navigation include all safe-area edges; sheets use `dvh`; nav labels wrap; landscape reduces nav height without dropping below 44px. | Static regression; device layout remains manual. |
+| Images | Repeated recognition images risked layout shift or duplicate announcements. | People photos keep fixed dimensions and empty alt beside a visible name; initials remain text; profile photos retain person-context labeling. | Existing People/profile regressions. |
 
-Automated checks must cover landmarks, labels, target-size CSS, focus styles, reduced motion, non-color status, and no 390px/430px horizontal overflow. Real VoiceOver, Dynamic Type, landscape, keyboard-only browser behavior, and one-handed iPhone use remain `NOT VERIFIED` until named manual evidence exists.
+## Automated evidence
+
+- `node tests/calm-os-accessibility-regression.js`: passed all landmarks, modal, labeling, grouping, error, target, contrast, motion, safe-area, and large-text source contracts.
+- `node tests/regression-harness.js`: passed semantic navigation, current-page state, whole-card keyboard focus, search-caret recovery, hidden metadata, and all existing Calm OS product behavior.
+- `node tests/calm-os-recovery-regression.js`: passed fail-closed startup and interrupted-input recovery checks that protect assistive-technology users from unexpected content replacement.
+- `node check-app-syntax.mjs` and `git diff --check`: exited 0 at the focused checkpoint.
+
+## Manual evidence still required
+
+- VoiceOver on a real iPhone at 390px and 430px-class widths: navigation order, modal announcement, focus containment, error announcement, photo naming, and return focus.
+- iOS Dynamic Type at 200% or the largest usable accessibility size: no clipped navigation labels, unreachable sheet action, or horizontal page scrolling.
+- Safari keyboard-only: skip link, every primary action, disclosure, filter, People card, and modal Escape/Tab loop.
+- Portrait and landscape with a notched device: safe-area clearance and one-handed reach.
+- Windows forced-colors browser: visible focus, borders, selected filter state, and disabled controls.
+
+Until those runs are recorded, the corresponding rows in the final report must say `NOT VERIFIED`, not pass.

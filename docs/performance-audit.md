@@ -56,10 +56,22 @@ The candidate is also 2,590 raw bytes smaller than the accepted base despite the
 - Duplicate review normalizes each name once and stops after 12 candidates. At 500 people the former pairwise shape examined 124,750 pairs and could normalize 249,500 values; the new helper normalizes 500 values while retaining the same bounded result contract.
 - Pinned-person ranking uses a `Set`, and proactive recommendation deduplication uses a linear seen-ID set instead of repeated array scans.
 
-### Finding status at this checkpoint
+### Finding status at the Phase 10 checkpoint
 
 - Resolved before or during Phase 10: unselected proposal side effects, unbounded profile previews, repeated search person scans, capture/proposal idempotency, and the parallel capture saver.
-- Still a Phase 11 completion blocker: recovery-first IndexedDB bootstrap, IndexedDB draft hydration, and serialized encrypted lifecycle flushes.
+- Phase 11 completion blockers at that checkpoint: recovery-first IndexedDB bootstrap, IndexedDB draft hydration, and serialized encrypted lifecycle flushes.
+
+## Phase 11 recovery closure
+
+- Startup now renders a recovery gate before any ministry screen or automatic archive logic. IndexedDB, localStorage, settings, copy, autosave, Auto Memory, and encrypted-envelope candidates are staged before writes.
+- Missing and corrupt states are distinct. A first install seeds only after both stores are confirmed empty; unreadable data without a valid mirror pauses the app and keeps raw bytes untouched.
+- An encrypted envelope or Device Vault setting fails closed. The in-memory ministry graph stays empty until successful unlock, and plaintext data/copy/draft keys are removed from the encrypted path.
+- IndexedDB-only plaintext data is normalized before use, including additive schema markers and interrupted-processing recovery. Draft mirrors restore main, Today, and person-linked capture keys.
+- Encrypted writes are revisioned, serialized at concurrency one, and coalesce to the newest snapshot. A failed encryption/write attempt retains the last durable envelope and can be retried without a plaintext fallback.
+- Page hide, hidden visibility, and freeze boundaries synchronously persist eligible plaintext drafts and request an encrypted flush. PIN/vault-locked screens cannot erase a saved draft.
+- Proposal-confirm recovery stores only recoverable selections and person choice. The final approval checkbox is deliberately excluded; Cancel and successful/status-changing exits clear the stable pointer.
+
+Focused synthetic evidence covers IDB-only plaintext and encrypted startup, corrupt-local recovery and fail-closed pause, no-IDB first install, orphan vault state, revision races, synthetic encryption failure/retry, draft lifecycle flush, and proposal resumption. Real Safari storage quota, OS process termination, battery, memory, LCP, INP, and CLS remain `NOT VERIFIED`.
 
 ## Evidence limits
 

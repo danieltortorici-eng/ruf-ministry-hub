@@ -419,6 +419,27 @@ function testUnifiedCaptureAndProposalSafety() {
   appEval(`markAiProposalSensitive("${proposalId}")`);
   assert(db().quickGrabs.find(item => item.id === processingGrab.id).sensitiveFlag === true, "review can explicitly mark the source capture sensitive");
 
+  appEval(`settings.enableAutoSave = true; openAiActionConfirmSheet("${proposalId}", "selected")`);
+  makeElement("ai-confirm-person-choice").tagName = "SELECT";
+  makeElement("ai-confirm-person-choice").value = personId;
+  makeElement("ai-confirm-action-confirm").type = "checkbox";
+  makeElement("ai-confirm-action-confirm").checked = true;
+  appEval("saveCurrentDraftNow()");
+  const workflowDraft = appEval(`loadAutosaveDrafts()["workflow:ai-confirm:${proposalId}"]`);
+  assert(workflowDraft?.fields?.["ai-confirm-person-choice"] === personId, "interrupted proposal confirmation saves the chosen person locally");
+  assert(!Object.prototype.hasOwnProperty.call(workflowDraft?.fields || {}, "ai-confirm-action-confirm"), "proposal recovery never persists the final approval checkbox");
+  appEval(`
+    view.screen = "today";
+    view.aiConfirmProposalId = "";
+    view.aiConfirmActionIndexes = [];
+    view.aiConfirmPersonChoice = {};
+    restoreInterruptedWorkflow();
+  `);
+  assert(view().screen === "aiConfirmActions" && view().aiConfirmProposalId === proposalId && view().aiConfirmPersonChoice.existingPersonId === personId, "interrupted proposal review resumes selected actions and person choice");
+  makeElement("ai-confirm-action-confirm").checked = false;
+  appEval("cancelAiActionConfirmView()");
+  assert(!appEval(`loadAutosaveDrafts()[ACTIVE_WORKFLOW_DRAFT_KEY]`), "canceling proposal confirmation clears its recovery pointer");
+
   const failedId = appEval(`(() => {
     const grab = makeQuickGrab("Unprocessed text stays safe", [], "Whenever", null, { captureSource: "main" });
     db.quickGrabs.unshift(grab);
@@ -440,6 +461,16 @@ function testUnifiedCaptureAndProposalSafety() {
   makeElement("quick-text").value = "";
   appEval("restoreAutosaveDraft()");
   assert(makeElement("quick-text").value === "Half-written capture survives refresh", "main capture draft restores after interruption");
+
+  appEval('clearAutosaveDraft("capture:main")');
+  makeElement("quick-text").value = "Lifecycle-flushed capture";
+  appEval("flushRecoveryState()");
+  assert(appEval('loadAutosaveDrafts()["capture:main"].fields["quick-text"]') === "Lifecycle-flushed capture", "page lifecycle flush synchronously preserves the current plaintext capture draft");
+  const preservedDraft = appEval("JSON.stringify(loadAutosaveDrafts())");
+  appEval("view.locked = true");
+  appEval("flushRecoveryState()");
+  assert(appEval("JSON.stringify(loadAutosaveDrafts())") === preservedDraft, "lifecycle flush while PIN-locked cannot delete an existing capture draft");
+  appEval("view.locked = false");
 }
 
 function testProposalActionsDoNotHidePersonDateUpdates() {

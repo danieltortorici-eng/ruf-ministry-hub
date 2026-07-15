@@ -189,3 +189,16 @@ Status: implemented locally on 2026-07-15; verification recorded with the phase 
 - Removed 236 lines of uninvoked legacy AI test scaffolding tied to the deleted manual saver. The maintained AI proposal selection/edit/partial-approval/person-resolution/idempotency tests continue to run.
 - No storage identifier, record collection, backup envelope, Function, Worker, external system, secret, production setting, or original checkout was changed.
 - Verification: focused syntax, Calm regression, maintained person-profile, AI function, and whitespace checks passed before final Phase 10 versioning; full `npm test` is the commit gate.
+
+## Phase 11 — Accessibility and workflow recovery
+
+Status: implemented locally on 2026-07-15; verification recorded with the phase commit.
+
+- Replaced the startup localStorage/IndexedDB render race with a fail-closed recovery bootstrap. No demo seed, archive mutation, ministry render, or plaintext fallback occurs while storage is unresolved.
+- Distinguished missing from corrupt local values; restored and normalized valid IndexedDB-only mirrors; retained unreadable raw bytes and paused when no safe mirror existed; seeded demo data only for a confirmed empty first install.
+- Kept Device Vault locked with an empty in-memory graph until decrypt succeeds. Serialized encrypted saves by revision, capped write concurrency at one, committed the newest requested snapshot, retained the old envelope on failure, and made later retry safe.
+- Recovered main, Today, profile, and proposal drafts from local/IndexedDB mirrors. Added lifecycle flushing without allowing PIN/vault-locked screens to delete drafts. Final proposal approval is never autosaved or restored.
+- Added a skip link, focusable main landmark, intentional H1 route focus, global Search caret restoration, one modal focus trap/Escape/inert/return-focus binding, explicit labels/descriptions, fieldsets/legends, `aria-pressed`, invalid-field focus, and live error announcements.
+- Raised switches/small buttons to 44px, strengthened focus/muted contrast, added horizontal safe-area and `dvh` sheet handling, wrapping navigation labels, landscape adjustments, reduced-motion preservation, and forced-colors support.
+- Added focused recovery and accessibility suites to `npm test`; paired `APP_VERSION`, package version, service-worker cache v43, and CSP hash. Storage identifiers, backup envelope, Functions, Workers, production settings, and secrets are unchanged.
+- Manual VoiceOver, Dynamic Type, real iPhone landscape/one-handed behavior, real browser process termination, and performance vitals remain explicitly `NOT VERIFIED` pending Phase 12/13 browser and device evidence.

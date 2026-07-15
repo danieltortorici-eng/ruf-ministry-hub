@@ -158,6 +158,21 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 - Complete a partial approval and confirm the proposal leaves Pending, appears under Approved as Partially Approved, and shows the saved selected/skipped choices.
 - Confirm Save approved updates still requires the explicit review checkbox before local records are created.
 
+## Recovery And Accessibility
+
+- With an unfinished draft in Today, Capture, and one profile, refresh each screen and confirm the correct text and locked person return.
+- Begin proposal review, change the selected person and action checkboxes, refresh, and confirm the draft decision returns while the final **I reviewed…** approval checkbox is unchecked.
+- Cancel proposal review and refresh; confirm the canceled workflow does not reopen.
+- With synthetic browser storage only, remove the localStorage data mirror while retaining the IndexedDB mirror; reopen and confirm the real synthetic records load instead of demo data.
+- With a deliberately corrupt synthetic local value and no valid recovery mirror, confirm **Local data check paused** appears and the corrupt bytes are not replaced. Never perform this step with real ministry data.
+- With Device Vault enabled, reopen and confirm no ministry content appears before the vault passphrase succeeds. A wrong passphrase must keep the vault locked and focus the passphrase field.
+- Use a hardware keyboard to activate **Skip to main content**, then navigate all five primary destinations. Confirm the new page heading receives focus only after navigation, not while typing in Search.
+- Open every in-app sheet with the keyboard. Confirm the sheet name is announced, Tab/Shift+Tab stay inside, Escape closes safely, and focus returns to the invoking control.
+- Trigger validation in capture, security, import, prayer, and final approval fields. Confirm the invalid control receives focus and the message is announced.
+- With VoiceOver, confirm filter selection state, grouped checkboxes, People card names, photo/initial behavior, disabled actions, and critical notices do not rely on color.
+- Test 390px and 430px portrait widths plus landscape. Confirm no horizontal page scrolling, safe-area collision, clipped bottom navigation, or unreachable sheet action.
+- Test the largest practical Dynamic Type size and reduced motion. Confirm navigation labels wrap, content remains reachable, and nonessential transitions stop.
+
 ## PWA And Offline Cache
 
 - Open More, then iPhone Readiness.
