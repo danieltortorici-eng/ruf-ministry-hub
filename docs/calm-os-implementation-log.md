@@ -138,3 +138,15 @@ Status: implemented locally on 2026-07-15; verification recorded with the phase 
 - Routed the legacy Autopilot selector through the central queue without exposing Autopilot as normal Today language; its old standalone screen remains temporarily accessible until Navigation/Cleanup phases relocate or remove verified legacy paths.
 - Paired app/package version, service-worker cache, and CSP identity. No data collection, storage key, backup envelope, Function, production setting, or external state changed.
 - Verification: focused syntax and Today regression passed before the full maintained suite; final exact commands and exit results are recorded in the Phase 6 commit evidence.
+
+## Phase 7 — People discovery and care
+
+Status: implemented locally on 2026-07-15; verification recorded with the phase commit.
+
+- Rebuilt People cards as one semantic whole-card open control with a fixed 48px circular photo or initials fallback, explicit image dimensions, quiet lazy decoding, and long-name wrapping.
+- Added one generated identity helper capped at two grounded pieces. It prioritizes meaningful ministry identity such as leadership team, fraternity/sorority, donor status, RUF involvement, or hometown without inventing data.
+- Kept only name, identity, care level, contextual next follow-up, and a concise saved follow-up reason. Removed card-level Open, Pin, Followed Up, pinned badges, last-interaction stats, Created/Updated timestamps, and preferred-contact display.
+- Follow-up reasons now render only beside a valid planned date and respect sensitive-preview masking. Search restores its field focus and caret after filtered rerenders so one-handed iPhone typing can continue.
+- Simplified the People entry question and search toolbar. Person creation stays available as a quiet secondary action; whole-card opening is the repeated primary behavior.
+- Preserved all person records, local photos, pin settings, follow-up data, search behavior, storage keys, backup compatibility, and existing profile access. Administrative controls are handled in Profile/Navigation phases, not duplicated on cards.
+- Verification: focused syntax and People regression passed before the full maintained suite; final exact commands and exit results are recorded in the Phase 7 commit evidence.

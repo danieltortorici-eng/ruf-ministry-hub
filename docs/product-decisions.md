@@ -115,3 +115,13 @@ This is the decision record for the Calm OS redesign. Decisions are constrained 
 - **Compatibility effect:** Recommendations are derived from existing people, tasks, captures, and prayers. Deferrals are additive settings data; records are not migrated, and sensitive detail is masked before display.
 - **Files affected:** Authoritative deploy HTML, service-worker/CSP/package identities, focused Today regression, iPhone manual QA, implementation record.
 - **Tests used:** Central priority order, reason/explanation, sensitive masking, completed/snoozed exclusion, Done, Later, proactive dismissal, three-section, two-item, one-primary-action, and critical-alert regressions; full maintained suite.
+
+### PD-012 — Make the person card a recognition target, not a mini dashboard
+
+- **Decision:** Render each person as one semantic whole-card control with fixed photo-or-initial geometry, name, a generated two-piece identity, care level, contextual follow-up, and an optional concise reason. Remove card-level actions and administrative metadata.
+- **Alternatives considered:** Retain a primary Open button plus Pin/Followed Up actions; use a generic avatar; keep last interaction and three bordered stat cards.
+- **Reason:** A quiet recognition target answers “Who am I looking for?” faster than a database summary and avoids forcing three action decisions before the profile opens.
+- **Cognitive-load effect:** Each repeating card has one interaction, no pills, no action cluster, no timestamp, and no competing stat boxes. Photos and initials use identical 48px geometry so recognition never causes layout shift.
+- **Compatibility effect:** Existing local photos, person fields, pinned settings, and follow-up data are read without migration. Pin and record administration remain available outside the list and are relocated through later Profile/Navigation phases.
+- **Files affected:** Authoritative deploy HTML/CSS, service-worker/CSP/package identities, People regression, iPhone manual QA, implementation record.
+- **Tests used:** Person-type-aware identity selection, initials/photo fallback, fixed image geometry, whole-card semantics, contextual date/reason, sensitive/stale reason handling, search focus restoration, sparse/long-name rendering, and forbidden metadata/action assertions; full maintained suite.

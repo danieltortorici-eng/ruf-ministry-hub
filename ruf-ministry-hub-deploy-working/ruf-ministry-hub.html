@@ -795,6 +795,120 @@
       display: block;
     }
 
+    .people-toolbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--space-3);
+      align-items: end;
+      max-width: 760px;
+    }
+
+    .person-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+      gap: var(--space-3);
+    }
+
+    .person-card {
+      min-width: 0;
+    }
+
+    .person-card-open {
+      width: 100%;
+      min-height: 108px;
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: var(--space-3);
+      align-items: start;
+      padding: var(--space-4);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--ink);
+      text-align: left;
+      box-shadow: 0 4px 16px rgba(28, 49, 42, 0.035);
+    }
+
+    .person-card-open:hover {
+      border-color: #b9ccc2;
+      background: var(--surface-muted);
+    }
+
+    .person-thumbnail {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      flex: 0 0 48px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font-weight: 850;
+      line-height: 1;
+    }
+
+    .person-thumbnail img {
+      display: block;
+      width: 48px;
+      height: 48px;
+      object-fit: cover;
+    }
+
+    .person-card-copy {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-1);
+    }
+
+    .person-card-name {
+      display: block;
+      overflow-wrap: anywhere;
+      font-size: 1.02rem;
+      font-weight: 820;
+      line-height: 1.2;
+    }
+
+    .person-card-identity,
+    .person-card-care,
+    .person-card-reason {
+      display: block;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .person-card-identity {
+      font-size: 0.88rem;
+    }
+
+    .person-card-care {
+      color: var(--soft-ink);
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .person-card-followup {
+      display: grid;
+      gap: 2px;
+      margin-top: var(--space-1);
+    }
+
+    .person-card-date {
+      display: block;
+      color: var(--accent-strong);
+      font-size: 0.9rem;
+      font-weight: 800;
+      line-height: 1.3;
+    }
+
+    .person-card-reason {
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      font-size: 0.84rem;
+    }
+
     .profile-name {
       margin: 0;
       font-size: clamp(1.7rem, 2.5vw, 2.6rem);
@@ -1221,6 +1335,11 @@
         font-size: 1.08rem;
       }
 
+      .people-toolbar {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+      }
+
       .top-actions {
         justify-content: flex-start;
         overflow-x: auto;
@@ -1344,7 +1463,7 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-today-v1";
+    const APP_VERSION = "2026.07.15-calm-os-people-v1";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CAPTURE_PROCESSOR_VERSION = "calm-os-capture-v1";
@@ -8756,58 +8875,99 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
+    function conciseText(value, maxLength = 88) {
+      const text = String(value || "").replace(/\s+/g, " ").trim();
+      if (text.length <= maxLength) return text;
+      return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+    }
+
+    function usefulIdentityValue(value) {
+      const text = String(value || "").replace(/\s+/g, " ").trim();
+      return /^(active|new|not set|not applicable|n\/?a|ruf contact)$/i.test(text) ? "" : text;
+    }
+
+    function personIdentityLine(person) {
+      const primary = usefulIdentityValue(person?.personType) || "Person";
+      const involvement = usefulIdentityValue(person?.rufInvolvement);
+      const involvementPiece = /leadership/i.test(involvement)
+        ? "Leadership team"
+        : involvement.split(",").map(part => part.trim()).filter(Boolean)[0] || "";
+      const personType = primary.toLowerCase();
+      const student = /student|freshman|first-year|sophomore|junior|senior/.test(personType);
+      const formerOrAlumni = /former|alumni/.test(personType);
+      const donor = /donor|supporter/.test(personType);
+      const candidates = donor
+        ? [person?.donorStatus, involvementPiece, person?.hometown]
+        : formerOrAlumni
+          ? [person?.hometown, involvementPiece, person?.classYear]
+          : student
+            ? [involvementPiece === "Leadership team" ? involvementPiece : "", person?.fraternitySorority, involvementPiece, person?.classYear, person?.major]
+            : [involvementPiece, person?.hometown, person?.donorStatus, person?.status];
+      const secondary = candidates.map(usefulIdentityValue).find(Boolean) || "";
+      return [primary, conciseText(secondary, 42)]
+        .filter((part, index, values) => part && values.findIndex(value => value.toLowerCase() === part.toLowerCase()) === index)
+        .slice(0, 2)
+        .join(" · ");
+    }
+
+    function usefulFollowUpReason(person) {
+      if (!calendarDateParts(person?.nextFollowUpDate)) return "";
+      const reason = conciseText(person?.followUpReason, 88);
+      if (/^(not set|none|n\/?a)$/i.test(reason)) return "";
+      const privacyTier = aiPrivacyTierForRecord(person, "people");
+      const sensitive = ["Private", "Sensitive", "Highly Sensitive", "Do Not Send to AI"].includes(privacyTier);
+      return maskedText(sensitive, "Sensitive follow-up detail hidden.", reason);
+    }
+
+    function renderPersonThumbnail(person) {
+      return `
+        <span class="person-thumbnail" data-person-thumbnail="${person.photoDataUrl ? "photo" : "initials"}" aria-hidden="true">
+          ${person.photoDataUrl
+            ? `<img src="${escapeHtml(person.photoDataUrl)}" alt="" width="48" height="48" loading="lazy" decoding="async">`
+            : `<span>${escapeHtml(personInitials(person))}</span>`}
+        </span>
+      `;
+    }
+
     function renderPeople() {
       const q = view.search.toLowerCase();
       const people = db.people
         .filter(person => !q || [person.name, person.personType, person.careLevel, person.rufInvolvement, person.phone, person.email].join(" ").toLowerCase().includes(q))
         .sort((a, b) => Number(isPinnedPerson(b.id)) - Number(isPinnedPerson(a.id)) || a.name.localeCompare(b.name));
       return `
-        ${renderTopbar("People", "Each profile gathers notes, meetings, prayer requests, follow-ups, and the story of care over time.")}
-        <div class="section">
-          <div class="surface">
-            <div class="form-grid">
-              <div class="field">
-                <label for="people-search">Search people</label>
-                <input class="input" id="people-search" value="${escapeHtml(view.search)}" placeholder="Name, phone, group, care level">
-              </div>
-              <div class="field">
-                <label>Add a person</label>
-                <button class="button" data-action="person-create">Create New Person</button>
-              </div>
+        ${renderTopbar("People", "Who are you looking for or caring for?")}
+        <section class="section" aria-label="Find a person">
+          <div class="people-toolbar">
+            <div class="field">
+              <label for="people-search">Search people</label>
+              <input class="input" id="people-search" value="${escapeHtml(view.search)}" placeholder="Name, group, or care level" autocomplete="off">
             </div>
+            <button class="button quiet" data-action="person-create">Add person</button>
           </div>
-        </div>
-        <section class="section">
-          ${people.length ? people.map(renderPersonListCard).join("") : emptyState("No people match that search.")}
+        </section>
+        <section class="section" aria-label="People">
+          ${people.length ? `<div class="person-list">${people.map(renderPersonListCard).join("")}</div>` : emptyState("No people match that search.")}
         </section>
       `;
     }
 
     function renderPersonListCard(person) {
-      const pinned = isPinnedPerson(person.id);
+      const identity = personIdentityLine(person);
+      const followUpReason = usefulFollowUpReason(person);
       return `
-        <article class="item">
-          <div class="item-title-row">
-            <div>
-              <div class="item-title">${escapeHtml(person.name)}</div>
-              <div class="meta">${escapeHtml(person.personType)} - ${escapeHtml(person.rufInvolvement || person.status)}</div>
-            </div>
-            <div class="action-row">
-              ${pinned ? `<span class="pill gold">Pinned</span>` : ""}
-              <span class="pill green">${escapeHtml(person.careLevel)}</span>
-            </div>
-          </div>
-          <div class="stat-grid">
-            ${miniStat("Last interaction", formatInteractionDate(person.lastMeaningfulInteraction))}
-            ${miniStat("Next follow-up", formatFollowUpDate(person.nextFollowUpDate))}
-            ${miniStat("Reason", person.followUpReason || "Not set")}
-          </div>
-          ${timestampLine(person)}
-          <div class="action-row">
-            <button class="button primary small" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Profile</button>
-            <button class="button small" data-action="person-pin" data-id="${escapeHtml(person.id)}">${pinned ? "Unpin" : "Pin"}</button>
-            <button class="button small" data-action="person-followed-up" data-id="${escapeHtml(person.id)}">Mark Followed Up</button>
-          </div>
+        <article class="person-card" data-person-card="${escapeHtml(person.id)}">
+          <button class="person-card-open" type="button" data-action="person-open" data-id="${escapeHtml(person.id)}">
+            ${renderPersonThumbnail(person)}
+            <span class="person-card-copy">
+              <span class="person-card-name">${escapeHtml(person.name || "Unnamed person")}</span>
+              <span class="person-card-identity">${escapeHtml(identity)}</span>
+              <span class="person-card-care">${escapeHtml(person.careLevel || "Care level not set")}</span>
+              <span class="person-card-followup">
+                <span class="person-card-date">${escapeHtml(formatFollowUpDate(person.nextFollowUpDate))}</span>
+                ${followUpReason ? `<span class="person-card-reason">${escapeHtml(followUpReason)}</span>` : ""}
+              </span>
+            </span>
+          </button>
         </article>
       `;
     }
@@ -10562,9 +10722,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const peopleSearch = document.getElementById("people-search");
       if (peopleSearch) {
         peopleSearch.addEventListener("input", event => {
+          const caret = Number.isFinite(event.target.selectionStart) ? event.target.selectionStart : event.target.value.length;
           view.search = event.target.value;
           saveCurrentDraftNow();
           render();
+          const restoredSearch = document.getElementById("people-search");
+          if (restoredSearch) {
+            restoredSearch.focus({ preventScroll: true });
+            restoredSearch.setSelectionRange(caret, caret);
+          }
         });
       }
       const globalSearch = document.getElementById("global-search");

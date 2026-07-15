@@ -96,6 +96,13 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 
 ## People And Profiles
 
+- On People, confirm the page asks who you are looking for or caring for and keeps search immediately available.
+- Confirm each person appears as one compact card with a small circular photo or initials, name, no more than a two-part identity line, care level, contextual next follow-up, and a short reason only when one is saved.
+- Confirm the whole card opens the profile with one tap; there is no separate Open Profile button or equal-weight Pin/Followed Up cluster.
+- Confirm cards never show preferred contact, Created/Updated timestamps, generic avatar icons, or a visible Pinned badge.
+- Type several characters into People search and confirm the iPhone keyboard, focus, and caret remain in the field after each filtered update.
+- With a synthetic person marked Sensitive, confirm a saved follow-up reason is masked; clear or corrupt the follow-up date and confirm a stale reason is not shown.
+- Test a long fictional name, no photo, and a synthetic large local image. Confirm the 48px image area does not resize or shift while the card loads and the name wraps without overlap.
 - Create or open a person.
 - Tap Create New Person and confirm it opens an in-app sheet.
 - Try creating a likely duplicate and confirm the sheet asks you to confirm before saving.

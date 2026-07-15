@@ -582,6 +582,45 @@ function testTodayRecommendationPriorityAndActions() {
   appEval("updateAvailable = false");
 }
 
+function testPeopleCardCalmContract() {
+  resetApp("demoData()");
+  const people = db().people;
+  assert(appEval(`personIdentityLine(personById("${people[0].id}"))`) === "Student · Leadership team", "People identity chooses at most two useful pieces");
+  assert(appEval(`personIdentityLine(personById("${people[1].id}"))`) === "Student · SAE", "People identity favors a useful student affiliation");
+  assert(appEval(`personIdentityLine(personById("${people[2].id}"))`) === "Donor · Monthly supporter", "People identity uses grounded donor status");
+  appEval(`personById("${people[0].id}").donorStatus = "Dormant supporter"`);
+  assert(appEval(`personIdentityLine(personById("${people[0].id}"))`) === "Student · Leadership team", "student identity is not displaced by unrelated donor metadata");
+  const formerId = appEval(`(() => { const person = createPerson("Former Student"); person.personType = "Former student"; person.hometown = "Birmingham"; person.rufInvolvement = ""; person.status = "Active"; return person.id; })()`);
+  assert(appEval(`personIdentityLine(personById("${formerId}"))`) === "Former student · Birmingham", "former-student identity favors a useful hometown");
+
+  const initialsCard = appEval(`renderPersonListCard(personById("${people[0].id}"))`);
+  assert(initialsCard.includes('data-person-thumbnail="initials"') && initialsCard.includes(">AB<"), "People card uses initials when no photo exists");
+  assert(initialsCard.includes('class="person-card-open"') && (initialsCard.match(/data-action="person-open"/g) || []).length === 1, "the whole People card is one semantic open control");
+  assert(initialsCard.includes(appEval(`formatFollowUpDate(personById("${people[0].id}").nextFollowUpDate)`)), "People card shows one contextual next follow-up date");
+  assert(initialsCard.includes("Ask how exam week settled."), "People card shows a useful concise follow-up reason");
+  assert(!/person-pin|person-followed-up|Open Profile|Created|Updated|Preferred contact/i.test(initialsCard), "People card has no action cluster, timestamps, or preferred-contact UI");
+
+  appEval(`personById("${people[0].id}").photoDataUrl = "data:image/jpeg;base64,synthetic"`);
+  const photoCard = appEval(`renderPersonListCard(personById("${people[0].id}"))`);
+  assert(photoCard.includes('data-person-thumbnail="photo"') && photoCard.includes('width="48" height="48"'), "People photo has fixed geometry before image decode");
+  assert(photoCard.includes('alt=""') && photoCard.includes('loading="lazy"'), "People thumbnail is decorative beside the visible name and loads quietly");
+
+  const sparseId = appEval(`(() => { const person = createPerson("A Very Long Synthetic Name That Must Wrap Calmly Without Moving The Photo"); person.followUpReason = ""; person.nextFollowUpDate = ""; return person.id; })()`);
+  const sparseCard = appEval(`renderPersonListCard(personById("${sparseId}"))`);
+  assert(sparseCard.includes("No follow-up planned") && !sparseCard.includes("person-card-reason"), "sparse People cards stay useful without invented reason text");
+  appEval(`personById("${sparseId}").nextFollowUpDate = daysFromNow(2); personById("${sparseId}").followUpReason = "Private synthetic follow-up"; personById("${sparseId}").aiPrivacyTier = "Sensitive"`);
+  assert(appEval(`usefulFollowUpReason(personById("${sparseId}"))`) === "Sensitive follow-up detail hidden.", "People masks a sensitive follow-up reason");
+  appEval(`personById("${sparseId}").nextFollowUpDate = "bad-date"`);
+  assert(appEval(`usefulFollowUpReason(personById("${sparseId}"))`) === "", "People hides stale reasons when no valid follow-up is planned");
+  assert(html.includes(".person-thumbnail") && html.includes("width: 48px") && html.includes("overflow-wrap: anywhere"), "People card geometry supports no-photo and long-name cases");
+  assert(html.includes(':where(button, [role="button"], a, input, select, textarea, summary):focus-visible') && !html.includes(".person-card-open:focus-visible"), "People card keeps the shared high-contrast focus indicator");
+  assert(html.includes("restoredSearch.focus({ preventScroll: true })") && html.includes("restoredSearch.setSelectionRange(caret, caret)"), "People search restores focus and caret after filtered rendering");
+
+  const peopleMarkup = appEval('view.screen = "people"; renderPeople()');
+  assert(peopleMarkup.includes("Who are you looking for or caring for?") && peopleMarkup.includes('aria-label="People"'), "People asks one calm screen question");
+  assert(!peopleMarkup.includes("Preferred contact") && !peopleMarkup.includes("Created") && !peopleMarkup.includes("Updated"), "People list omits dormant and administrative metadata");
+}
+
 function testExportAndPrivacyHelpers() {
   resetApp("demoData()");
   const payload = appEval("currentPortablePayload()");
@@ -912,6 +951,7 @@ async function run() {
   testAdhdModeAndTodaySectionVisibility();
   testAutopilotAndAttentionPresets();
   testTodayRecommendationPriorityAndActions();
+  testPeopleCardCalmContract();
   testExportAndPrivacyHelpers();
   testAutoMemoryVault();
   await testSecuritySheets();
