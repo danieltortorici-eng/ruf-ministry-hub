@@ -466,10 +466,9 @@ function testAdhdModeAndTodaySectionVisibility() {
   assert(appEval("settings.launchScreen") === "today", "ADHD Mode opens to Today");
 
   const adhdToday = appEval('view.screen = "today"; renderToday();');
-  assert(adhdToday.includes("One thing, then the next."), "ADHD Today uses low-choice helper copy");
-  assert(adhdToday.includes("Next Loose Thing"), "ADHD Today renames loose reminders");
-  assert(adhdToday.includes("Next Person"), "ADHD Today renames people section");
-  assert(adhdToday.includes("Next Follow-Up"), "ADHD Today renames follow-ups");
+  assert((adhdToday.match(/data-today-section=/g) || []).length === 3, "ADHD Today keeps exactly three primary sections");
+  assert(adhdToday.includes("Next thing to do") && adhdToday.includes("Quick Capture") && adhdToday.includes("After that"), "ADHD Today uses the shared low-choice hierarchy");
+  assert((adhdToday.match(/class="button primary"/g) || []).length === 1, "Today has one visually dominant action");
 
   appEval(`
     settings.todayShowQuickCapture = false;
@@ -479,21 +478,19 @@ function testAdhdModeAndTodaySectionVisibility() {
     settings.todayShowPeopleShortcuts = false;
   `);
   const hiddenToday = appEval('renderToday();');
-  assert(!hiddenToday.includes(">Capture</button>"), "ADHD Today can hide Quick Capture");
-  assert(!hiddenToday.includes("Next Loose Thing"), "ADHD Today can hide loose reminders");
-  assert(!hiddenToday.includes("Next Person"), "ADHD Today can hide people section");
-  assert(!hiddenToday.includes("Next Follow-Up"), "ADHD Today can hide follow-ups");
+  assert((hiddenToday.match(/data-today-section=/g) || []).length === 3, "legacy dashboard visibility toggles cannot fragment Calm OS Today");
+  assert(hiddenToday.includes("Quick Capture") && !hiddenToday.includes("People Shortcuts") && !hiddenToday.includes("App Coach suggestion"), "Today keeps capture while legacy dashboard sections stay relocated");
 }
 
 function testAutopilotAndAttentionPresets() {
   resetApp("demoData()");
   const firstAction = appEval("autopilotNextAction()");
-  assert(firstAction.kind === "Quick Grab", "Autopilot chooses a loose Quick Grab first");
-  assert(firstAction.primaryAction === "qg-process", "Autopilot can route into processing");
+  assert(firstAction.kind === "Capture", "legacy Autopilot reads from the central recommendation queue");
+  assert(firstAction.primaryAction === "today-recommendation-open", "legacy Autopilot routes through the central recommendation action");
 
   const todayMarkup = appEval('view.screen = "today"; renderToday();');
-  assert(todayMarkup.includes("Next Best Step"), "Today can show Autopilot next step");
-  assert(todayMarkup.includes("Autopilot"), "Today labels the Autopilot card");
+  assert(todayMarkup.includes("Next thing to do"), "Today names one clear next action");
+  assert(!todayMarkup.includes("Autopilot"), "Today does not expose implementation-style Autopilot language");
 
   const autopilotMarkup = appEval('view.screen = "autopilot"; renderScreen();');
   assert(autopilotMarkup.includes("How Autopilot Chooses"), "Autopilot screen explains its local priority order");
@@ -506,10 +503,83 @@ function testAutopilotAndAttentionPresets() {
   assert(appEval("settings.todayShowCarePeople") === false, "Overwhelmed preset hides people section");
   assert(appEval("settings.todayShowFollowUps") === false, "Overwhelmed preset hides follow-ups");
   const overwhelmedToday = appEval('view.screen = "today"; renderToday();');
-  assert(overwhelmedToday.includes("Next Best Step"), "Overwhelmed Today keeps one Autopilot action");
-  assert(!overwhelmedToday.includes("Next Loose Thing"), "Overwhelmed Today hides loose section");
-  assert(!overwhelmedToday.includes("Next Person"), "Overwhelmed Today hides people section");
-  assert(!overwhelmedToday.includes("Next Follow-Up"), "Overwhelmed Today hides follow-up section");
+  assert(overwhelmedToday.includes("Next thing to do"), "Overwhelmed Today keeps one recommendation");
+  assert((overwhelmedToday.match(/data-today-section=/g) || []).length === 3, "attention presets retain the Calm OS Today contract");
+}
+
+function testTodayRecommendationPriorityAndActions() {
+  resetApp("emptyData()");
+  const ids = appEval(`(() => {
+    settings.backupReminderDays = "0";
+    const overdue = createPerson("Overdue Person");
+    overdue.nextFollowUpDate = daysAgo(4);
+    overdue.followUpReason = "Ask about the saved follow-up";
+    const dueToday = createPerson("Today Person");
+    dueToday.nextFollowUpDate = todayISO();
+    dueToday.followUpReason = "Send a grounded check-in";
+    const careWindow = createPerson("Care Window Person");
+    careWindow.careLevel = "Check in soon";
+    careWindow.lastMeaningfulInteraction = daysAgo(60);
+    const proactive = createPerson("Proactive Person");
+    proactive.lastMeaningfulInteraction = todayISO();
+    settings.pinnedPersonIds = [proactive.id];
+    const task = {
+      id: uid("task"), relatedPersonId: "", title: "Important task today", dueDate: todayISO(), status: "Today / Soon",
+      createdAt: nowISO(), updatedAt: nowISO()
+    };
+    const completedTask = { ...task, id: uid("task"), title: "Completed hidden task", status: "Done / Archived" };
+    db.tasks.push(task, completedTask);
+    const importantCapture = makeQuickGrab("Private capture text", [], "Important", null, { captureSource: "main" });
+    importantCapture.sensitiveFlag = true;
+    const oldestCapture = makeQuickGrab("Oldest ordinary capture", [], "Whenever", null, { captureSource: "main" });
+    oldestCapture.createdAt = daysAgo(20) + "T12:00:00.000Z";
+    const snoozedCapture = makeQuickGrab("Snoozed hidden capture", [], "Important", null, { captureSource: "main" });
+    snoozedCapture.snoozedUntil = daysFromNow(3);
+    db.quickGrabs.push(importantCapture, oldestCapture, snoozedCapture);
+    const prayer = {
+      id: uid("prayer"), relatedPersonId: "", request: "Private prayer text", dateAdded: daysAgo(2), status: "Follow-Up Needed",
+      sensitivityLevel: "Sensitive", followUpDate: todayISO(), shareableStatus: "Private", createdAt: nowISO(), updatedAt: nowISO()
+    };
+    db.prayerRequests.push(prayer);
+    return { overdue: overdue.id, dueToday: dueToday.id, careWindow: careWindow.id, proactive: proactive.id, task: task.id, importantCapture: importantCapture.id, oldestCapture: oldestCapture.id, prayer: prayer.id };
+  })()`);
+  const queue = appEval("buildTodayRecommendations()");
+  assert(queue.slice(0, 8).map(item => item.reasonCode).join("|") === [
+    "overdue-person-follow-up",
+    "person-follow-up-today",
+    "important-task-due-today",
+    "important-or-due-capture",
+    "prayer-follow-up-due",
+    "person-beyond-care-window",
+    "oldest-unprocessed-capture",
+    "proactive-pastoral-opportunity"
+  ].join("|"), "Today follows the required ministry recommendation order");
+  assert(queue.every(item => item.reasonCode && item.explanation), "every Today recommendation keeps an internal testable explanation");
+  assert(queue.find(item => item.recordId === ids.importantCapture).detail === "Sensitive capture hidden.", "Today masks sensitive capture details");
+  assert(queue.find(item => item.recordId === ids.prayer).detail === "Sensitive prayer concern hidden.", "Today masks sensitive prayer details");
+  assert(!queue.some(item => item.title.includes("Completed hidden") || item.title.includes("Snoozed hidden")), "Today excludes completed and snoozed records");
+
+  const markup = appEval('view.screen = "today"; renderToday()');
+  assert((markup.match(/data-today-section=/g) || []).length === 3, "normal Today renders exactly three primary sections");
+  const afterMarkup = markup.split('data-today-section="after"')[1] || "";
+  assert((afterMarkup.match(/data-recommendation-id=/g) || []).length <= 2, "After that renders no more than two items");
+
+  appEval(`completeTodayRecommendation("task-due:${ids.task}")`);
+  assert(db().tasks.find(task => task.id === ids.task).status === "Done / Archived", "Done completes the selected real task");
+  appEval(`postponeTodayRecommendation("person-follow-up:${ids.dueToday}")`);
+  assert(view().sheet?.type === "today-later", "Later opens a return-date sheet for a real ministry action");
+  makeElement("today-return-date").value = appEval("daysFromNow(2)");
+  appEval(`submitTodayLater("person-follow-up:${ids.dueToday}")`);
+  assert(!appEval(`buildTodayRecommendations().some(item => item.id === "person-follow-up:${ids.dueToday}")`), "a postponed real action stays hidden until its selected return date");
+
+  const proactiveId = `proactive:${ids.proactive}`;
+  appEval(`postponeTodayRecommendation("${proactiveId}")`);
+  assert(!appEval(`buildTodayRecommendations().some(item => item.id === "${proactiveId}")`), "a dismissed proactive suggestion does not repeat that day");
+
+  appEval("updateAvailable = true");
+  const alertMarkup = appEval("renderTodayCriticalAlert()");
+  assert((alertMarkup.match(/data-critical-alert/g) || []).length === 1 && alertMarkup.includes("Update ready"), "Today shows at most one compact critical alert");
+  appEval("updateAvailable = false");
 }
 
 function testExportAndPrivacyHelpers() {
@@ -841,6 +911,7 @@ async function run() {
   testCoreLocalActions();
   testAdhdModeAndTodaySectionVisibility();
   testAutopilotAndAttentionPresets();
+  testTodayRecommendationPriorityAndActions();
   testExportAndPrivacyHelpers();
   testAutoMemoryVault();
   await testSecuritySheets();

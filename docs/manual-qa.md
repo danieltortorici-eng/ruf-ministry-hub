@@ -13,7 +13,7 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 
 - Open the app in iPhone Safari.
 - Confirm Today loads without a blank screen.
-- Tap each visible bottom navigation item: Today, Grab, Find, People, Pray, More.
+- Tap each visible navigation item available in this phase; final Calm OS navigation is verified in the Navigation section after Phase 9.
 - From More, open I Have 15 Minutes, Weekly Reset, iPhone Readiness, and App Manual.
 - Confirm the bottom navigation and floating Quick Grab button do not cover important content.
 - Rotate is not required; the app is portrait-first.
@@ -22,12 +22,9 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 
 - Open More, then Settings / Data.
 - Turn on ADHD Mode.
-- Confirm Today uses the shorter one-thing-at-a-time layout.
+- Confirm Today still contains exactly Next thing to do, Quick Capture, and After that.
 - Confirm Quick Review uses a one-card review size.
-- Turn off Show Quick Capture On Today and confirm the Quick Grab capture panel disappears from Today.
-- Turn off Show Loose Things On Today, Show People To Care For On Today, and Show Follow-Ups On Today one at a time.
-- Confirm each section disappears without breaking Today.
-- Turn the hidden sections back on before continuing broader QA.
+- Confirm older Today visibility settings cannot hide Quick Capture or reintroduce dashboard sections.
 
 ## Autopilot And Attention Presets
 
@@ -36,9 +33,9 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 - Confirm Autopilot shows exactly one suggested next action and explains how it chooses.
 - Return to Settings / Data.
 - Choose the Overwhelmed attention preset and tap Apply Preset.
-- Confirm Today keeps the Autopilot card and Quick Capture, while loose reminders, people, and follow-up sections are hidden.
+- Confirm Today keeps the same three-section Calm OS hierarchy and never uses Autopilot as normal interface language.
 - Choose Admin Catch-Up and tap Apply Preset.
-- Confirm Today brings backup, App Coach, Quick Capture, loose reminders, people, and follow-ups back into view.
+- Confirm administrative content remains outside Today even when an older attention preset is applied.
 - Confirm no cloud sync, calendar, contacts, native widget, or external AI feature beyond the implemented Quick Grab proposal route appears as active unless it has been separately built.
 
 ## Unified Capture And Shortcut Flow
@@ -130,10 +127,16 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 
 - Confirm Today loads with empty or low data.
 - Confirm Today loads with real or sample data.
-- Confirm Start Here appears.
-- Mark a person followed up from Today.
-- Mark a follow-up task done from Today.
-- Confirm those actions persist after refresh.
+- Confirm the normal page contains only **Next thing to do**, **Quick Capture**, and **After that** as its three primary sections.
+- Confirm **After that** displays no more than two compact items.
+- Confirm exactly one action is visually dominant and the recommended item offers only **Do this**, **Done**, and **Later**.
+- With synthetic records, confirm overdue person follow-up wins over due-today follow-up, important task, important capture, prayer follow-up, care-window, oldest capture, and proactive suggestions in that order.
+- Confirm sensitive capture, prayer, and task details are masked in recommendation previews.
+- Tap **Done** on a task and confirm it remains complete after refresh.
+- Tap **Later** on a real task or person follow-up and confirm a future return date is required before it disappears.
+- Tap **Later** on a proactive suggestion and confirm it stays dismissed for the rest of the local day.
+- If both an app update and backup reminder are eligible, confirm Today renders only the higher-priority compact critical alert.
+- Confirm People Shortcuts, App Coach, full capture/care/task lists, backup tools, counts, and administration do not appear as normal Today sections.
 
 ## Suggested Updates With Synthetic Data
 

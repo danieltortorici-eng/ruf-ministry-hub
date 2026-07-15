@@ -1344,7 +1344,7 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-capture-v1";
+    const APP_VERSION = "2026.07.15-calm-os-today-v1";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CAPTURE_PROCESSOR_VERSION = "calm-os-capture-v1";
@@ -1859,6 +1859,9 @@
       merged.pinnedPersonIds = Array.isArray(merged.pinnedPersonIds) ? merged.pinnedPersonIds : [];
       merged.recentPersonIds = Array.isArray(merged.recentPersonIds) ? merged.recentPersonIds : [];
       merged.appCoachDismissed = merged.appCoachDismissed && typeof merged.appCoachDismissed === "object" && !Array.isArray(merged.appCoachDismissed) ? merged.appCoachDismissed : {};
+      merged.todayRecommendationDeferrals = merged.todayRecommendationDeferrals && typeof merged.todayRecommendationDeferrals === "object" && !Array.isArray(merged.todayRecommendationDeferrals)
+        ? merged.todayRecommendationDeferrals
+        : {};
       merged.aiEnabled = false;
       merged.aiMockMode = merged.aiMockMode !== false;
       merged.askBeforeAiEveryTime = true;
@@ -4166,38 +4169,478 @@
       `;
     }
 
+    function todayCareWindowDays(person = {}) {
+      const care = String(person.careLevel || "").toLowerCase();
+      if (/pastoral|urgent/.test(care)) return 7;
+      if (/pray this week|check in soon/.test(care)) return 14;
+      if (/get to know|leader/.test(care)) return 30;
+      if (/donor/.test(care)) return 60;
+      if (/low touch/.test(care)) return 90;
+      return 45;
+    }
+
+    function todayRecommendationDeferred(recommendation, reference, appSettings = settings) {
+      const deferral = appSettings.todayRecommendationDeferrals?.[recommendation.id];
+      if (!deferral || typeof deferral !== "object") return false;
+      const today = localISODate(reference);
+      if (recommendation.proactive && deferral.dismissedOn === today) return true;
+      return Boolean(deferral.returnDate && calendarDayDelta(deferral.returnDate, reference) > 0);
+    }
+
+    function buildTodayRecommendations(reference = new Date(), data = db, appSettings = settings) {
+      const people = Array.isArray(data.people) ? data.people : [];
+      const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+      const captures = Array.isArray(data.quickGrabs) ? data.quickGrabs : [];
+      const prayers = Array.isArray(data.prayerRequests) ? data.prayerRequests : [];
+      const personMap = new Map(people.map(person => [person.id, person]));
+      const prayerMap = new Map(prayers.map(prayer => [prayer.id, prayer]));
+      const candidates = [];
+      const prioritizedCaptureIds = new Set();
+      const add = recommendation => {
+        if (!recommendation?.id || todayRecommendationDeferred(recommendation, reference, appSettings)) return;
+        candidates.push(recommendation);
+      };
+      const personDetail = person => aiPrivacyTierForRecord(person, "people") === "Normal"
+        ? String(person.followUpReason || "A follow-up is ready.")
+        : "Sensitive care detail hidden.";
+
+      people.forEach(person => {
+        const delta = calendarDayDelta(person.nextFollowUpDate, reference);
+        if (delta === null || delta > 0) return;
+        const tier = delta < 0 ? 1 : 2;
+        add({
+          id: `person-follow-up:${person.id}`,
+          tier,
+          reasonCode: delta < 0 ? "overdue-person-follow-up" : "person-follow-up-today",
+          explanation: delta < 0 ? `Person follow-up is overdue by ${Math.abs(delta)} day(s).` : "Person follow-up is due today.",
+          kind: "person",
+          recordId: person.id,
+          personId: person.id,
+          subjectKey: `person:${person.id}`,
+          sortDate: person.nextFollowUpDate,
+          title: `Follow up with ${person.name || "this person"}`,
+          detail: personDetail(person),
+          dateText: formatFollowUpDate(person.nextFollowUpDate, reference),
+          proactive: false
+        });
+      });
+
+      tasks.forEach(task => {
+        if (["Done / Archived", "Done", "Archived", "Completed"].includes(task.status)) return;
+        if (task.snoozedUntil && calendarDayDelta(task.snoozedUntil, reference) > 0) return;
+        const delta = calendarDayDelta(task.dueDate, reference);
+        if (delta === null || delta > 0) return;
+        const relatedPrayer = prayerMap.get(task.relatedPrayerRequestId);
+        const sensitive = relatedPrayer?.sensitivityLevel === "Sensitive" || aiPrivacyTierForRecord(task, "tasks") !== "Normal";
+        const person = personMap.get(task.relatedPersonId);
+        add({
+          id: `task-due:${task.id}`,
+          tier: 3,
+          reasonCode: "important-task-due-today",
+          explanation: delta < 0 ? `Concrete task is overdue by ${Math.abs(delta)} day(s).` : "Concrete task is due today.",
+          kind: "task",
+          recordId: task.id,
+          personId: person?.id || "",
+          subjectKey: person?.id ? `person:${person.id}` : `task:${task.id}`,
+          sortDate: task.dueDate,
+          title: sensitive ? "Complete a sensitive follow-up" : String(task.title || "Complete this follow-up"),
+          detail: person ? `For ${person.name}` : "A concrete follow-up is ready.",
+          dateText: formatDueDate(task.dueDate, reference),
+          proactive: false
+        });
+      });
+
+      captures.forEach(capture => {
+        if (["Done", "Converted", "Archived"].includes(capture.status)) return;
+        if (capture.snoozedUntil && calendarDayDelta(capture.snoozedUntil, reference) > 0) return;
+        const dueDelta = calendarDayDelta(capture.remindAt || capture.detectedDate, reference);
+        if (capture.urgency !== "Important" && capture.urgency !== "Today" && (dueDelta === null || dueDelta > 0)) return;
+        prioritizedCaptureIds.add(capture.id);
+        const sensitive = capture.sensitiveFlag || aiPrivacyTierForRecord(capture, "quickGrabs") !== "Normal";
+        add({
+          id: `capture-due:${capture.id}`,
+          tier: 4,
+          reasonCode: "important-or-due-capture",
+          explanation: "Capture is marked important, today, or has reached its reminder date.",
+          kind: "capture",
+          recordId: capture.id,
+          personId: capture.relatedPersonId || "",
+          subjectKey: `capture:${capture.id}`,
+          sortDate: capture.remindAt || capture.createdAt,
+          title: "Process this capture",
+          detail: sensitive ? "Sensitive capture hidden." : String(capture.rawContent || "Unprocessed capture"),
+          dateText: dueDelta !== null && dueDelta <= 0 ? "Ready today" : "Important",
+          proactive: false
+        });
+      });
+
+      prayers.forEach(prayer => {
+        if (["Answered", "Archived"].includes(prayer.status)) return;
+        if (prayer.snoozedUntil && calendarDayDelta(prayer.snoozedUntil, reference) > 0) return;
+        const delta = calendarDayDelta(prayer.followUpDate, reference);
+        if (delta === null || delta > 0) return;
+        const person = personMap.get(prayer.relatedPersonId);
+        add({
+          id: `prayer-follow-up:${prayer.id}`,
+          tier: 5,
+          reasonCode: "prayer-follow-up-due",
+          explanation: delta < 0 ? `Prayer follow-up is overdue by ${Math.abs(delta)} day(s).` : "Prayer follow-up is due today.",
+          kind: "prayer",
+          recordId: prayer.id,
+          personId: person?.id || "",
+          subjectKey: person?.id ? `person:${person.id}` : `prayer:${prayer.id}`,
+          sortDate: prayer.followUpDate,
+          title: person ? `Follow up on prayer with ${person.name}` : "Follow up on a prayer request",
+          detail: prayer.sensitivityLevel === "Sensitive" ? "Sensitive prayer concern hidden." : String(prayer.request || "Prayer follow-up is ready."),
+          dateText: formatFollowUpDate(prayer.followUpDate, reference),
+          proactive: false
+        });
+      });
+
+      people.forEach(person => {
+        if (person.status === "Archived" || person.nextFollowUpDate) return;
+        const daysSince = calendarDayDelta(person.lastMeaningfulInteraction, reference);
+        if (daysSince === null || Math.abs(daysSince) < todayCareWindowDays(person) || daysSince > 0) return;
+        add({
+          id: `care-window:${person.id}`,
+          tier: 6,
+          reasonCode: "person-beyond-care-window",
+          explanation: `Last interaction is beyond the ${todayCareWindowDays(person)}-day care window derived from the saved care level.`,
+          kind: "person",
+          recordId: person.id,
+          personId: person.id,
+          subjectKey: `person:${person.id}`,
+          sortDate: person.lastMeaningfulInteraction,
+          title: `Check in with ${person.name || "this person"}`,
+          detail: "It has been longer than their saved care rhythm.",
+          dateText: formatInteractionDate(person.lastMeaningfulInteraction, reference),
+          proactive: false
+        });
+      });
+
+      captures
+        .filter(capture => !prioritizedCaptureIds.has(capture.id))
+        .filter(capture => !["Done", "Converted", "Archived"].includes(capture.status))
+        .filter(capture => !capture.snoozedUntil || calendarDayDelta(capture.snoozedUntil, reference) <= 0)
+        .forEach(capture => add({
+          id: `capture-oldest:${capture.id}`,
+          tier: 7,
+          reasonCode: "oldest-unprocessed-capture",
+          explanation: "This is an unprocessed capture; older captures sort first within this tier.",
+          kind: "capture",
+          recordId: capture.id,
+          personId: capture.relatedPersonId || "",
+          subjectKey: `capture:${capture.id}`,
+          sortDate: capture.createdAt,
+          title: "Sort one saved thought",
+          detail: capture.sensitiveFlag ? "Sensitive capture hidden." : String(capture.rawContent || "Unprocessed capture"),
+          dateText: formatHistoryDate(capture.createdAt, "Captured", reference),
+          proactive: false
+        }));
+
+      const proactivePeople = [
+        ...(appSettings.pinnedPersonIds || []),
+        ...(appSettings.recentPersonIds || []),
+        ...people.map(person => person.id)
+      ];
+      const proactiveId = proactivePeople.find((id, index, list) => id && list.indexOf(id) === index && personMap.has(id));
+      if (proactiveId) {
+        const person = personMap.get(proactiveId);
+        add({
+          id: `proactive:${person.id}`,
+          tier: 8,
+          reasonCode: "proactive-pastoral-opportunity",
+          explanation: "A saved person is available for a proactive, non-urgent act of care.",
+          kind: "proactive",
+          recordId: person.id,
+          personId: person.id,
+          subjectKey: `person:${person.id}`,
+          sortDate: person.lastMeaningfulInteraction || person.createdAt || "",
+          title: `Encourage ${person.name || "someone"}`,
+          detail: "No urgent deadline—just a quiet opportunity to care.",
+          dateText: "Proactive care",
+          proactive: true
+        });
+      }
+
+      if (data.people?.length || data.quickGrabs?.length || data.tasks?.length || data.prayerRequests?.length) {
+        if (backupReminderDue()) add({
+          id: "maintenance:backup",
+          tier: 9,
+          reasonCode: "maintenance-backup-only",
+          explanation: "No higher ministry recommendation is available and the configured backup rhythm is due.",
+          kind: "maintenance",
+          recordId: "backup",
+          subjectKey: "maintenance:backup",
+          sortDate: "",
+          title: "Protect this ministry memory",
+          detail: backupStatusText(),
+          dateText: "Maintenance",
+          proactive: true
+        });
+      }
+
+      if (!candidates.length) add({
+        id: "quiet:capture",
+        tier: 9,
+        reasonCode: "quiet-capture-fallback",
+        explanation: "No ministry or maintenance action is currently due.",
+        kind: "quiet",
+        recordId: "capture",
+        subjectKey: "quiet:capture",
+        sortDate: "",
+        title: "Nothing is pressing",
+        detail: "Capture anything you want to remember, or return to ministry.",
+        dateText: "Clear for now",
+        proactive: true
+      });
+
+      const sorted = candidates.sort((a, b) => a.tier - b.tier
+        || String(a.sortDate || "9999").localeCompare(String(b.sortDate || "9999"))
+        || a.id.localeCompare(b.id));
+      const seenSubjects = new Set();
+      return sorted.filter(item => {
+        if (seenSubjects.has(item.subjectKey)) return false;
+        seenSubjects.add(item.subjectKey);
+        return true;
+      });
+    }
+
+    function renderTodayCriticalAlert() {
+      if (updateAvailable) {
+        return `<aside class="notice" data-critical-alert><strong>Update ready.</strong> Finish typing first, then <button class="button quiet small" data-action="app-update">Update now</button></aside>`;
+      }
+      const records = totalRecordCount();
+      const backupAge = backupAgeDays();
+      if (records >= 25 && (!settings.lastBackupAt || (backupAge !== null && backupAge >= 60))) {
+        const action = sensitiveRecordCount() ? "export-encrypted-json" : "export-json";
+        return `<aside class="notice" data-critical-alert><strong>Local ministry memory needs a backup.</strong> <button class="button quiet small" data-action="${action}">Back up</button></aside>`;
+      }
+      return "";
+    }
+
+    function renderTodayRecommendationCard(recommendation) {
+      return `
+        <div class="calm-card primary" data-recommendation-id="${escapeHtml(recommendation.id)}" data-reason-code="${escapeHtml(recommendation.reasonCode)}">
+          <div>
+            <div class="eyebrow">Next thing to do</div>
+            <h2>${escapeHtml(recommendation.title)}</h2>
+            <p class="item-preview">${escapeHtml(recommendation.detail)}</p>
+            <div class="meta">${escapeHtml(recommendation.dateText)}</div>
+          </div>
+          <div class="action-row">
+            <button class="button primary" data-action="today-recommendation-open" data-id="${escapeHtml(recommendation.id)}">${recommendation.kind === "quiet" ? "Capture" : "Do this"}</button>
+            <button class="button quiet" data-action="today-recommendation-done" data-id="${escapeHtml(recommendation.id)}">Done</button>
+            <button class="button quiet" data-action="today-recommendation-later" data-id="${escapeHtml(recommendation.id)}">Later</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTodayAfterItem(recommendation) {
+      return `
+        <article class="calm-list-row" data-recommendation-id="${escapeHtml(recommendation.id)}" data-reason-code="${escapeHtml(recommendation.reasonCode)}">
+          <div><strong>${escapeHtml(recommendation.title)}</strong><div class="meta">${escapeHtml(recommendation.dateText)}</div></div>
+          <button class="button quiet small" data-action="today-recommendation-open" data-id="${escapeHtml(recommendation.id)}">Open</button>
+        </article>
+      `;
+    }
+
     function renderToday() {
-      const limit = todayItemLimit();
-      const promptItems = promptQuickGrabs().slice(0, limit);
-      const carePeople = peopleToCareFor().slice(0, limit);
-      const tasks = taskDueSoon().slice(0, limit);
-      if (settings.adhdMode) return renderAdhdToday(promptItems, carePeople, tasks);
+      const recommendations = buildTodayRecommendations();
+      const next = recommendations[0];
+      const after = recommendations.slice(1, 3);
       return `
-        ${renderTopbar("Today", "A quiet place for what needs attention and the people you want to remember.")}
-        ${todaySectionVisible("todayShowBackupNotice") ? renderBackupNotice() : ""}
-        ${todaySectionVisible("todayShowCoachNudge") ? renderAppCoachNudge() : ""}
-        ${settings.showStartHere ? renderStartHere(promptItems, carePeople, tasks) : ""}
-        ${settings.showAutopilotOnToday ? renderAutopilotCard("today") : ""}
-        ${todaySectionVisible("todayShowPeopleShortcuts") ? renderPeopleShortcuts() : ""}
-        ${todaySectionVisible("todayShowQuickCapture") ? renderQuickCapturePanel() : ""}
-        ${renderTodayWorkSections(promptItems, carePeople, tasks)}
+        ${renderTopbar("Today", "What is the next thing to do?", false)}
+        ${renderTodayCriticalAlert()}
+        <section class="section" data-today-section="next">
+          ${renderTodayRecommendationCard(next)}
+        </section>
+        <section class="section" data-today-section="capture">
+          <div class="section-header"><h2 class="section-title">Quick Capture</h2></div>
+          ${renderCaptureComposer({ source: "today", compact: true })}
+        </section>
+        <section class="section" data-today-section="after">
+          <div class="section-header"><h2 class="section-title">After that</h2></div>
+          ${after.length ? `<div class="calm-list">${after.map(renderTodayAfterItem).join("")}</div>` : `<div class="meta">Nothing else is pressing.</div>`}
+        </section>
       `;
     }
 
-    function renderAdhdToday(promptItems, carePeople, tasks) {
+    function renderAdhdToday() {
+      return renderToday();
+    }
+
+    function todayRecommendationById(id) {
+      return buildTodayRecommendations().find(item => item.id === id) || null;
+    }
+
+    function clearTodayRecommendationDeferral(id) {
+      if (!id || !settings.todayRecommendationDeferrals?.[id]) return;
+      const next = { ...(settings.todayRecommendationDeferrals || {}) };
+      delete next[id];
+      settings.todayRecommendationDeferrals = next;
+      saveSettings();
+    }
+
+    function openTodayRecommendation(id) {
+      const recommendation = todayRecommendationById(id);
+      if (!recommendation) {
+        showToast("That next step has already moved on.");
+        render();
+        return;
+      }
+      clearTodayRecommendationDeferral(id);
+      if (["person", "proactive"].includes(recommendation.kind)) {
+        recordRecentPerson(recommendation.personId);
+        view.screen = "person";
+        view.personId = recommendation.personId;
+        render();
+        return;
+      }
+      if (recommendation.kind === "task") {
+        if (recommendation.personId) {
+          recordRecentPerson(recommendation.personId);
+          view.screen = "person";
+          view.personId = recommendation.personId;
+        } else {
+          view.screen = "minutes";
+        }
+        render();
+        return;
+      }
+      if (recommendation.kind === "capture") {
+        beginCaptureProcessing(recommendation.recordId);
+        return;
+      }
+      if (recommendation.kind === "prayer") {
+        view.screen = "prayer";
+        view.prayerFilter = "Follow-Up Needed";
+        render();
+        return;
+      }
+      if (recommendation.kind === "maintenance") {
+        const health = backupHealthState();
+        if (health.action === "export-encrypted-json") openDataSafetySheet("encrypted-export");
+        else exportJson();
+        return;
+      }
+      view.screen = "quick";
+      render();
+    }
+
+    function completeTodayRecommendation(id) {
+      const recommendation = todayRecommendationById(id);
+      if (!recommendation) {
+        showToast("That next step is already complete.");
+        render();
+        return;
+      }
+      clearTodayRecommendationDeferral(id);
+      if (["person", "proactive"].includes(recommendation.kind)) {
+        markFollowedUp(recommendation.personId);
+        return;
+      }
+      if (recommendation.kind === "task") {
+        updateTask(recommendation.recordId, { status: "Done / Archived" }, "Task marked done.");
+        return;
+      }
+      if (recommendation.kind === "capture") {
+        updateQuickGrab(recommendation.recordId, { status: "Done", processingState: "saved" }, "Capture marked done.");
+        return;
+      }
+      if (recommendation.kind === "prayer") {
+        const prayer = db.prayerRequests.find(item => item.id === recommendation.recordId);
+        if (!prayer) return;
+        recordUndo("prayer follow-up completion");
+        prayer.followUpDate = "";
+        if (prayer.status === "Follow-Up Needed") prayer.status = "Active";
+        prayer.updatedAt = nowISO();
+        saveData();
+        showToast("Prayer follow-up marked done. The prayer stays active.");
+        render();
+        return;
+      }
+      if (recommendation.kind === "maintenance") {
+        settings.todayRecommendationDeferrals = {
+          ...(settings.todayRecommendationDeferrals || {}),
+          [id]: { dismissedOn: todayISO(), kind: recommendation.kind }
+        };
+        saveSettings();
+        showToast("Maintenance suggestion cleared for today.");
+        render();
+        return;
+      }
+      showToast("Nothing needed to be completed.");
+      render();
+    }
+
+    function postponeTodayRecommendation(id) {
+      const recommendation = todayRecommendationById(id);
+      if (!recommendation) {
+        showToast("That next step has already moved on.");
+        render();
+        return;
+      }
+      if (recommendation.kind === "quiet") {
+        showToast("Nothing is pressing. You can close the app.");
+        return;
+      }
+      if (recommendation.proactive || recommendation.kind === "maintenance") {
+        settings.todayRecommendationDeferrals = {
+          ...(settings.todayRecommendationDeferrals || {}),
+          [id]: { dismissedOn: todayISO(), kind: recommendation.kind }
+        };
+        saveSettings();
+        showToast("Hidden for today.");
+        render();
+        return;
+      }
+      view.sheet = { type: "today-later", recommendationId: id };
+      render();
+    }
+
+    function renderTodayLaterSheet(sheet) {
+      const recommendation = todayRecommendationById(sheet.recommendationId);
+      if (!recommendation) return "";
       return `
-        ${renderTopbar("Today", "One thing, then the next.")}
-        ${todaySectionVisible("todayShowBackupNotice") ? renderBackupNotice() : ""}
-        ${todaySectionVisible("todayShowCoachNudge") ? renderAppCoachNudge() : ""}
-        ${settings.showStartHere ? renderStartHere(promptItems, carePeople, tasks) : ""}
-        ${settings.showAutopilotOnToday ? renderAutopilotCard("today") : ""}
-        ${todaySectionVisible("todayShowQuickCapture") ? renderQuickCapturePanel("Capture") : ""}
-        ${todaySectionVisible("todayShowPeopleShortcuts") ? renderPeopleShortcuts() : ""}
-        ${renderTodayWorkSections(promptItems, carePeople, tasks)}
+        <div class="sheet-backdrop" data-action="sheet-close">
+          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="today-later-title" data-sheet-panel>
+            <div class="sheet-head">
+              <div><h2 id="today-later-title">Bring this back later</h2><p class="page-kicker">Choose the day this real ministry action should return.</p></div>
+              <button class="button quiet" data-action="sheet-close" aria-label="Close">Close</button>
+            </div>
+            <div class="sheet-form">
+              <div class="notice"><strong>${escapeHtml(recommendation.title)}</strong><div class="meta">${escapeHtml(recommendation.dateText)}</div></div>
+              ${sheetField("Return date", `<input class="input" id="today-return-date" type="date" value="${daysFromNow(1)}" min="${daysFromNow(1)}">`)}
+            </div>
+            <div class="sheet-actions">
+              <button class="button quiet" data-action="sheet-close">Cancel</button>
+              <button class="button primary" data-action="today-later-save" data-id="${escapeHtml(recommendation.id)}">Bring back then</button>
+            </div>
+          </section>
+        </div>
       `;
     }
 
-    function autopilotNextAction() {
+    function submitTodayLater(id) {
+      const recommendation = todayRecommendationById(id);
+      const returnDate = document.getElementById("today-return-date")?.value || "";
+      if (!recommendation || !isISODateString(returnDate) || calendarDayDelta(returnDate) < 1) {
+        showToast("Choose a future return date.");
+        return;
+      }
+      settings.todayRecommendationDeferrals = {
+        ...(settings.todayRecommendationDeferrals || {}),
+        [id]: { returnDate, kind: recommendation.kind, reasonCode: recommendation.reasonCode }
+      };
+      saveSettings();
+      view.sheet = null;
+      showToast(`This will return ${formatCalendarDay(returnDate)}.`);
+      render();
+    }
+
+    function legacyAutopilotNextAction() {
       const promptItem = promptQuickGrabs()[0];
       if (promptItem) {
         return {
@@ -4304,6 +4747,22 @@
         secondaryLabel: "Weekly Reset",
         secondaryAction: "nav",
         secondaryScreen: "weekly"
+      };
+    }
+
+    function autopilotNextAction() {
+      const recommendation = buildTodayRecommendations()[0];
+      return {
+        kind: labelFromCamel(recommendation.kind),
+        title: recommendation.title,
+        detail: recommendation.detail,
+        reason: recommendation.explanation,
+        primaryLabel: recommendation.kind === "quiet" ? "Capture" : "Do this",
+        primaryAction: "today-recommendation-open",
+        id: recommendation.id,
+        secondaryLabel: "Done",
+        secondaryAction: "today-recommendation-done",
+        secondaryId: recommendation.id
       };
     }
 
@@ -4763,13 +5222,14 @@
       const targetId = captureTextareaId(source);
       const placeholder = options.placeholder || (person ? `Add something about ${personFirstName(person)}…` : "What do you need to remember?");
       const initialValue = source === "main" ? view.quickGrabDraftText || "" : "";
+      const processClass = options.compact ? "button" : "button primary";
       return `
         <div class="capture-composer" data-capture-composer="${escapeHtml(source)}" data-person-id="${escapeHtml(person?.id || "")}">
           ${person ? `<div class="row wrap"><strong>For ${escapeHtml(person.name)}</strong><span class="meta">Person locked for this capture</span><button class="button quiet small" data-action="capture-change-person" data-id="${escapeHtml(person.id)}">Change person</button></div>` : ""}
           <label class="visually-hidden" for="${targetId}">${person ? `Add something about ${escapeHtml(person.name)}` : "Capture what you need to remember"}</label>
           <textarea class="textarea" id="${targetId}" rows="1" placeholder="${escapeHtml(placeholder)}" data-capture-source="${escapeHtml(source)}">${escapeHtml(initialValue)}</textarea>
           <div class="action-row">
-            <button class="button primary" data-action="capture-submit" data-mode="process" data-source="${escapeHtml(source)}" data-person-id="${escapeHtml(person?.id || "")}" data-target="${targetId}">Process</button>
+            <button class="${processClass}" data-action="capture-submit" data-mode="process" data-source="${escapeHtml(source)}" data-person-id="${escapeHtml(person?.id || "")}" data-target="${targetId}">Process</button>
             ${settings.enableVoiceCapture ? `<button class="button quiet" data-action="voice-capture" data-target="${targetId}">Dictate</button>` : ""}
             ${source === "profile" || options.allowSaveForLater ? `<button class="button quiet" data-action="capture-submit" data-mode="later" data-source="${escapeHtml(source)}" data-person-id="${escapeHtml(person?.id || "")}" data-target="${targetId}">Save for later</button>` : ""}
           </div>
@@ -10041,6 +10501,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (view.sheet.type === "edit-field") return renderEditFieldSheet(view.sheet);
       if (view.sheet.type === "ai-action-edit") return renderAiActionEditSheet(view.sheet);
       if (view.sheet.type === "create-person") return renderCreatePersonSheet();
+      if (view.sheet.type === "today-later") return renderTodayLaterSheet(view.sheet);
       if (view.sheet.type === "donor-update-builder") return renderDonorUpdateBuilderSheet(view.sheet);
       if (view.sheet.type === "ai-gate") return renderAiGateSheet(view.sheet);
       if (view.sheet.type === "ai-action-confirm") return renderAiActionConfirmSheet(view.sheet);
@@ -11439,6 +11900,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         cancelAiActionConfirmView();
         return;
       }
+      if (action === "today-later-save") {
+        submitTodayLater(id);
+        return;
+      }
       if (action === "ai-draft-copy") {
         copyAiDraftOption(id, button.dataset.draftIndex);
         return;
@@ -11474,6 +11939,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "ai-proposal-mark-sensitive") markAiProposalSensitive(id);
       if (action === "ai-proposal-archive") updateAiProposalStatus(id, "archived");
       if (action === "ai-proposal-open-source") openAiProposalSource(id);
+      if (action === "today-recommendation-open") openTodayRecommendation(id);
+      if (action === "today-recommendation-done") completeTodayRecommendation(id);
+      if (action === "today-recommendation-later") postponeTodayRecommendation(id);
       if (action === "unlock-app") unlockApp();
       if (action === "app-update") applyAppUpdate();
       if (action === "check-update") checkForAppUpdate();

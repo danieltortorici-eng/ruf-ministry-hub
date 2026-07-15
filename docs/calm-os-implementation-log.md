@@ -125,3 +125,16 @@ Status: implemented locally on 2026-07-15; verification recorded with the phase 
 - Removed proposal-constructor side effects: approved create-meeting/create-follow-up actions no longer update person dates unless a separate selected `updatePerson` action does so.
 - Updated iPhone manual QA for unified capture and proposal review. No Pages Function, external AI contract, production setting, or secret changed.
 - Verification: `npm test` completed all maintained syntax, deployment, service-worker, profile, AI, backup, security, coordination, incident, asset, generated-output, and secret-boundary checks with exit code 0.
+
+## Phase 6 — Today around the next action
+
+Status: implemented locally on 2026-07-15; verification recorded with the phase commit.
+
+- Replaced the dashboard-style Today renderer with exactly three normal primary sections: Next thing to do, Quick Capture, and After that. After that renders at most two compact recommendations.
+- Added one central reason-coded recommendation queue in the required ministry-first order: overdue person, person due today, important task, important/due capture, prayer follow-up, care-window person, oldest capture, proactive pastoral opportunity, then quiet maintenance fallback.
+- Stored a testable internal explanation with every candidate, excluded completed and snoozed records, deduplicated competing candidates, and masked sensitive capture, prayer, and task details.
+- Limited the selected item to Do this, Done, and Later. Real records require a selected future return date; proactive suggestions dismiss for the local day. Repeated taps remain idempotent through current status/deferral checks.
+- Kept one compact critical alert outside the three-section hierarchy and prioritized an available app update over a serious backup alert. Full backup, coach, shortcut, review, care, task, count, and administrative content remains off Today.
+- Routed the legacy Autopilot selector through the central queue without exposing Autopilot as normal Today language; its old standalone screen remains temporarily accessible until Navigation/Cleanup phases relocate or remove verified legacy paths.
+- Paired app/package version, service-worker cache, and CSP identity. No data collection, storage key, backup envelope, Function, production setting, or external state changed.
+- Verification: focused syntax and Today regression passed before the full maintained suite; final exact commands and exit results are recorded in the Phase 6 commit evidence.

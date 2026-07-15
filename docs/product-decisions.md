@@ -105,3 +105,13 @@ This is the decision record for the Calm OS redesign. Decisions are constrained 
 - **Compatibility effect:** Existing Quick Grabs normalize additively; old proposals are reused by source ID; new proposal/action keys prevent duplicate proposals and repeated structured writes.
 - **Files affected:** Authoritative deploy HTML, service-worker/CSP/package identities, focused regressions, iPhone manual QA.
 - **Tests used:** Unified capture, failure/retry, draft recovery, proposal reuse, per-action link, hidden person-date side-effect, AI function, profile, and deployment-contract regressions.
+
+### PD-011 — Select Today from one explainable ministry recommendation queue
+
+- **Decision:** Build Today from one reason-coded priority queue and render exactly Next thing to do, Quick Capture, and After that. After that is capped at two; one compact critical alert may sit outside those sections.
+- **Alternatives considered:** Keep independent dashboard lists; continue legacy Autopilot as a separate selector; make users configure which Today sections appear.
+- **Reason:** One deterministic queue answers the screen's single question and makes the required people-first ordering testable.
+- **Cognitive-load effect:** Replaces competing cards, counts, shortcuts, and maintenance prompts with one dominant action plus at most two quiet previews. Real postponements require one explicit return date; proactive suggestions can leave for the day.
+- **Compatibility effect:** Recommendations are derived from existing people, tasks, captures, and prayers. Deferrals are additive settings data; records are not migrated, and sensitive detail is masked before display.
+- **Files affected:** Authoritative deploy HTML, service-worker/CSP/package identities, focused Today regression, iPhone manual QA, implementation record.
+- **Tests used:** Central priority order, reason/explanation, sensitive masking, completed/snoozed exclusion, Done, Later, proactive dismissal, three-section, two-item, one-primary-action, and critical-alert regressions; full maintained suite.
