@@ -65,3 +65,23 @@ This is the decision record for the Calm OS redesign. Decisions are constrained 
 - **Compatibility effect:** Recovery becomes more conservative; proposal behavior becomes narrower without deleting data.
 - **Files affected:** Later storage bootstrap, record-constructor, proposal-execution, and focused test changes.
 - **Tests used:** Planned missing-localStorage/IDB-present, locked-vault, and selected-action side-effect tests.
+
+### PD-007 — Add a data schema marker without changing backup version
+
+- **Decision:** Add optional `dataSchemaVersion: 3` while keeping the portable backup envelope at version 2 and retaining all storage keys.
+- **Alternatives considered:** Bump backup envelope version; change the main storage key; mutate every old record in place.
+- **Reason:** Additive metadata supports explicit migration tests without making current backups unreadable or duplicating stores.
+- **Cognitive-load effect:** No user-facing migration choice or classification work.
+- **Compatibility effect:** Missing schema means pre-Calm data; unknown/dormant fields survive; old version-2 backups continue through normalization.
+- **Files affected:** Architecture/migration docs; later authoritative app and compatibility tests.
+- **Tests used:** Planned pre-Calm import/export/re-import and rollback-tolerance checks.
+
+### PD-008 — Make recommendation and date logic pure and injectable
+
+- **Decision:** Build recommendations and contextual dates from pure helpers that accept a reference date and return reason-coded data.
+- **Alternatives considered:** Continue renderer-local sorting and direct `Date` calls; store recommendation results.
+- **Reason:** Pure functions make priority, timezone, masking, and fallback rules deterministic without adding server state.
+- **Cognitive-load effect:** One stable, explainable priority replaces dashboard scanning.
+- **Compatibility effect:** No record migration; only existing dates/statuses are read.
+- **Files affected:** Architecture docs; later app/test source.
+- **Tests used:** Planned priority-tier and date-boundary matrices.

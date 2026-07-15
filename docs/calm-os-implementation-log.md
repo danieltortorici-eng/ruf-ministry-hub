@@ -29,6 +29,7 @@ Status: complete locally on 2026-07-15; no deployment or merge performed.
 - `ruf-ministry-hub-deploy-working/ruf-ministry-hub.html`
 - `ruf-ministry-hub-deploy-working/ruf-ministry-hub-sw.js`
 - `ruf-ministry-hub-deploy-working/_headers`
+- `ruf-ministry-hub-deploy-working/ruf-ministry-hub.webmanifest`
 - `package.json`
 
 **Allowed verification and documentation files:**
@@ -74,3 +75,16 @@ Status: complete locally on 2026-07-15.
 - Recorded P2 gates for idempotency, capture/proposal recovery, encrypted suspension, contextual dates, bounded profile rendering, and preferred-contact dormancy.
 - Audit workers B, C, D, E, F, G, H, I, J, K, L, M, N, O, and P signed off on their read-only audit portions. Browser/device evidence remains `NOT VERIFIED`.
 - No runtime files, external systems, secrets, production state, original dirty work, or other worktrees were changed by the audits.
+
+## Phase 2 — Architecture and migration
+
+Status: complete locally on 2026-07-15.
+
+- Documented the before-state runtime, storage, product paths, and coupled release artifacts.
+- Defined internal recovery, date, capture, proposal, executor, recommendation, profile-grounding, presentation, and accessibility boundaries without adding a framework.
+- Kept `quickGrabs`, `aiProposals`, collection identifiers, localStorage keys, IndexedDB, Device Vault, Auto Memory, service-worker model, and version-2 backup envelope.
+- Defined additive `dataSchemaVersion: 3`, stable capture revisions/proposal keys, per-action execution keys, and side-effect-free proposal constructors.
+- Defined recovery-first startup and safe stale-processing behavior with no automatic external resend.
+- Defined a synthetic pre-Calm version-2 compatibility boundary; formats earlier than the tracked contract remain `NOT VERIFIED` rather than guessed.
+- Expanded the authorized runtime scope to the deploy webmanifest when Calm OS naming/theme metadata changes. Root and `dist` artifacts remain prohibited.
+- No runtime or external state changed in this phase.
