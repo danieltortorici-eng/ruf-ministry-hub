@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "ruf-ministry-hub-";
-const CACHE_NAME = "ruf-ministry-hub-v44-calm-os-qa-v1";
+const CACHE_NAME = "ruf-ministry-hub-v45-calm-os-qa-v2";
 const APP_SHELL = "ruf-ministry-hub.html";
 const ASSETS = [
   "./",
@@ -12,19 +12,27 @@ const ASSETS = [
   "ruf-ministry-hub-icon-512.png"
 ];
 
-async function cacheAsset(cache, asset) {
+async function cacheAsset(cache, asset, required = false) {
   try {
     const response = await fetch(new Request(asset, { cache: "reload" }));
-    if (response && response.ok) await cache.put(asset, response.clone());
+    if (!response || !response.ok) {
+      if (required) throw new Error(`Required app shell could not be fetched: ${asset}`);
+      return false;
+    }
+    await cache.put(asset, response.clone());
+    return true;
   } catch (error) {
-    // Do not fail the whole service-worker install because one optional icon or asset was unavailable.
+    if (required) throw error;
+    // Optional icons and metadata do not block an otherwise valid app shell.
+    return false;
   }
 }
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await Promise.all(ASSETS.map(asset => cacheAsset(cache, asset)));
+    await cacheAsset(cache, APP_SHELL, true);
+    await Promise.all(ASSETS.filter(asset => asset !== APP_SHELL).map(asset => cacheAsset(cache, asset)));
   })());
 });
 
@@ -38,11 +46,29 @@ self.addEventListener("activate", event => {
   })());
 });
 
+async function fetchWithTimeout(request, timeoutMs = 3500) {
+  if (typeof AbortController !== "function") return fetch(request);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(request, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function networkFirstNavigation(request) {
   const cache = await caches.open(CACHE_NAME);
   try {
-    const response = await fetch(request);
-    if (response && response.ok) await cache.put(APP_SHELL, response.clone());
+    const response = await fetchWithTimeout(request);
+    if (!response || !response.ok) throw new Error("Network navigation response was not usable.");
+    if (response && response.ok) {
+      try {
+        await cache.put(APP_SHELL, response.clone());
+      } catch (cacheError) {
+        // A fresh response is still safer than returning an older shell.
+      }
+    }
     return response;
   } catch (error) {
     return (await cache.match(APP_SHELL, { ignoreSearch: true }))
@@ -57,7 +83,11 @@ async function cacheFirstAsset(request) {
   const response = await fetch(request);
   if (response && response.ok) {
     const cache = await caches.open(CACHE_NAME);
-    await cache.put(request, response.clone());
+    try {
+      await cache.put(request, response.clone());
+    } catch (cacheError) {
+      // Return the fresh asset even when the cache is full.
+    }
   }
   return response;
 }

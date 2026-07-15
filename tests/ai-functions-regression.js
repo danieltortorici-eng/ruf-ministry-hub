@@ -993,6 +993,7 @@ function testAiReviewActionCanBeEditedSafely() {
   const harness = makeAiActionApprovalHarness();
   const ids = setupActionApprovalProposal(harness, { includePerson: true });
   harness.sandbox.__proposalId = ids.proposalId;
+  harness.appEval(`aiProposalById(__proposalId).sensitivityRisk = "none"`);
   harness.appEval(`persistAiActionSelection(__proposalId, "act-meeting", false)`);
   const cardHtml = harness.appEval(`renderAiProposalCard(aiProposalById(__proposalId))`);
   harness.appEval(`openAiActionEditSheet(__proposalId, 0)`);

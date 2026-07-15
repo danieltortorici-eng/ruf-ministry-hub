@@ -21,6 +21,7 @@
       --surface: #fffefa;
       --surface-muted: #f8f9f5;
       --line: #dce3dc;
+      --control-line: #6f8077;
       --accent: #2f6c5e;
       --accent-strong: #214f46;
       --accent-soft: #e9f3ee;
@@ -460,7 +461,12 @@
     }
 
     .editable-copy {
-      display: inline;
+      display: inline-block;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
       border-radius: 6px;
       outline: 2px dashed #9ccdbd;
       outline-offset: 3px;
@@ -497,7 +503,7 @@
       min-width: 52px;
       min-height: 44px;
       border-radius: 999px;
-      background: #d9e1eb;
+      background: var(--control-line);
       padding: 10px 3px;
     }
 
@@ -563,7 +569,7 @@
     .select,
     .textarea {
       width: 100%;
-      border: 1px solid var(--line);
+      border: 1px solid var(--control-line);
       border-radius: var(--radius);
       background: white;
       color: var(--ink);
@@ -629,6 +635,11 @@
       color: #6f4d00;
     }
 
+    .update-notice {
+      margin: 0 0 var(--space-3);
+      padding: 8px 12px;
+    }
+
     .notice.secure {
       border-color: #cbe7dc;
       background: #eef7f3;
@@ -674,6 +685,10 @@
     }
 
     .manual-list summary {
+      display: flex;
+      align-items: center;
+      min-height: 44px;
+      padding: 6px 4px;
       cursor: pointer;
       font-weight: 800;
       color: var(--ink);
@@ -1125,7 +1140,9 @@
       pointer-events: none;
       transform: translateY(8px);
       transition: opacity 160ms ease, transform 160ms ease;
-      z-index: 20;
+      z-index: 40;
+      max-width: min(420px, calc(100vw - 36px));
+      overflow-wrap: anywhere;
     }
 
     .toast.show {
@@ -1195,7 +1212,7 @@
       padding: 8px calc(10px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
       gap: 5px;
       grid-template-columns: repeat(5, minmax(0, 1fr));
-      overflow: hidden;
+      overflow: visible;
       border-top: 1px solid rgba(255,255,255,0.12);
       box-shadow: 0 -10px 28px rgba(23, 32, 42, 0.18);
     }
@@ -1212,6 +1229,8 @@
       line-height: 1.1;
       white-space: normal;
       text-wrap: balance;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .mobile-nav button.active {
@@ -1252,6 +1271,15 @@
       background: var(--surface);
       border: 1px solid var(--line);
       border-radius: var(--radius-lg);
+    }
+
+    :where(.calm-card, .calm-list-row, .item, .sheet-panel, .profile-essential-copy, .right-now-value) {
+      min-width: 0;
+    }
+
+    :where(.calm-card h2, .calm-list-row strong, .item-title, .item-preview, .meta, .profile-name, .profile-followup-reason, .right-now-value, .sheet-head h2, .notice) {
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .calm-card.primary {
@@ -1477,7 +1505,13 @@
       }
 
       .content {
-        padding: calc(16px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(92px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+        padding: calc(16px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(132px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+      }
+
+      .toast {
+        left: calc(14px + env(safe-area-inset-left));
+        right: calc(14px + env(safe-area-inset-right));
+        bottom: calc(106px + env(safe-area-inset-bottom));
       }
 
       .app-frame.focus-mode .content {
@@ -1521,7 +1555,7 @@
       }
 
       .right-now-row {
-        grid-template-columns: 76px minmax(0, 1fr);
+        grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
       }
 
       .top-actions {
@@ -1673,14 +1707,15 @@
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
-  <div id="app"></div>
+  <div id="app" tabindex="-1" role="main"></div>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-qa-v1";
+    const APP_VERSION = "2026.07.15-calm-os-qa-v2";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
+    const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
     const CAPTURE_PROCESSOR_VERSION = "calm-os-capture-v1";
     const CAPTURE_SOURCES = ["main", "today", "profile", "dictation", "shared", "imported", "legacy"];
     const MAX_BACKUP_FILE_BYTES = 8 * 1024 * 1024;
@@ -1836,8 +1871,10 @@
     let pendingUrlQuickGrabParams = null;
     let startupBootstrapPromise = null;
     let sheetReturnFocusDescriptor = null;
+    let pendingFocusDescriptor = null;
     let pendingPageHeadingFocus = false;
     let toastTimer = null;
+    let globalSearchTimer = null;
 
     function uid(prefix) {
       return prefix + "_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
@@ -2027,10 +2064,21 @@
           });
         });
       }).catch(error => console.warn("Could not register service worker", error));
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
+      navigator.serviceWorker.addEventListener("controllerchange", async () => {
         if (!hadControllerAtRegistration && !updateAvailable) return;
         if (reloadingForUpdate) return;
         reloadingForUpdate = true;
+        let recoveryFlushed = false;
+        try {
+          recoveryFlushed = await flushRecoveryState();
+        } catch (error) {
+          console.warn("Could not secure recovery state before an active update", error);
+        }
+        if (!recoveryFlushed) {
+          reloadingForUpdate = false;
+          showToast("The update is active, but current work could not be secured. Reload was deferred.", "error");
+          return;
+        }
         window.location.reload();
       });
     }
@@ -2120,6 +2168,27 @@
       return collection === "prayerRequests" && record.sensitivityLevel === "Sensitive" ? "Sensitive" : "Normal";
     }
 
+    function recordIsSensitive(record = {}, collection = "") {
+      return aiPrivacyTierForRecord(record, collection) !== "Normal";
+    }
+
+    function taskIsActive(task = {}, reference = new Date()) {
+      if (["Done / Archived", "Done", "Archived", "Completed"].includes(task.status)) return false;
+      if (!task.snoozedUntil) return true;
+      const snoozeDelta = calendarDayDelta(task.snoozedUntil, reference);
+      return snoozeDelta !== null && snoozeDelta <= 0;
+    }
+
+    function recordSnoozeIsDue(record = {}, reference = new Date()) {
+      if (!record.snoozedUntil) return true;
+      const snoozeDelta = calendarDayDelta(record.snoozedUntil, reference);
+      return snoozeDelta !== null && snoozeDelta <= 0;
+    }
+
+    function personIsActive(person = {}) {
+      return !["Archived", "Inactive"].includes(String(person.status || ""));
+    }
+
     function aiPrivacyTierTone(tier) {
       if (tier === "Do Not Send to AI" || tier === "Highly Sensitive") return "rose";
       if (tier === "Sensitive") return "gold";
@@ -2197,17 +2266,38 @@
         sensitivityRisk: enumOrDefault(source.sensitivityRisk, AI_PROPOSAL_SENSITIVITY_RISKS, "none"),
         requiresReview: true,
         sendToAiApproved: source.sendToAiApproved === true,
-        contextPreview: String(source.contextPreview || ""),
+        contextPreview: ["medium", "high"].includes(enumOrDefault(source.sensitivityRisk, AI_PROPOSAL_SENSITIVITY_RISKS, "none"))
+          ? "Sensitive context hidden until approval."
+          : String(source.contextPreview || ""),
         proposedActions: Array.isArray(source.proposedActions) ? source.proposedActions.map(normalizeAiProposedAction) : [],
         warnings: Array.isArray(source.warnings) ? source.warnings.map(warning => String(warning)) : [],
         model: String(source.model || "mock"),
-        rawInputPreview: String(source.rawInputPreview || ""),
+        rawInputPreview: ["medium", "high"].includes(enumOrDefault(source.sensitivityRisk, AI_PROPOSAL_SENSITIVITY_RISKS, "none"))
+          ? "Sensitive input hidden until approval."
+          : String(source.rawInputPreview || ""),
         result: source.result ?? null
       };
     }
 
     function normalizeAiProposals(raw) {
       return Array.isArray(raw) ? raw.map(normalizeAiProposal) : [];
+    }
+
+    function prepareAiProposalForStorage(raw) {
+      const proposal = normalizeAiProposal(raw);
+      let sourceTier = "Normal";
+      try {
+        const sourceRecord = aiProposalSourceRecord(proposal);
+        sourceTier = sourceRecord ? aiPrivacyTierForRecord(sourceRecord, aiSourceCollectionForProposal(proposal)) : aiPrivacyTierForRecord(proposal, "aiProposals");
+      } catch (error) {
+        sourceTier = "Normal";
+      }
+      if (sourceTier !== "Normal" || ["medium", "high"].includes(proposal.sensitivityRisk)) {
+        proposal.aiPrivacyTier = sourceTier !== "Normal" ? sourceTier : "Sensitive";
+        proposal.contextPreview = "Sensitive context hidden until approval.";
+        proposal.rawInputPreview = "Sensitive input hidden until approval.";
+      }
+      return proposal;
     }
 
     function normalizeQuickGrab(raw = {}) {
@@ -2243,6 +2333,11 @@
         tasks: [],
         aiProposals: []
       };
+    }
+
+    function hasHistoricalDataShape(value) {
+      return Boolean(value && typeof value === "object" && !Array.isArray(value)
+        && CORE_DATA_COLLECTIONS.every(collection => Array.isArray(value[collection])));
     }
 
     function isPlainBackupObject(value) {
@@ -2401,7 +2496,6 @@
 
     function persistPlainRecord(key, value) {
       const snapshot = cloneJson(value);
-      mirrorToIndexedDb(key, snapshot);
       try {
         localStorage.setItem(key, JSON.stringify(snapshot));
       } catch (error) {
@@ -2409,14 +2503,18 @@
         showToast("Local storage is full or unavailable. Your change was not confirmed.", "error");
         throw error;
       }
+      // Local storage is the synchronous commit point used at startup. Mirror only
+      // after it succeeds so a quota failure cannot leave a newer IndexedDB copy
+      // that is silently discarded on the next launch.
+      mirrorToIndexedDb(key, snapshot);
     }
 
     function saveSettings() {
-      mirrorToIndexedDb(SETTINGS_KEY, settings);
       writeLocalStorageBatch([
         [SETTINGS_KEY, JSON.stringify(settings)],
         [CALM_MODE_KEY, settings.calmMode ? "on" : "off"]
       ]);
+      mirrorToIndexedDb(SETTINGS_KEY, cloneJson(settings));
       captureAutoMemorySnapshot("Settings update");
     }
 
@@ -2459,11 +2557,11 @@
       return customCopy[key] || fallback;
     }
 
-    function editableCopy(key, fallback) {
-      const value = copyText(key, fallback);
-      if (!settings.editWording) return escapeHtml(value);
-      return `<span class="editable-copy" data-copy-key="${escapeHtml(key)}" data-copy-fallback="${escapeHtml(fallback)}" title="Click to edit this wording">${escapeHtml(value)}</span>`;
-    }
+   function editableCopy(key, fallback) {
+     const value = copyText(key, fallback);
+     if (!settings.editWording) return escapeHtml(value);
+      return `<button type="button" class="editable-copy" data-copy-key="${escapeHtml(key)}" data-copy-fallback="${escapeHtml(fallback)}" aria-label="Edit wording: ${escapeHtml(value)}" title="Edit this wording">${escapeHtml(value)}</button>`;
+   }
 
     function maskedText(isSensitive, hiddenText, visibleText) {
       return settings.maskSensitivePreviews && isSensitive ? hiddenText : visibleText;
@@ -2489,9 +2587,11 @@
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
+          const parsed = JSON.parse(raw);
+          if (!hasHistoricalDataShape(parsed)) throw new Error("Saved ministry data is structurally incomplete.");
           initialDataNeedsRecovery = false;
           initialDataWasInvalid = false;
-          return normalizeData(JSON.parse(raw));
+          return normalizeData(parsed);
         }
         initialDataNeedsRecovery = true;
         initialDataWasInvalid = false;
@@ -2557,18 +2657,55 @@
     }
 
     function deleteFromIndexedDb(key) {
-      if (!canUseIndexedDb()) return;
-      openIndexedDb().then(database => new Promise((resolve, reject) => {
+      if (!canUseIndexedDb()) return Promise.resolve(false);
+      return openIndexedDb().then(database => new Promise((resolve, reject) => {
         const transaction = database.transaction(IDB_STORE, "readwrite");
         const request = transaction.objectStore(IDB_STORE).delete(key);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-        transaction.oncomplete = () => database.close();
-        transaction.onerror = () => {
+        let settled = false;
+        const fail = error => {
+          if (settled) return;
+          settled = true;
           database.close();
-          reject(transaction.error);
+          reject(error || new Error("IndexedDB delete failed."));
         };
-      })).catch(() => {});
+        request.onsuccess = () => {};
+        request.onerror = () => fail(request.error);
+        transaction.oncomplete = () => {
+          if (settled) return;
+          settled = true;
+          database.close();
+          resolve(true);
+        };
+        transaction.onerror = () => {
+          fail(transaction.error);
+        };
+        transaction.onabort = () => fail(transaction.error || new Error("IndexedDB delete aborted."));
+      }));
+    }
+
+    function commitEncryptedVaultToIndexedDb(envelope, nextSettings) {
+      if (!canUseIndexedDb()) return Promise.resolve(false);
+      return openIndexedDb().then(database => new Promise((resolve, reject) => {
+        const transaction = database.transaction(IDB_STORE, "readwrite");
+        const store = transaction.objectStore(IDB_STORE);
+        let settled = false;
+        const finish = (error, value = true) => {
+          if (settled) return;
+          settled = true;
+          database.close();
+          if (error) reject(error); else resolve(value);
+        };
+        transaction.oncomplete = () => finish(null, true);
+        transaction.onerror = () => finish(transaction.error || new Error("Encrypted vault transaction failed."));
+        transaction.onabort = () => finish(transaction.error || new Error("Encrypted vault transaction aborted."));
+        try {
+          store.put(envelope, ENCRYPTED_STORAGE_KEY);
+          store.put(nextSettings, SETTINGS_KEY);
+          [STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, AUTO_MEMORY_KEY].forEach(key => store.delete(key));
+        } catch (error) {
+          finish(error);
+        }
+      }));
     }
 
     function localObjectState(key) {
@@ -2708,7 +2845,7 @@
 
         if (initialDataNeedsRecovery) {
           const storedDb = await idbTransaction("readonly", STORAGE_KEY);
-          if (storedDb) {
+          if (hasHistoricalDataShape(storedDb)) {
             staged.data = normalizeData(storedDb);
             staged.writeData = true;
           } else if (initialDataWasInvalid) {
@@ -2798,7 +2935,7 @@
         settings: cloneJson(settings),
         customCopy: cloneJson(customCopy)
       });
-      undoStack = undoStack.slice(0, 8);
+      undoStack = undoStack.slice(0, 5);
     }
 
     function undoLast() {
@@ -2925,17 +3062,13 @@
     function renderUpdateNotice() {
       if (!updateAvailable) return "";
       return `
-        <section class="section">
-          <div class="notice secure">
-            <div class="row wrap">
-              <div>
-                <strong>App update ready</strong>
-                <div class="meta">A newer offline copy is available. Update when you are not in the middle of typing.</div>
-              </div>
-              <button class="button small primary" data-action="app-update">Update now</button>
-            </div>
+        <aside class="notice secure update-notice" role="status">
+          <div class="row wrap">
+            <strong>App update ready</strong>
+            <span class="meta">A newer offline copy is available. Update when you are not in the middle of typing.</span>
+            <button class="button quiet small" data-action="app-update">Update now</button>
           </div>
-        </section>
+        </aside>
       `;
     }
 
@@ -3086,24 +3219,26 @@
               allowFollowup = false;
               break;
             }
-            localStorage.setItem(ENCRYPTED_STORAGE_KEY, JSON.stringify(envelope));
-            localStorage.removeItem(STORAGE_KEY);
-            localStorage.removeItem(COPY_KEY);
-            localStorage.removeItem(AUTOSAVE_KEY);
-            localStorage.removeItem(AUTO_MEMORY_KEY);
-            settings.localEncryptionUpdatedAt = envelope.encryptedAt;
-            localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-            if (canUseIndexedDb()) {
-              try {
-                await idbTransaction("readwrite", ENCRYPTED_STORAGE_KEY, envelope);
-              } catch (error) {
-                console.warn("Could not mirror the encrypted vault to IndexedDB", error);
-              }
+            const nextSettings = { ...settings, localEncryptionUpdatedAt: envelope.encryptedAt };
+            const localEntries = [
+              [ENCRYPTED_STORAGE_KEY, JSON.stringify(envelope)],
+              [STORAGE_KEY, null],
+              [COPY_KEY, null],
+              [AUTOSAVE_KEY, null],
+              [AUTO_MEMORY_KEY, null],
+              [SETTINGS_KEY, JSON.stringify(nextSettings)]
+            ];
+            const localSnapshot = localStorageSnapshot(localEntries.map(([key]) => key));
+            let localCommitted = false;
+            writeLocalStorageBatch(localEntries);
+            localCommitted = true;
+            try {
+              if (canUseIndexedDb()) await commitEncryptedVaultToIndexedDb(envelope, nextSettings);
+            } catch (error) {
+              if (localCommitted) restoreLocalStorageSnapshot(localSnapshot);
+              throw error;
             }
-            deleteFromIndexedDb(STORAGE_KEY);
-            deleteFromIndexedDb(COPY_KEY);
-            deleteFromIndexedDb(AUTOSAVE_KEY);
-            deleteFromIndexedDb(AUTO_MEMORY_KEY);
+            settings.localEncryptionUpdatedAt = envelope.encryptedAt;
             vaultSaveCompletedRevision = targetRevision;
             saved = true;
           } catch (error) {
@@ -3177,12 +3312,41 @@
       };
     }
 
+    function compactAutoMemoryFingerprint(value) {
+      const text = JSON.stringify(value);
+      let hash = 2166136261;
+      for (let index = 0; index < text.length; index += 1) {
+        hash ^= text.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+      }
+      return `v2-${(hash >>> 0).toString(16)}-${text.length}`;
+    }
+
     function autoMemorySignature(payload) {
       try {
-        return JSON.stringify(autoMemoryComparablePayload(payload));
+        return compactAutoMemoryFingerprint(autoMemoryComparablePayload(payload));
       } catch (error) {
         return String(Date.now());
       }
+    }
+
+    function normalizeAutoMemoryPayload(payload) {
+      if (!payload || typeof payload !== "object") return null;
+      const data = payload.data || payload.db;
+      if (!hasHistoricalDataShape(data)) return null;
+      if (payload.app === "RUF Ministry Hub" && Number(payload.version) === 2) {
+        return { ...payload, data };
+      }
+      return {
+        exportedAt: payload.exportedAt || payload.savedAt || nowISO(),
+        app: "RUF Ministry Hub",
+        version: 2,
+        dataSchemaVersion: DATA_SCHEMA_VERSION,
+        data,
+        settings: payload.settings && typeof payload.settings === "object" ? payload.settings : {},
+        customCopy: payload.customCopy && typeof payload.customCopy === "object" ? payload.customCopy : {},
+        autosaveDrafts: payload.autosaveDrafts && typeof payload.autosaveDrafts === "object" ? payload.autosaveDrafts : {}
+      };
     }
 
     function normalizeAutoMemoryVault(raw = {}) {
@@ -3194,17 +3358,19 @@
       normalized.snapshots = snapshots
         .filter(snapshot => snapshot && typeof snapshot === "object" && snapshot.payload && (snapshot.payload.data || snapshot.payload.db))
         .map(snapshot => {
-          const payload = snapshot.payload;
+          const payload = normalizeAutoMemoryPayload(snapshot.payload);
+          if (!payload) return null;
           return {
             id: snapshot.id || uid("memory"),
             savedAt: snapshot.savedAt || snapshot.createdAt || payload.exportedAt || nowISO(),
             label: String(snapshot.label || "Auto save").slice(0, 80),
             appVersion: snapshot.appVersion || "",
-            summary: snapshot.summary || dataSummaryText(payload.data || payload.db),
+            summary: snapshot.summary || dataSummaryText(payload.data),
             signature: snapshot.signature || autoMemorySignature(payload),
             payload
           };
         })
+        .filter(Boolean)
         .sort((a, b) => String(b.savedAt || "").localeCompare(String(a.savedAt || "")))
         .slice(0, autoMemoryLimit());
       return normalized;
@@ -3330,18 +3496,17 @@
       return true;
     }
 
-    function restoreAutoMemorySnapshot(id) {
+    async function restoreAutoMemorySnapshot(id) {
       const snapshot = findAutoMemorySnapshot(id);
       if (!snapshot) {
         showToast("That restore point is no longer available.");
         return false;
       }
-      applyRestoredPayload(snapshot.payload, {
+      return applyRestoredPayload(snapshot.payload, {
         undoLabel: "auto memory restore",
         beforeLabel: "Before Auto Memory restore",
         toast: "Auto Memory restored."
       });
-      return true;
     }
 
     function initializeAutoMemoryVault() {
@@ -3398,7 +3563,52 @@
       };
     }
 
+    async function applyEncryptedRestoredPayload(payload, options = {}) {
+      const previous = { db, settings: cloneJson(settings), customCopy, autosaveDraftsCache, memoryVaultCache, view: cloneJson(view) };
+      const previousRevisions = { requested: vaultSaveRequestedRevision, completed: vaultSaveCompletedRevision };
+      const persistenceKeys = [SETTINGS_KEY, CALM_MODE_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, ENCRYPTED_STORAGE_KEY, AUTO_MEMORY_KEY];
+      const persistenceSnapshot = localStorageSnapshot(persistenceKeys);
+      if (!await persistEncryptedVault()) {
+        showToast("Backup restore could not secure the current encrypted vault.", "error");
+        return false;
+      }
+      const applied = applyRestoredPayload(payload, { ...options, skipEncryptedPersistence: true });
+      if (!applied) return false;
+      if (await persistEncryptedVault()) return true;
+      db = previous.db;
+      settings = previous.settings;
+      customCopy = previous.customCopy;
+      autosaveDraftsCache = previous.autosaveDraftsCache;
+      memoryVaultCache = previous.memoryVaultCache;
+      view = previous.view;
+      vaultSaveRequestedRevision = previousRevisions.requested;
+      vaultSaveCompletedRevision = previousRevisions.completed;
+      restoreLocalStorageSnapshot(persistenceSnapshot);
+      if (canUseIndexedDb()) {
+        try {
+          const previousEnvelope = persistenceSnapshot.get(ENCRYPTED_STORAGE_KEY);
+          if (previousEnvelope) await idbTransaction("readwrite", ENCRYPTED_STORAGE_KEY, JSON.parse(previousEnvelope));
+          else await deleteFromIndexedDb(ENCRYPTED_STORAGE_KEY);
+          await idbTransaction("readwrite", SETTINGS_KEY, previous.settings);
+          await Promise.all([
+            deleteFromIndexedDb(STORAGE_KEY),
+            deleteFromIndexedDb(COPY_KEY),
+            deleteFromIndexedDb(AUTOSAVE_KEY),
+            deleteFromIndexedDb(AUTO_MEMORY_KEY)
+          ]);
+        } catch (restoreError) {
+          console.warn("Could not fully roll back encrypted backup restore in IndexedDB", restoreError);
+        }
+      }
+      showToast("Backup restore could not be saved. Your previous data remains in place.", "error");
+      render();
+      return false;
+    }
+
     function applyRestoredPayload(payload, options = {}) {
+      if (settings.localEncryptionEnabled && vaultPassphrase && !options.skipEncryptedPersistence) {
+        return applyEncryptedRestoredPayload(payload, options);
+      }
       const validatedPayload = validateBackupPayload(payload);
       const restoredData = normalizeData(validatedPayload.data);
       const incomingSettings = normalizeSettings(validatedPayload.settings || {});
@@ -3464,7 +3674,7 @@
       if (settings?.localEncryptionEnabled) {
         autosaveDraftsCache = cloneJson(drafts || {});
         localStorage.removeItem(AUTOSAVE_KEY);
-        deleteFromIndexedDb(AUTOSAVE_KEY);
+        deleteFromIndexedDb(AUTOSAVE_KEY).catch(() => {});
         scheduleVaultSave();
         return;
       }
@@ -3616,7 +3826,7 @@
     function clearAllAutosaveDrafts() {
       autosaveDraftsCache = {};
       localStorage.removeItem(AUTOSAVE_KEY);
-      deleteFromIndexedDb(AUTOSAVE_KEY);
+      deleteFromIndexedDb(AUTOSAVE_KEY).catch(() => {});
       if (settings?.localEncryptionEnabled) scheduleVaultSave();
     }
 
@@ -4020,11 +4230,21 @@
     }
 
     function focusDescriptorFor(element) {
-      if (!element?.dataset?.action) return null;
-      const descriptor = { action: element.dataset.action };
-      ["id", "screen", "kind", "filter", "from", "to", "sourceType", "actionIndex"].forEach(key => {
+      if (!element?.dataset) return null;
+      const descriptor = element.dataset.action
+        ? { kind: "action", action: element.dataset.action }
+        : element.dataset.settingToggle
+          ? { kind: "setting-toggle", settingToggle: element.dataset.settingToggle }
+          : element.dataset.settingSelect
+            ? { kind: "setting-select", settingSelect: element.dataset.settingSelect }
+            : element.dataset.copyKey
+              ? { kind: "copy", copyKey: element.dataset.copyKey }
+              : null;
+      if (!descriptor) return null;
+      ["id", "screen", "filter", "from", "to", "sourceType", "actionIndex"].forEach(key => {
         if (element.dataset[key] !== undefined) descriptor[key] = element.dataset[key];
       });
+      if (element.dataset.kind !== undefined) descriptor.actionKind = element.dataset.kind;
       return descriptor;
     }
 
@@ -4038,9 +4258,9 @@
       sheetReturnFocusDescriptor = null;
       if (!descriptor) return;
       const restore = () => {
-        const controls = Array.from(document.querySelectorAll("[data-action]"));
+        const controls = Array.from(document.querySelectorAll("[data-action], [data-setting-toggle], [data-setting-select], [data-copy-key]"));
         const match = controls.find(control => Object.entries(descriptor).every(([key, value]) => (
-          key === "action" ? control.dataset.action === value : control.dataset[key] === value
+          key === "kind" ? true : key === "action" ? control.dataset.action === value : key === "actionKind" ? control.dataset.kind === value : control.dataset[key] === value
         )));
         if (match && typeof match.focus === "function") match.focus({ preventScroll: true });
       };
@@ -4061,6 +4281,24 @@
       const focus = () => heading.focus({ preventScroll: true });
       if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(focus);
       else focus();
+    }
+
+    function captureFocusedControl() {
+      if (view.sheet || !document?.activeElement || document.activeElement === document.body) return;
+      const descriptor = focusDescriptorFor(document.activeElement);
+      if (descriptor) pendingFocusDescriptor = descriptor;
+    }
+
+    function applyPendingFocusDescriptor() {
+      const descriptor = pendingFocusDescriptor;
+      pendingFocusDescriptor = null;
+      if (!descriptor) return;
+      const controls = Array.from(document.querySelectorAll("[data-action], [data-setting-toggle], [data-setting-select], [data-copy-key]"));
+      const match = controls.find(control => Object.entries(descriptor).every(([key, value]) => {
+        if (key === "kind") return true;
+        return key === "action" ? control.dataset.action === value : key === "actionKind" ? control.dataset.kind === value : control.dataset[key] === value;
+      }));
+      if (match && typeof match.focus === "function") match.focus({ preventScroll: true });
     }
 
     function bindSheetAccessibility() {
@@ -4146,13 +4384,14 @@
       const promptAfterMs = Number(settings.promptMeAfterHours || 24) * 60 * 60 * 1000;
       return db.quickGrabs.filter(grab => {
         if (["Done", "Converted", "Archived"].includes(grab.status)) return false;
-        if (grab.snoozedUntil && new Date(grab.snoozedUntil + "T00:00:00") > today) return false;
+        if (!recordSnoozeIsDue(grab, today)) return false;
         if (!["New", "Needs Processing", "Prompt Me", "Snoozed"].includes(grab.status)) return false;
         if (!grab.remindAt) {
           if (!promptAfterMs) return true;
           return Date.now() - new Date(grab.createdAt).getTime() >= promptAfterMs;
         }
-        return new Date(grab.remindAt + "T00:00:00") <= today;
+        const reminderDelta = calendarDayDelta(grab.remindAt, today);
+        return reminderDelta !== null && reminderDelta <= 0;
       }).sort((a, b) => urgencyRank(b.urgency) - urgencyRank(a.urgency) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
     }
 
@@ -4191,7 +4430,7 @@
 
     function renderLockScreen() {
       return `
-        <div class="lock-screen">
+        <main id="main-content" class="lock-screen" tabindex="-1">
           <div class="lock-panel">
             <div>
               <h1 class="lock-title">RUF Ministry Hub</h1>
@@ -4204,13 +4443,13 @@
             <button class="button primary full" data-action="unlock-app">Unlock</button>
             <p class="meta">This is a privacy lock for this device, not encrypted cloud security.</p>
           </div>
-        </div>
+        </main>
       `;
     }
 
     function renderVaultUnlockScreen() {
       return `
-        <div class="lock-screen">
+        <main id="main-content" class="lock-screen" tabindex="-1">
           <div class="lock-panel">
             <div>
               <h1 class="lock-title">Unlock Encrypted Storage</h1>
@@ -4224,7 +4463,7 @@
             <button class="button primary full" data-action="unlock-vault">Unlock Storage</button>
             <p class="meta">There is no passphrase recovery. Keep a separate backup somewhere safe.</p>
           </div>
-        </div>
+        </main>
       `;
     }
 
@@ -4306,18 +4545,48 @@
         showToast("Use at least 8 characters.");
         return false;
       }
-      autosaveDraftsCache = loadAutosaveDrafts();
-      memoryVaultCache = loadAutoMemoryVault();
+      const previous = {
+        settings: cloneJson(settings),
+        autosaveDraftsCache,
+        memoryVaultCache,
+        vaultPassphrase,
+        requestedRevision: vaultSaveRequestedRevision,
+        completedRevision: vaultSaveCompletedRevision
+      };
+      const persistenceKeys = [SETTINGS_KEY, CALM_MODE_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, ENCRYPTED_STORAGE_KEY, AUTO_MEMORY_KEY];
+      const persistenceSnapshot = localStorageSnapshot(persistenceKeys);
+      const previousDrafts = loadAutosaveDrafts();
+      const previousMemory = loadAutoMemoryVault();
+      autosaveDraftsCache = previousDrafts;
+      memoryVaultCache = previousMemory;
       vaultPassphrase = passphrase;
       settings.localEncryptionEnabled = true;
       settings.localEncryptionHint = String(hint || "").trim();
-      saveSettings();
-      await persistEncryptedVault();
-      if (!encryptedVaultExists()) {
-        settings.localEncryptionEnabled = false;
-        settings.localEncryptionHint = "";
-        vaultPassphrase = "";
-        saveSettings();
+      const saved = await persistEncryptedVault();
+      if (!saved) {
+        settings = previous.settings;
+        autosaveDraftsCache = previous.autosaveDraftsCache;
+        memoryVaultCache = previous.memoryVaultCache;
+        vaultPassphrase = previous.vaultPassphrase;
+        vaultSaveRequestedRevision = previous.requestedRevision;
+        vaultSaveCompletedRevision = previous.completedRevision;
+        restoreLocalStorageSnapshot(persistenceSnapshot);
+        if (canUseIndexedDb()) {
+          try {
+            await idbTransaction("readwrite", SETTINGS_KEY, settings);
+            await idbTransaction("readwrite", STORAGE_KEY, db);
+            await idbTransaction("readwrite", COPY_KEY, customCopy);
+            if (previousDrafts && Object.keys(previousDrafts).length) await idbTransaction("readwrite", AUTOSAVE_KEY, previousDrafts);
+            else await deleteFromIndexedDb(AUTOSAVE_KEY);
+            if (previousMemory && previousMemory.snapshots?.length) await idbTransaction("readwrite", AUTO_MEMORY_KEY, previousMemory);
+            else await deleteFromIndexedDb(AUTO_MEMORY_KEY);
+            const previousEnvelope = persistenceSnapshot.get(ENCRYPTED_STORAGE_KEY);
+            if (previousEnvelope) await idbTransaction("readwrite", ENCRYPTED_STORAGE_KEY, JSON.parse(previousEnvelope));
+            else await deleteFromIndexedDb(ENCRYPTED_STORAGE_KEY);
+          } catch (restoreError) {
+            console.warn("Could not fully restore IndexedDB after failed vault setup", restoreError);
+          }
+        }
         showToast("Encrypted storage could not be enabled.");
         return false;
       }
@@ -4356,7 +4625,7 @@
       mirrorToIndexedDb(SETTINGS_KEY, settings);
       autosaveDraftsCache = null;
       memoryVaultCache = null;
-      deleteFromIndexedDb(ENCRYPTED_STORAGE_KEY);
+      deleteFromIndexedDb(ENCRYPTED_STORAGE_KEY).catch(() => {});
       return true;
     }
 
@@ -4656,27 +4925,28 @@
     }
 
     function render() {
+      captureFocusedControl();
       if (view.startupHydrating) {
         document.getElementById("app").innerHTML = `
-          <div class="lock-screen" role="status" aria-live="polite" aria-busy="true">
+          <main id="main-content" class="lock-screen" role="status" aria-live="polite" aria-busy="true" tabindex="-1">
             <div class="lock-panel">
               <h1 class="lock-title">Opening Calm OS</h1>
               <p class="page-kicker">Checking this device for your latest private local data…</p>
             </div>
-          </div>
+          </main>
         `;
         return;
       }
       if (view.startupRecoveryError) {
         document.getElementById("app").innerHTML = `
-          <div class="lock-screen" role="alert">
+          <main id="main-content" class="lock-screen" role="alert" tabindex="-1">
             <div class="lock-panel">
               <h1 class="lock-title">Local data check paused</h1>
               <p class="page-kicker">${escapeHtml(view.startupRecoveryError)}</p>
               <button class="button primary full" data-action="startup-retry">Retry local recovery</button>
               <p class="meta">Calm OS will not open or replace data until this check succeeds.</p>
             </div>
-          </div>
+          </main>
         `;
         bindScreen();
         return;
@@ -4718,7 +4988,7 @@
               <div class="sidebar-note">${editableCopy("sidebar.privacy", "Private ministry notes belong here carefully. Use enough detail to care well, not everything.")}</div>
             </aside>
             <main class="content" id="main-content" tabindex="-1">
-	              ${renderUpdateNotice()}
+	              ${view.screen === "today" ? "" : renderUpdateNotice()}
 	              ${renderScreen()}
 	            </main>
           </div>
@@ -4727,6 +4997,7 @@
       `;
       bindScreen();
       bindDynamicAccessibility();
+      applyPendingFocusDescriptor();
       applyPendingUrlQuickGrabText();
       maybeSendReminderNotification();
     }
@@ -4815,17 +5086,28 @@
       const prayers = Array.isArray(data.prayerRequests) ? data.prayerRequests : [];
       const personMap = personMapFrom(people);
       const prayerMap = new Map(prayers.map(prayer => [prayer.id, prayer]));
-      const candidates = [];
+      const candidatesByTier = new Map();
+      const MAX_TODAY_CANDIDATES_PER_TIER = 24;
       const prioritizedCaptureIds = new Set();
+      const compareRecommendations = (a, b) => String(a.sortDate || "9999").localeCompare(String(b.sortDate || "9999"))
+        || String(a.id || "").localeCompare(String(b.id || ""));
       const add = recommendation => {
         if (!recommendation?.id || todayRecommendationDeferred(recommendation, reference, appSettings)) return;
-        candidates.push(recommendation);
+        const bucket = candidatesByTier.get(recommendation.tier) || [];
+        bucket.push(recommendation);
+        bucket.sort(compareRecommendations);
+        if (bucket.length > MAX_TODAY_CANDIDATES_PER_TIER) bucket.length = MAX_TODAY_CANDIDATES_PER_TIER;
+        candidatesByTier.set(recommendation.tier, bucket);
       };
       const personDetail = person => aiPrivacyTierForRecord(person, "people") === "Normal"
         ? String(person.followUpReason || "A follow-up is ready.")
         : "Sensitive care detail hidden.";
+      const personLabel = (person, fallback = "this person") => recordIsSensitive(person, "people")
+        ? "a private person"
+        : String(person?.name || fallback);
 
       people.forEach(person => {
+        if (!personIsActive(person)) return;
         const delta = calendarDayDelta(person.nextFollowUpDate, reference);
         if (delta === null || delta > 0) return;
         const tier = delta < 0 ? 1 : 2;
@@ -4839,7 +5121,7 @@
           personId: person.id,
           subjectKey: `person:${person.id}`,
           sortDate: person.nextFollowUpDate,
-          title: `Follow up with ${person.name || "this person"}`,
+          title: `Follow up with ${personLabel(person)}`,
           detail: personDetail(person),
           dateText: formatFollowUpDate(person.nextFollowUpDate, reference),
           proactive: false
@@ -4847,13 +5129,14 @@
       });
 
       tasks.forEach(task => {
-        if (["Done / Archived", "Done", "Archived", "Completed"].includes(task.status)) return;
-        if (task.snoozedUntil && calendarDayDelta(task.snoozedUntil, reference) > 0) return;
+        if (!taskIsActive(task, reference)) return;
         const delta = calendarDayDelta(task.dueDate, reference);
         if (delta === null || delta > 0) return;
         const relatedPrayer = prayerMap.get(task.relatedPrayerRequestId);
-        const sensitive = relatedPrayer?.sensitivityLevel === "Sensitive" || aiPrivacyTierForRecord(task, "tasks") !== "Normal";
+        const sensitive = recordIsSensitive(relatedPrayer, "prayerRequests") || recordIsSensitive(task, "tasks");
         const person = personMap.get(task.relatedPersonId);
+        if (person && !personIsActive(person)) return;
+        const taskPersonLabel = person && recordIsSensitive(person, "people") ? "a private person" : person?.name;
         add({
           id: `task-due:${task.id}`,
           tier: 3,
@@ -4865,7 +5148,7 @@
           subjectKey: person?.id ? `person:${person.id}` : `task:${task.id}`,
           sortDate: task.dueDate,
           title: sensitive ? "Complete a sensitive follow-up" : String(task.title || "Complete this follow-up"),
-          detail: person ? `For ${person.name}` : "A concrete follow-up is ready.",
+          detail: sensitive || (person && recordIsSensitive(person, "people")) ? "Sensitive follow-up detail hidden." : (taskPersonLabel ? `For ${taskPersonLabel}` : "A concrete follow-up is ready."),
           dateText: formatDueDate(task.dueDate, reference),
           proactive: false
         });
@@ -4873,11 +5156,11 @@
 
       captures.forEach(capture => {
         if (["Done", "Converted", "Archived"].includes(capture.status)) return;
-        if (capture.snoozedUntil && calendarDayDelta(capture.snoozedUntil, reference) > 0) return;
+        if (!recordSnoozeIsDue(capture, reference)) return;
         const dueDelta = calendarDayDelta(capture.remindAt || capture.detectedDate, reference);
         if (capture.urgency !== "Important" && capture.urgency !== "Today" && (dueDelta === null || dueDelta > 0)) return;
         prioritizedCaptureIds.add(capture.id);
-        const sensitive = capture.sensitiveFlag || aiPrivacyTierForRecord(capture, "quickGrabs") !== "Normal";
+        const sensitive = recordIsSensitive(capture, "quickGrabs");
         add({
           id: `capture-due:${capture.id}`,
           tier: 4,
@@ -4897,10 +5180,11 @@
 
       prayers.forEach(prayer => {
         if (["Answered", "Archived"].includes(prayer.status)) return;
-        if (prayer.snoozedUntil && calendarDayDelta(prayer.snoozedUntil, reference) > 0) return;
+        if (!recordSnoozeIsDue(prayer, reference)) return;
         const delta = calendarDayDelta(prayer.followUpDate, reference);
         if (delta === null || delta > 0) return;
         const person = personMap.get(prayer.relatedPersonId);
+        if (person && !personIsActive(person)) return;
         add({
           id: `prayer-follow-up:${prayer.id}`,
           tier: 5,
@@ -4911,15 +5195,15 @@
           personId: person?.id || "",
           subjectKey: person?.id ? `person:${person.id}` : `prayer:${prayer.id}`,
           sortDate: prayer.followUpDate,
-          title: person ? `Follow up on prayer with ${person.name}` : "Follow up on a prayer request",
-          detail: prayer.sensitivityLevel === "Sensitive" ? "Sensitive prayer concern hidden." : String(prayer.request || "Prayer follow-up is ready."),
+          title: recordIsSensitive(prayer, "prayerRequests") ? "Follow up on a private prayer request" : (person ? `Follow up on prayer with ${personLabel(person)}` : "Follow up on a prayer request"),
+          detail: recordIsSensitive(prayer, "prayerRequests") ? "Sensitive prayer concern hidden." : String(prayer.request || "Prayer follow-up is ready."),
           dateText: formatFollowUpDate(prayer.followUpDate, reference),
           proactive: false
         });
       });
 
       people.forEach(person => {
-        if (person.status === "Archived" || person.nextFollowUpDate) return;
+        if (!personIsActive(person) || person.nextFollowUpDate) return;
         const daysSince = calendarDayDelta(person.lastMeaningfulInteraction, reference);
         if (daysSince === null || Math.abs(daysSince) < todayCareWindowDays(person) || daysSince > 0) return;
         add({
@@ -4932,7 +5216,7 @@
           personId: person.id,
           subjectKey: `person:${person.id}`,
           sortDate: person.lastMeaningfulInteraction,
-          title: `Check in with ${person.name || "this person"}`,
+          title: `Check in with ${personLabel(person)}`,
           detail: "It has been longer than their saved care rhythm.",
           dateText: formatInteractionDate(person.lastMeaningfulInteraction, reference),
           proactive: false
@@ -4942,7 +5226,7 @@
       captures
         .filter(capture => !prioritizedCaptureIds.has(capture.id))
         .filter(capture => !["Done", "Converted", "Archived"].includes(capture.status))
-        .filter(capture => !capture.snoozedUntil || calendarDayDelta(capture.snoozedUntil, reference) <= 0)
+        .filter(capture => recordSnoozeIsDue(capture, reference))
         .forEach(capture => add({
           id: `capture-oldest:${capture.id}`,
           tier: 7,
@@ -4954,7 +5238,7 @@
           subjectKey: `capture:${capture.id}`,
           sortDate: capture.createdAt,
           title: "Sort one saved thought",
-          detail: capture.sensitiveFlag ? "Sensitive capture hidden." : String(capture.rawContent || "Unprocessed capture"),
+          detail: recordIsSensitive(capture, "quickGrabs") ? "Sensitive capture hidden." : String(capture.rawContent || "Unprocessed capture"),
           dateText: formatHistoryDate(capture.createdAt, "Captured", reference),
           proactive: false
         }));
@@ -4969,7 +5253,7 @@
       for (const id of proactivePeople) {
         if (!id || proactiveSeen.has(id)) continue;
         proactiveSeen.add(id);
-        if (!personMap.has(id)) continue;
+        if (!personMap.has(id) || !personIsActive(personMap.get(id))) continue;
         proactiveId = id;
         break;
       }
@@ -4985,7 +5269,7 @@
           personId: person.id,
           subjectKey: `person:${person.id}`,
           sortDate: person.lastMeaningfulInteraction || person.createdAt || "",
-          title: `Encourage ${person.name || "someone"}`,
+          title: `Encourage ${personLabel(person, "someone")}`,
           detail: "No urgent deadline—just a quiet opportunity to care.",
           dateText: "Proactive care",
           proactive: true
@@ -5009,6 +5293,7 @@
         });
       }
 
+      const candidates = Array.from(candidatesByTier.values()).flat();
       if (!candidates.length) add({
         id: "quiet:capture",
         tier: 9,
@@ -5024,7 +5309,7 @@
         proactive: true
       });
 
-      const sorted = candidates.sort((a, b) => a.tier - b.tier
+      const sorted = Array.from(candidatesByTier.values()).flat().sort((a, b) => a.tier - b.tier
         || String(a.sortDate || "9999").localeCompare(String(b.sortDate || "9999"))
         || String(a.id || "").localeCompare(String(b.id || "")));
       const seenSubjects = new Set();
@@ -5053,8 +5338,8 @@
         <div class="calm-card primary" data-recommendation-id="${escapeHtml(recommendation.id)}" data-reason-code="${escapeHtml(recommendation.reasonCode)}">
           <div>
             <div class="eyebrow">Next thing to do</div>
-            <h2>${escapeHtml(recommendation.title)}</h2>
-            <p class="item-preview">${escapeHtml(recommendation.detail)}</p>
+            <h2>${escapeHtml(conciseText(recommendation.title, 96))}</h2>
+            <p class="item-preview">${escapeHtml(conciseText(recommendation.detail, 180))}</p>
             <div class="meta">${escapeHtml(recommendation.dateText)}</div>
           </div>
           <div class="action-row">
@@ -5069,7 +5354,7 @@
     function renderTodayAfterItem(recommendation) {
       return `
         <article class="calm-list-row" data-recommendation-id="${escapeHtml(recommendation.id)}" data-reason-code="${escapeHtml(recommendation.reasonCode)}">
-          <div><strong>${escapeHtml(recommendation.title)}</strong><div class="meta">${escapeHtml(recommendation.dateText)}</div></div>
+          <div><strong>${escapeHtml(conciseText(recommendation.title, 96))}</strong><div class="meta">${escapeHtml(recommendation.dateText)}</div></div>
           <button class="button quiet small" data-action="today-recommendation-open" data-id="${escapeHtml(recommendation.id)}">Open</button>
         </article>
       `;
@@ -5366,10 +5651,8 @@
     }
 
     function sensitiveRecordCount() {
-      return db.quickGrabs.filter(item => item.sensitiveFlag).length
-        + db.notes.filter(item => item.sensitiveFlag).length
-        + db.meetingNotes.filter(item => item.sensitiveFlag).length
-        + db.prayerRequests.filter(item => item.sensitivityLevel === "Sensitive").length;
+      return DATA_COLLECTIONS.reduce((count, collection) =>
+        count + (Array.isArray(db[collection]) ? db[collection].filter(item => recordIsSensitive(item, collection)).length : 0), 0);
     }
 
     function totalRecordCount() {
@@ -5585,12 +5868,9 @@
         <section class="section">
           <div class="surface">
             <div class="action-row">
-              <button class="button" data-action="nav" data-screen="settings">Back to More</button>
-              <button class="button" data-action="coach-refresh">Refresh Audit</button>
-              <button class="button" data-action="donor-update-builder">Donor Update Builder</button>
-              <button class="button primary" data-action="weekly-reset-agent">Build Weekly Reset Plan</button>
-              <button class="button primary" data-action="data-janitor">Run Data Janitor</button>
-              ${dismissedCount ? `<button class="button" data-action="coach-clear-dismissed">Show Hidden Suggestions</button>` : ""}
+              <button class="button quiet" data-action="nav" data-screen="settings">Back to More</button>
+              <button class="button primary" data-action="coach-refresh">Refresh Audit</button>
+              ${dismissedCount ? `<button class="button quiet" data-action="coach-clear-dismissed">Show Hidden Suggestions</button>` : ""}
           </div>
           </div>
         </section>
@@ -5606,9 +5886,7 @@
               ${settingSelect("appCoachSensitivity", "Suggestion Style", [["gentle", "Gentle"], ["balanced", "Balanced"], ["proactive", "Proactive"]], "Choose how quickly the coach points out optimization ideas.")}
             </div>
             <div class="action-row" style="margin-top:14px;">
-              <button class="button" data-action="donor-update-builder">Donor Update Builder</button>
-              <button class="button primary" data-action="weekly-reset-agent">Build Weekly Reset Plan</button>
-              <button class="button primary" data-action="data-janitor">Run Data Janitor</button>
+              <button class="button quiet" data-action="nav" data-screen="advancedSettings">Open secondary tools in Settings</button>
             </div>
           </div>
         </section>
@@ -5670,12 +5948,14 @@
 
     function renderCaptureWaitingRow(grab) {
       const person = personById(grab.relatedPersonId);
-      const preview = maskedText(grab.sensitiveFlag, "Sensitive capture hidden.", grab.rawContent);
+      const sensitive = recordIsSensitive(grab, "quickGrabs") || (person && recordIsSensitive(person, "people"));
+      const personLabel = sensitive ? "Private person" : person?.name;
+      const preview = conciseText(maskedText(sensitive, "Sensitive capture hidden.", grab.rawContent), 160);
       return `
         <article class="calm-list-row">
           <div>
             <strong>${escapeHtml(preview)}</strong>
-            <div class="meta">${person ? `${escapeHtml(person.name)} · ` : ""}${escapeHtml(formatHistoryDate(grab.createdAt, "Captured") || "Captured")}</div>
+            <div class="meta">${personLabel ? `${escapeHtml(personLabel)} · ` : ""}${escapeHtml(formatHistoryDate(grab.createdAt, "Captured") || "Captured")}</div>
             ${grab.processingState === "failed" ? `<div class="meta" role="status">Not processed yet. ${escapeHtml(grab.processingError || "Retry when ready.")}</div>` : ""}
           </div>
           <button class="button quiet small" data-action="qg-process" data-id="${escapeHtml(grab.id)}">${grab.processingState === "failed" ? "Retry" : "Process"}</button>
@@ -5684,10 +5964,10 @@
     }
 
     function renderQuickGrab() {
-      const waiting = db.quickGrabs
+      const allWaiting = db.quickGrabs
         .filter(grab => !["Converted", "Done", "Archived"].includes(grab.status))
-        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
-        .slice(0, 5);
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+      const waiting = allWaiting.slice(0, 5);
       return `
         ${renderTopbar("Capture", "What do I need to remember?", false)}
         <section class="section" data-calm-section="capture">
@@ -5696,8 +5976,9 @@
         ${waiting.length ? `
           <section class="section" data-calm-section="waiting-captures">
             <details class="disclosure">
-              <summary>Waiting to be sorted (${waiting.length})</summary>
+              <summary>Waiting to be sorted (${allWaiting.length})</summary>
               <div class="calm-list">${waiting.map(renderCaptureWaitingRow).join("")}</div>
+              ${allWaiting.length > waiting.length ? `<div class="meta">Showing the 5 most recent. Open Unprocessed captures in More for the full list.</div>` : ""}
             </details>
           </section>
         ` : ""}
@@ -5741,7 +6022,9 @@
 
     function renderQuickGrabCard(grab, mode = "full") {
       const person = personById(grab.relatedPersonId);
-      const sensitivePreview = maskedText(grab.sensitiveFlag, "Sensitive grabbed item - tap to view.", grab.rawContent);
+      const sensitive = recordIsSensitive(grab, "quickGrabs") || (person && recordIsSensitive(person, "people"));
+      const personLabel = sensitive ? "Private person" : person?.name;
+      const sensitivePreview = conciseText(maskedText(sensitive, "Sensitive grabbed item - tap to view.", grab.rawContent), 180);
       const expanded = view.expandedQuickGrabIds.includes(grab.id);
       const showActions = mode !== "summary";
       return `
@@ -5751,7 +6034,7 @@
           </div>
           <p class="item-preview">${escapeHtml(sensitivePreview)}</p>
           <div class="row wrap">
-            <span class="meta">${escapeHtml(grab.status)}${person ? " - " + escapeHtml(person.name) : ""}</span>
+            <span class="meta">${escapeHtml(grab.status)}${personLabel ? " - " + escapeHtml(personLabel) : ""}</span>
             ${grab.remindAt ? `<span class="meta">Prompt: ${dateLabel(grab.remindAt)}</span>` : ""}
           </div>
           <div class="next-step-line">
@@ -5852,6 +6135,7 @@
       const prayerMap = new Map(db.prayerRequests.map(prayer => [prayer.id, prayer]));
       const people = db.people
         .filter(person => {
+          if (!settings.includeSensitiveInSearch && isSensitive(person, "people")) return false;
           const safeFields = [person.name, person.personType, person.status, person.careLevel, person.phone, person.email, person.classYear, person.fraternitySorority, person.major, person.hometown, person.rufInvolvement, person.donorStatus];
           return matches(settings.includeSensitiveInSearch ? [...safeFields, person.followUpReason] : safeFields);
         })
@@ -5868,9 +6152,16 @@
           };
         });
       const quickGrabs = db.quickGrabs
-        .filter(grab => (settings.includeArchivedInSearch || grab.status !== "Archived") && (settings.includeSensitiveInSearch || !isSensitive(grab, "quickGrabs")) && matches([grab.rawContent, grab.detectedPersonName, grab.detectedPrayerRequest, grab.detectedFollowUp, grab.detectedMeetingSummary, grab.category, grab.status, grab.urgency]))
+        .filter(grab => {
+          const person = personMap.get(grab.relatedPersonId);
+          const sensitive = isSensitive(grab, "quickGrabs") || isSensitive(person, "people");
+          if (!settings.includeArchivedInSearch && grab.status === "Archived") return false;
+          if (!settings.includeSensitiveInSearch && sensitive) return false;
+          return matches([grab.rawContent, grab.detectedPersonName, grab.detectedPrayerRequest, grab.detectedFollowUp, grab.detectedMeetingSummary, grab.category, grab.status, grab.urgency]);
+        })
         .map(grab => {
-          const sensitive = isSensitive(grab, "quickGrabs");
+          const person = personMap.get(grab.relatedPersonId);
+          const sensitive = isSensitive(grab, "quickGrabs") || isSensitive(person, "people");
           return {
             kind: "Quick Grab",
             title: `${grab.category} Quick Grab`,
@@ -5886,14 +6177,15 @@
           if (!settings.includeArchivedInSearch && prayer.status === "Archived") return false;
           if (!settings.includeSensitiveInSearch && isSensitive(prayer, "prayerRequests")) return false;
           const person = personMap.get(prayer.relatedPersonId);
+          if (!settings.includeSensitiveInSearch && person && isSensitive(person, "people")) return false;
           return matches([person?.name, prayer.request, prayer.status, prayer.sensitivityLevel, prayer.shareableStatus, prayer.answeredNote]);
         })
         .map(prayer => {
           const person = personMap.get(prayer.relatedPersonId);
-          const sensitive = isSensitive(prayer, "prayerRequests");
+          const sensitive = isSensitive(prayer, "prayerRequests") || isSensitive(person, "people");
           return {
             kind: "Prayer Request",
-            title: person ? person.name : "Unlinked person",
+            title: sensitive ? "Private person" : (person ? person.name : "Unlinked person"),
             meta: `${prayer.status} - ${dateLabel(prayer.dateAdded)}`,
             preview: maskedText(sensitive, "Sensitive prayer request - open related profile.", prayer.request),
             personId: prayer.relatedPersonId,
@@ -5908,14 +6200,15 @@
         .filter(meeting => {
           if (!settings.includeSensitiveInSearch && isSensitive(meeting, "meetingNotes")) return false;
           const person = personMap.get(meeting.relatedPersonId);
+          if (!settings.includeSensitiveInSearch && person && isSensitive(person, "people")) return false;
           return matches([person?.name, meeting.meetingType, meeting.location, meeting.whatWeTalkedAbout, meeting.whatToRemember, meeting.prayerRequestText, meeting.nextFaithfulStep]);
         })
         .map(meeting => {
           const person = personMap.get(meeting.relatedPersonId);
-          const sensitive = isSensitive(meeting, "meetingNotes");
+          const sensitive = isSensitive(meeting, "meetingNotes") || isSensitive(person, "people");
           return {
             kind: "Meeting Note",
-            title: `${meeting.meetingType} meeting${person ? " with " + person.name : ""}`,
+            title: sensitive ? "Private meeting note" : `${meeting.meetingType} meeting${person ? " with " + person.name : ""}`,
             meta: dateLabel(meeting.meetingDate),
             preview: maskedText(sensitive, "Sensitive meeting note - open related profile.", meeting.whatWeTalkedAbout),
             personId: meeting.relatedPersonId,
@@ -5929,14 +6222,15 @@
         .filter(note => {
           if (!settings.includeSensitiveInSearch && isSensitive(note, "notes")) return false;
           const person = personMap.get(note.relatedPersonId);
+          if (!settings.includeSensitiveInSearch && person && isSensitive(person, "people")) return false;
           return matches([person?.name, note.noteType, note.content]);
         })
         .map(note => {
           const person = personMap.get(note.relatedPersonId);
-          const sensitive = isSensitive(note, "notes");
+          const sensitive = isSensitive(note, "notes") || isSensitive(person, "people");
           return {
             kind: "Note",
-            title: `${note.noteType}${person ? " - " + person.name : ""}`,
+            title: sensitive ? "Private note" : `${note.noteType}${person ? " - " + person.name : ""}`,
             meta: dateLabel(note.noteDate),
             preview: maskedText(sensitive, "Sensitive note - open related profile.", note.content),
             personId: note.relatedPersonId,
@@ -5949,15 +6243,15 @@
       const tasks = db.tasks
         .filter(task => {
           const relatedPrayer = prayerMap.get(task.relatedPrayerRequestId);
-          const sensitive = isSensitive(task, "tasks") || isSensitive(relatedPrayer, "prayerRequests");
-          if (!settings.includeSensitiveInSearch && sensitive) return false;
           const person = personMap.get(task.relatedPersonId);
+          const sensitive = isSensitive(task, "tasks") || isSensitive(relatedPrayer, "prayerRequests") || isSensitive(person, "people");
+          if (!settings.includeSensitiveInSearch && sensitive) return false;
           return matches([person?.name, task.title, task.status, task.sourceType]);
         })
         .map(task => {
           const person = personMap.get(task.relatedPersonId);
           const relatedPrayer = prayerMap.get(task.relatedPrayerRequestId);
-          const sensitive = isSensitive(task, "tasks") || isSensitive(relatedPrayer, "prayerRequests");
+          const sensitive = isSensitive(task, "tasks") || isSensitive(relatedPrayer, "prayerRequests") || isSensitive(person, "people");
           return {
             kind: "Follow-Up Task",
             title: maskedText(sensitive, "Sensitive follow-up task", task.title),
@@ -6121,7 +6415,7 @@
       const warning = aiContextWarningForTier(tier, label);
       if (warning) context.warnings.push(warning);
       if (!aiRecordAllowedInContext(record, collection)) {
-        context.notUsed.push({ ...item, summary: `${item.summary} (${aiContextBlockReason(tier)})` });
+        context.notUsed.push({ ...item, summary: `${aiContextBlockReason(tier)} Sensitive details remain hidden.` });
         return;
       }
       if (["Private", "Sensitive", "Highly Sensitive"].includes(tier)) {
@@ -6143,11 +6437,12 @@
       const prayers = db.prayerRequests
         .filter(prayer => prayer.relatedPersonId === personId)
         .filter(prayer => !["Archived", "Answered"].includes(prayer.status))
+        .filter(prayer => recordSnoozeIsDue(prayer, new Date()))
         .sort((a, b) => String(b.dateAdded || b.updatedAt || "").localeCompare(String(a.dateAdded || a.updatedAt || "")))
         .slice(0, 5);
       const tasks = db.tasks
         .filter(task => task.relatedPersonId === personId)
-        .filter(task => task.status !== "Done / Archived")
+        .filter(task => taskIsActive(task))
         .sort((a, b) => String(a.dueDate || "").localeCompare(String(b.dueDate || "")))
         .slice(0, 5);
       return { person, notes, meetings, prayers, tasks };
@@ -6234,7 +6529,7 @@
       if (person && sourceType !== "person") {
         addAiContextCandidate(context, "Related person basics", person, "people", personBriefingPersonSummary(person));
       }
-      if (sourceType === "prayerRequest" && sourceRecord.sensitivityLevel === "Sensitive" && aiRecordAllowedInContext(sourceRecord, "prayerRequests")) {
+      if (sourceType === "prayerRequest" && recordIsSensitive(sourceRecord, "prayerRequests") && aiRecordAllowedInContext(sourceRecord, "prayerRequests")) {
         context.warnings.push("This draft references a sensitive prayer request. Avoid naming details unless the person clearly expects that privacy.");
       }
       return context;
@@ -6267,7 +6562,7 @@
         followUpNeeded: prayers.filter(prayer => prayer.status === "Follow-Up Needed").length,
         answered: prayers.filter(prayer => prayer.status === "Answered").length,
         archived: prayers.filter(prayer => prayer.status === "Archived").length,
-        sensitive: prayers.filter(prayer => prayer.sensitivityLevel === "Sensitive").length,
+        sensitive: prayers.filter(prayer => recordIsSensitive(prayer, "prayerRequests")).length,
         oldActive: prayers.filter(prayer => prayer.status === "Active" && prayer.dateAdded && prayer.dateAdded < daysAgo(30)).length,
         overdueFollowUps: prayers.filter(prayer => prayer.followUpDate && prayer.followUpDate < today && prayer.status !== "Archived").length,
         unlinked: prayers.filter(prayer => !prayer.relatedPersonId || !personById(prayer.relatedPersonId)).length
@@ -6309,7 +6604,7 @@
       const overdueFollowUps = prayers.filter(prayer => prayer.followUpDate && prayer.followUpDate < today && prayer.status !== "Archived");
       const answeredReadyToArchive = prayers.filter(prayer => prayer.status === "Answered" && !prayer.archivedAt);
       const sensitiveShareWarnings = prayers.filter(prayer =>
-        prayer.sensitivityLevel === "Sensitive" ||
+        recordIsSensitive(prayer, "prayerRequests") ||
         prayerStewardLooksSensitive(prayer) ||
         (prayer.shareableStatus && prayer.shareableStatus !== "Private" && prayer.sensitivityLevel === "Sensitive")
       );
@@ -7443,6 +7738,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function buildQuickGrabAiContextReview(grabId) {
       const grab = db.quickGrabs.find(item => item.id === grabId);
       const candidatePeople = grab ? quickGrabCandidatePeopleForBackend(grab) : [];
+      const blockedPeople = grab ? quickGrabBlockedPeopleForBackend(grab) : [];
       const context = {
         used: [],
         notUsed: [
@@ -7456,6 +7752,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         blocked: false
       };
       context.used.push({ label: "Current AI mode", tier: "Normal", summary: quickGrabBackendModeEnabled() ? "Backend Quick Grab is selected. The browser calls only /api/ai/quick-grab after approval." : "Local Mock Only is selected. No data leaves this browser." });
+      if (blockedPeople.length) {
+        context.notUsed.push({ label: "One Quick Grab text", tier: "Do Not Send to AI", summary: "Blocked because linked or candidate person context is not approved. Sensitive details remain local." });
+        context.notUsed.push({ label: "Linked or candidate people", tier: "Do Not Send to AI", summary: "Sensitive person context hidden." });
+        context.blocked = true;
+        return context;
+      }
       addAiContextCandidate(
         context,
         "One Quick Grab text",
@@ -7496,7 +7798,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return buildAiContextReview(null);
     }
 
-    function renderAiContextList(items, emptyText) {
+    function renderAiContextList(items, emptyText, hideSensitive = false) {
       if (!items.length) return `<div class="meta">${escapeHtml(emptyText)}</div>`;
       return `
         <div class="settings-list">
@@ -7506,7 +7808,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                 <strong>${escapeHtml(item.label)}</strong>
                 <span class="pill ${aiPrivacyTierTone(item.tier)}">${escapeHtml(item.tier)}</span>
               </div>
-              ${settings.aiShowContextPreview ? `<div class="meta">${escapeHtml(item.summary || "No preview available.")}</div>` : `<div class="meta">Preview hidden by AI privacy setting.</div>`}
+              ${settings.aiShowContextPreview ? `<div class="meta">${escapeHtml(hideSensitive && item.tier !== "Normal" ? "Sensitive context hidden." : (item.summary || "No preview available."))}</div>` : `<div class="meta">Preview hidden by AI privacy setting.</div>`}
             </div>
           `).join("")}
         </div>
@@ -7545,12 +7847,37 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
+    function renderAiProposalResultDetails(proposal, sensitive = false) {
+      if (sensitive && proposal?.result) {
+        return `
+          <div class="notice sensitive">
+            <strong>Suggested result details hidden.</strong>
+            <div class="meta">Review the approved source and selected actions before saving sensitive details.</div>
+          </div>
+        `;
+      }
+      return [
+        renderAiBriefingResult(proposal),
+        renderAiFollowUpDraftResult(proposal),
+        renderAiPrayerStewardResult(proposal),
+        renderAiDataJanitorResult(proposal),
+        renderAiWeeklyResetResult(proposal),
+        renderAiDonorUpdateResult(proposal)
+      ].join("");
+    }
+
     function renderAiProposalCard(proposal) {
       const warnings = Array.isArray(proposal.warnings) ? proposal.warnings : [];
       const actions = Array.isArray(proposal.proposedActions) ? proposal.proposedActions : [];
       const sourceLabel = `${labelFromCamel(proposal.sourceType)}${proposal.sourceId ? " / " + proposal.sourceId : ""}`;
       const sourceRecord = aiProposalSourceRecord(proposal);
       const sourceTier = sourceRecord ? aiPrivacyTierForRecord(sourceRecord, aiSourceCollectionForProposal(proposal)) : aiPrivacyTierForRecord(proposal, "aiProposals");
+      const sensitiveProposal = aiProposalDisplaySensitive(proposal);
+      const contextPreview = maskedText(sensitiveProposal, "Sensitive context hidden. Review the approved source to continue.", proposal.contextPreview);
+      const rawInputPreview = maskedText(sensitiveProposal, "Sensitive input hidden. Review the approved source to continue.", proposal.rawInputPreview);
+      const displayTitle = sensitiveProposal ? "Sensitive suggested updates" : (proposal.title || "Untitled suggestion");
+      const displayProposalSummary = sensitiveProposal ? "Sensitive proposal details are hidden until you review the approved source." : (proposal.summary || "Review this suggestion before deciding what to do with it.");
+      const displayWarnings = sensitiveProposal && warnings.length ? ["Sensitive warning details hidden."] : warnings;
       const canOpenSource = aiProposalCanOpenSource(proposal);
       const focused = view.aiReviewFocusId === proposal.id;
       const canExecute = aiProposalCanExecute(proposal);
@@ -7564,7 +7891,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         <article class="item compact focus-card ${focused ? "important" : ""}">
           <div class="item-title-row">
             <div>
-              <div class="item-title">${escapeHtml(proposal.title || "Untitled suggestion")}</div>
+              <div class="item-title">${escapeHtml(displayTitle)}</div>
               <div class="meta">${escapeHtml(labelFromCamel(proposal.proposalType))}</div>
             </div>
             <div class="row wrap">
@@ -7572,7 +7899,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               <span class="pill ${aiProposalStatusTone(proposal.status)}">${escapeHtml(labelFromCamel(proposal.status || "pending"))}</span>
             </div>
           </div>
-          <p class="item-preview">${escapeHtml(proposal.summary || "Review this suggestion before deciding what to do with it.")}</p>
+          <p class="item-preview">${escapeHtml(displayProposalSummary)}</p>
           <div class="row wrap">
             <span class="pill violet">${escapeHtml(labelFromCamel(proposal.proposalType))}</span>
             <span class="pill ${proposal.confidence === "high" ? "green" : proposal.confidence === "medium" ? "gold" : "gray"}">Confidence: ${escapeHtml(labelFromCamel(proposal.confidence))}</span>
@@ -7581,17 +7908,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             <span class="pill gray">Model: ${escapeHtml(proposal.model || "mock")}</span>
           </div>
           <div class="meta">Source: ${escapeHtml(sourceLabel)}</div>
-          ${proposal.contextPreview ? `<p class="item-preview"><strong>Context:</strong> ${escapeHtml(proposal.contextPreview)}</p>` : ""}
-          ${proposal.rawInputPreview ? `<p class="item-preview"><strong>Input preview:</strong> ${escapeHtml(proposal.rawInputPreview)}</p>` : ""}
-          ${renderAiBriefingResult(proposal)}
-          ${renderAiFollowUpDraftResult(proposal)}
-          ${renderAiPrayerStewardResult(proposal)}
-          ${renderAiDataJanitorResult(proposal)}
-          ${renderAiWeeklyResetResult(proposal)}
-          ${renderAiDonorUpdateResult(proposal)}
+          ${contextPreview ? `<p class="item-preview"><strong>Context:</strong> ${escapeHtml(conciseText(contextPreview, 240))}</p>` : ""}
+          ${rawInputPreview ? `<p class="item-preview"><strong>Input preview:</strong> ${escapeHtml(conciseText(rawInputPreview, 360))}</p>` : ""}
+          ${renderAiProposalResultDetails(proposal, sensitiveProposal)}
           <div class="field">
             <div class="field-label">Warnings</div>
-            ${warnings.length ? `<div class="settings-list">${warnings.map(warning => `<div class="notice danger">${escapeHtml(warning)}</div>`).join("")}</div>` : `<div class="meta">No warnings attached.</div>`}
+            ${displayWarnings.length ? `<div class="settings-list">${displayWarnings.map(warning => `<div class="notice danger">${escapeHtml(warning)}</div>`).join("")}</div>` : `<div class="meta">No warnings attached.</div>`}
           </div>
           <fieldset class="field-group">
             <legend>RUF Hub sorted this into…</legend>
@@ -7804,6 +8126,19 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return action.label || action.title || action.summary || action.request || action.content || action.task || action.name || "";
     }
 
+    function aiActionDisplaySummary(proposal, action) {
+      const sourceRecord = aiProposalSourceRecord(proposal);
+      const sourceTier = sourceRecord ? aiPrivacyTierForRecord(sourceRecord, aiSourceCollectionForProposal(proposal)) : aiPrivacyTierForRecord(proposal, "aiProposals");
+      if (sourceTier !== "Normal" || ["medium", "high"].includes(proposal?.sensitivityRisk)) return "Sensitive proposed update hidden.";
+      return aiActionSummary(action);
+    }
+
+    function aiProposalDisplaySensitive(proposal) {
+      const sourceRecord = aiProposalSourceRecord(proposal);
+      const sourceTier = sourceRecord ? aiPrivacyTierForRecord(sourceRecord, aiSourceCollectionForProposal(proposal)) : aiPrivacyTierForRecord(proposal, "aiProposals");
+      return sourceTier !== "Normal" || ["medium", "high"].includes(proposal?.sensitivityRisk);
+    }
+
     function aiActionId(action = {}, index = 0) {
       return String(action.actionId || action.id || action.key || `${aiActionType(action)}-${index + 1}`);
     }
@@ -7933,13 +8268,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const canSelect = aiProposalCanExecute(proposal) && executable;
       const actionId = aiActionId(action, index);
       const checked = aiActionIsSelected(proposal, action, index);
-      const summary = aiActionSummary(action);
+      const displaySummary = aiActionDisplaySummary(proposal, action);
       const editable = aiProposalCanExecute(proposal) && aiActionEditableFields(action).length;
       return `
         <div class="notice">
           <label class="check">
             <input type="checkbox" data-ai-action-select="${escapeHtml(proposal.id)}" data-action-index="${index}" data-action-id="${escapeHtml(actionId)}" ${checked ? "checked" : ""} ${canSelect ? "" : "disabled"}>
-            <span><strong>${escapeHtml(labelFromCamel(type))}</strong>${summary ? ` - ${escapeHtml(summary)}` : ""}</span>
+            <span><strong>${escapeHtml(labelFromCamel(type))}</strong>${displaySummary ? ` - ${escapeHtml(displaySummary)}` : ""}</span>
           </label>
           <div class="meta">${executable ? "Can be saved locally after final confirmation." : "Review only in this build. No sending, merging, texting, or donor update execution yet."}</div>
           ${editable ? `<div class="action-row"><button class="button small" data-action="ai-action-edit" data-id="${escapeHtml(proposal.id)}" data-action-index="${index}">Edit action</button></div>` : ""}
@@ -7973,14 +8308,21 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const validation = validateAiActionExecution(proposal, state.actionIndexes || [], { personChoice });
       const selected = validation.selected || [];
       const proposalWarnings = Array.isArray(proposal.warnings) ? proposal.warnings : [];
+      const sensitiveProposal = aiProposalDisplaySensitive(proposal);
+      const displayProposalTitle = sensitiveProposal ? "Sensitive suggested updates" : (proposal.title || "Untitled suggestion");
+      const displayProposalSummary = sensitiveProposal ? "Sensitive proposal details are hidden until final approval." : (proposal.summary || "Review this suggestion before saving selected actions.");
       const visibleErrors = Array.from(new Set([...(validation.errors || []), ...((state.validationErrors || []).filter(Boolean))]));
-      const visibleWarnings = Array.from(new Set([...proposalWarnings, ...(validation.warnings || []), ...((state.validationWarnings || []).filter(Boolean))]));
+      const displayProposalWarnings = sensitiveProposal && proposalWarnings.length ? ["Sensitive warning details hidden."] : proposalWarnings;
+      const rawWarnings = [...displayProposalWarnings, ...(validation.warnings || []), ...((state.validationWarnings || []).filter(Boolean))];
+      const visibleWarnings = sensitiveProposal && rawWarnings.length
+        ? ["Sensitive warning details hidden."]
+        : Array.from(new Set(rawWarnings));
       const needsPersonChoice = selected.some(item => aiActionNeedsPerson(item.action) || aiActionType(item.action) === "createNote")
         || validation.needsPersonResolution
         || validation.willCreatePerson
         || validation.personResolutionErrors.length;
       const suggestedName = validation.newPersonName || validation.suggestedPersonName || "";
-      const duplicateNames = validation.duplicatePeople.map(person => person.name).join(", ");
+      const duplicateNames = sensitiveProposal ? "Sensitive person details hidden" : validation.duplicatePeople.map(person => person.name).join(", ");
       const selectedPersonId = personChoice.existingPersonId || validation.existingPersonId || "";
       const peopleOptions = db.people
         .slice()
@@ -7992,8 +8334,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         ${renderTopbar("Review before saving", "Only the approved updates below will become local records.", false)}
         <section class="section">
           <div class="surface">
-              <div class="item-title">${escapeHtml(proposal.title || "Untitled suggestion")}</div>
-            <p class="item-preview">${escapeHtml(proposal.summary || "Review this suggestion before saving selected actions.")}</p>
+              <div class="item-title">${escapeHtml(displayProposalTitle)}</div>
+            <p class="item-preview">${escapeHtml(displayProposalSummary)}</p>
             <div class="row wrap" style="margin-top:10px;">
               <span class="pill ${aiProposalStatusTone(proposal.status)}">${escapeHtml(labelFromCamel(proposal.status || "pending"))}</span>
               <span class="pill ${proposal.confidence === "high" ? "green" : proposal.confidence === "medium" ? "gold" : "gray"}">Confidence: ${escapeHtml(labelFromCamel(proposal.confidence))}</span>
@@ -8007,7 +8349,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             ${visibleErrors.length ? `<div class="settings-list" style="margin-top:12px;">${visibleErrors.map(error => `<div class="notice danger">${escapeHtml(error)}</div>`).join("")}</div>` : ""}
             <div class="field" style="margin-top:12px;">
               <div class="field-label">Selected actions to save</div>
-              ${selected.length ? `<div class="settings-list">${selected.map(item => `<div class="notice"><strong>${escapeHtml(labelFromCamel(aiActionType(item.action)))}</strong>${aiActionSummary(item.action) ? ` - ${escapeHtml(aiActionSummary(item.action))}` : ""}</div>`).join("")}</div>` : `<div class="meta">No selected action is ready to save.</div>`}
+            ${selected.length ? `<div class="settings-list">${selected.map(item => `<div class="notice"><strong>${escapeHtml(labelFromCamel(aiActionType(item.action)))}</strong>${aiActionDisplaySummary(proposal, item.action) ? ` - ${escapeHtml(aiActionDisplaySummary(proposal, item.action))}` : ""}</div>`).join("")}</div>` : `<div class="meta">No selected action is ready to save.</div>`}
             </div>
             <div class="field">
               <div class="field-label">Warnings</div>
@@ -8065,7 +8407,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function quickGrabMockSensitivityWarnings(grab) {
       const raw = String(grab?.rawContent || "");
       const warnings = [];
-      if (grab?.sensitiveFlag) warnings.push("This Quick Grab is already marked sensitive.");
+      if (recordIsSensitive(grab, "quickGrabs")) warnings.push("This Quick Grab is already marked sensitive.");
       if (/\b(confidential|private|do not share|pastoral|abuse|trauma|suicid|self[- ]?harm|addiction|porn|pregnan|divorce|affair)\b/i.test(raw)) {
         warnings.push("This text appears pastoral or private. Review carefully before saving anything.");
       }
@@ -8227,20 +8569,29 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function quickGrabCandidatePeopleForBackend(grab) {
-      const flags = quickGrabMockFlags(grab);
-      const candidates = [
-        flags.matchedPerson,
-        ...flags.possiblePeople
-      ]
-        .filter(Boolean)
-        .map(person => ({ id: person.id, name: person.name }))
-        .filter(person => person.id && person.name);
+      const candidates = quickGrabCandidateRecordsForBackend(grab)
+        .filter(person => aiRecordAllowedInContext(person, "people"))
+        .map(person => ({ id: person.id, name: person.name }));
       const seen = new Set();
       return candidates.filter(person => {
         if (seen.has(person.id)) return false;
         seen.add(person.id);
         return true;
       }).slice(0, 8);
+    }
+
+    function quickGrabCandidateRecordsForBackend(grab) {
+      const flags = quickGrabMockFlags(grab);
+      const linkedPerson = grab?.relatedPersonId ? personById(grab.relatedPersonId) : null;
+      return [linkedPerson, flags.matchedPerson, ...flags.possiblePeople]
+        .filter(Boolean)
+        .map(person => personById(person.id) || person)
+        .filter(person => person.id && person.name);
+    }
+
+    function quickGrabBlockedPeopleForBackend(grab) {
+      return quickGrabCandidateRecordsForBackend(grab)
+        .filter(person => !aiRecordAllowedInContext(person, "people"));
     }
 
     function buildQuickGrabBackendPayload(grab) {
@@ -8335,6 +8686,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return existing;
       }
       recordUndo(undoLabel);
+      proposal = prepareAiProposalForStorage(proposal);
       db.aiProposals.unshift(proposal);
       if (grab) {
         grab.proposalKey = proposal.proposalKey;
@@ -8364,8 +8716,19 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         showToast("That Quick Grab is no longer available.");
         return;
       }
-      if (aiPrivacyTierForRecord(grab, "quickGrabs") === "Do Not Send to AI") {
+      const privacyTier = aiPrivacyTierForRecord(grab, "quickGrabs");
+      if (privacyTier === "Do Not Send to AI") {
         showToast("This Quick Grab is marked Do Not Send to AI.");
+        return;
+      }
+      if (!aiRecordAllowedInContext(grab, "quickGrabs")) {
+        markCaptureProcessingFailure(grabId, `${privacyTier} context is blocked by AI privacy settings.`);
+        showToast(`${privacyTier} context is blocked by AI privacy settings.`);
+        return;
+      }
+      if (quickGrabBlockedPeopleForBackend(grab).length) {
+        markCaptureProcessingFailure(grabId, "A linked or candidate person is blocked by AI privacy settings. Your capture is safe and stays local.");
+        showToast("A linked or candidate person is blocked by AI privacy settings.");
         return;
       }
       if (grab.processingState === "processing") {
@@ -8434,7 +8797,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const confidence = quickGrabMockConfidence(flags, proposedActions);
       const sensitivityRisk = flags.warnings.length
         ? flags.warnings.some(warning => /private|pastoral|sensitive/i.test(warning)) ? "high" : "medium"
-        : grab.sensitiveFlag ? "medium" : "low";
+        : recordIsSensitive(grab, "quickGrabs") ? "medium" : "low";
       const personText = flags.matchedPerson
         ? `Matched ${flags.matchedPerson.name}.`
         : flags.personMatchAmbiguous
@@ -8484,26 +8847,21 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const source = context.source;
       const firstName = person?.name ? person.name.split(" ")[0] : "there";
       const sourceType = context.sourceType;
-      const sourceIsSensitivePrayer = sourceType === "prayerRequest" && source?.sensitivityLevel === "Sensitive";
+      const sourceIsSensitivePrayer = sourceType === "prayerRequest" && recordIsSensitive(source, "prayerRequests");
       const hasSensitiveWarning = sourceIsSensitivePrayer || (contextReview.warnings || []).some(warning => /sensitive/i.test(warning));
       const dueText = source?.followUpDate || source?.dueDate || person?.nextFollowUpDate || "";
-      const gentleReference = sourceIsSensitivePrayer
-        ? "what you asked me to pray about"
-        : sourceType === "meetingNote"
+      const gentleReference = sourceType === "meetingNote"
           ? "our conversation"
           : sourceType === "followUpTask"
             ? "what we had planned to follow up on"
             : sourceType === "prayerRequest"
-              ? "how I can be praying"
-              : "how you are doing";
+            ? "how I can support you"
+              : "life";
       return { firstName, sourceIsSensitivePrayer, hasSensitiveWarning, dueText, gentleReference };
     }
 
     function buildFollowUpDraftOptions(context, contextReview) {
       const prompt = followUpDraftPromptFromContext(context, contextReview);
-      const prayerPhrase = prompt.sourceIsSensitivePrayer
-        ? "I have been praying for you."
-        : "I was thinking of you and praying for you today.";
       return [
         {
           tone: "Short",
@@ -8511,7 +8869,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         },
         {
           tone: "Casual",
-          text: `Hey ${prompt.firstName}, ${prayerPhrase} How has ${prompt.gentleReference} been going?`
+          text: `Hey ${prompt.firstName}, I was thinking of you today. How has ${prompt.gentleReference} been going?`
         },
         {
           tone: "Pastoral",
@@ -8530,7 +8888,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const drafts = buildFollowUpDraftOptions(context, contextReview);
       const sourceLabel = followUpDraftSourceLabel(sourceType);
       const personName = context.person?.name || "Unlinked person";
-      const sensitivePrayerWarning = sourceType === "prayerRequest" && context.source.sensitivityLevel === "Sensitive"
+      const sensitivePrayerWarning = sourceType === "prayerRequest" && recordIsSensitive(context.source, "prayerRequests")
         ? "This draft references a sensitive prayer request. Keep details vague unless the person clearly expects that privacy."
         : "";
       const proposal = emptyAiProposal({
@@ -8558,7 +8916,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         }
       });
       recordUndo("mock AI follow-up draft proposal");
-      db.aiProposals.unshift(proposal);
+      db.aiProposals.unshift(prepareAiProposalForStorage(proposal));
       saveData();
       view.sheet = null;
       view.screen = "aiReview";
@@ -8703,7 +9061,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         }
       });
       recordUndo("mock AI Prayer Steward proposal");
-      db.aiProposals.unshift(proposal);
+      db.aiProposals.unshift(prepareAiProposalForStorage(proposal));
       saveData();
       view.sheet = null;
       view.screen = "aiReview";
@@ -8754,7 +9112,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         }
       });
       recordUndo("mock AI Data Janitor proposal");
-      db.aiProposals.unshift(proposal);
+      db.aiProposals.unshift(prepareAiProposalForStorage(proposal));
       saveData();
       view.sheet = null;
       view.screen = "aiReview";
@@ -8803,7 +9161,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         }
       });
       recordUndo("mock AI Weekly Reset proposal");
-      db.aiProposals.unshift(proposal);
+      db.aiProposals.unshift(prepareAiProposalForStorage(proposal));
       saveData();
       view.sheet = null;
       view.screen = "aiReview";
@@ -8857,7 +9215,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         }
       });
       recordUndo("mock AI Donor Update proposal");
-      db.aiProposals.unshift(proposal);
+      db.aiProposals.unshift(prepareAiProposalForStorage(proposal));
       saveData();
       view.sheet = null;
       view.screen = "aiReview";
@@ -8931,12 +9289,14 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function renderSnooze() {
       const grab = db.quickGrabs.find(item => item.id === view.quickGrabId);
       if (!grab) return `${renderTopbar("Snooze", "That grabbed item could not be found.")}${emptyState("Choose another item.")}`;
+      const linkedPerson = personById(grab.relatedPersonId);
+      const sensitive = recordIsSensitive(grab, "quickGrabs") || recordIsSensitive(linkedPerson, "people");
       return `
         ${renderTopbar("Snooze", "Move this loose end to a gentler time.", false)}
         <section class="section">
           <article class="item">
             <div class="item-title">${escapeHtml(grab.category)} Quick Grab</div>
-            <p class="item-preview">${escapeHtml(grab.rawContent)}</p>
+            <p class="item-preview">${escapeHtml(conciseText(maskedText(sensitive, "Sensitive capture hidden.", grab.rawContent), 180))}</p>
           </article>
           <div class="surface">
             <div class="action-row">
@@ -9029,7 +9389,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               <label for="people-search">Search people</label>
               <input class="input" id="people-search" value="${escapeHtml(view.search)}" placeholder="Name, group, or care level" autocomplete="off">
             </div>
-            <button class="button quiet" data-action="person-create">Add person</button>
+            <button class="button ${db.people.length ? "quiet" : "primary"}" data-action="person-create">Add person</button>
           </div>
         </section>
         <section class="section" aria-label="People">
@@ -9039,7 +9399,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               <span class="meta">Showing ${visiblePeople.length} of ${people.length} people.</span>
               ${remaining ? `<button class="button quiet small" data-action="people-show-more">Show ${Math.min(PEOPLE_BATCH_SIZE, remaining)} more</button>` : ""}
             </div>
-          ` : emptyState("No people match that search.")}
+          ` : emptyState(view.search ? "No people match that search." : "No people saved yet. Add the first person when you are ready.")}
         </section>
       `;
     }
@@ -9066,7 +9426,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function profileRecordIsSensitive(record, collection = "") {
-      return ["Private", "Sensitive", "Highly Sensitive", "Do Not Send to AI"].includes(aiPrivacyTierForRecord(record, collection));
+      return recordIsSensitive(record, collection);
     }
 
     function profileDateSort(items, fields = []) {
@@ -9089,22 +9449,32 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function buildProfileRightNow(personId, reference = new Date(), data = db) {
       const person = data.people.find(item => item.id === personId);
       if (!person) return null;
-      const prayers = profileDateSort(
-        data.prayerRequests.filter(item => item.relatedPersonId === personId && ["Follow-Up Needed", "Active"].includes(item.status)),
-        ["dateAdded", "updatedAt"]
-      ).sort((a, b) => Number(b.status === "Follow-Up Needed") - Number(a.status === "Follow-Up Needed"));
-      const tasks = data.tasks
-        .filter(item => item.relatedPersonId === personId && !["Done / Archived", "Done", "Archived"].includes(item.status))
-        .sort((a, b) => {
+      const prayers = [];
+      data.prayerRequests
+        .filter(item => item.relatedPersonId === personId && ["Follow-Up Needed", "Active"].includes(item.status) && recordSnoozeIsDue(item, reference))
+        .forEach(item => {
+          prayers.push(item);
+          prayers.sort((a, b) => Number(b.status === "Follow-Up Needed") - Number(a.status === "Follow-Up Needed")
+            || profileDateSort([a, b], ["dateAdded", "updatedAt"]).indexOf(a) - profileDateSort([a, b], ["dateAdded", "updatedAt"]).indexOf(b));
+          if (prayers.length > 8) prayers.length = 8;
+        });
+      const tasks = [];
+      data.tasks
+        .filter(item => item.relatedPersonId === personId && taskIsActive(item, reference))
+        .forEach(item => {
+          tasks.push(item);
+          tasks.sort((a, b) => {
           const aDue = calendarDayNumber(a.dueDate);
           const bDue = calendarDayNumber(b.dueDate);
           if (aDue === null && bDue === null) return String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""));
           if (aDue === null) return 1;
           if (bDue === null) return -1;
           return aDue - bDue;
+          });
+          if (tasks.length > 8) tasks.length = 8;
         });
-      const meetings = profileDateSort(data.meetingNotes.filter(item => item.relatedPersonId === personId), ["meetingDate", "updatedAt"]);
-      const notes = profileDateSort(data.notes.filter(item => item.relatedPersonId === personId), ["noteDate", "updatedAt"]);
+      const meetings = profileRecordsForPerson(data.meetingNotes, personId, ["meetingDate", "updatedAt"], "__right-now-meetings");
+      const notes = profileRecordsForPerson(data.notes, personId, ["noteDate", "updatedAt"], "__right-now-notes");
       const prayer = prayers[0];
       const nextTask = tasks[0];
       const rememberedMeeting = meetings.find(item => String(item.whatToRemember || "").trim());
@@ -9138,7 +9508,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function renderProfileRightNowValue(entry, hiddenText) {
       if (!entry) return "";
-      return escapeHtml(maskedText(entry.sensitive, hiddenText, entry.text));
+      return escapeHtml(conciseText(maskedText(entry.sensitive, hiddenText, entry.text), 180));
     }
 
     function renderProfileRightNow(summary) {
@@ -9216,29 +9586,53 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
-    function buildProfileTimeline(personId) {
+    function buildProfileTimeline(personId, limit = null) {
       const items = [];
-      db.meetingNotes.filter(item => item.relatedPersonId === personId).forEach(item => items.push({
+      const addItem = item => {
+        items.push(item);
+        if (Number.isFinite(limit) && limit > 0 && items.length > limit) {
+          const sorted = profileDateSort(items, ["date"]);
+          items.length = 0;
+          items.push(...sorted.slice(0, limit));
+        }
+      };
+      db.meetingNotes.filter(item => item.relatedPersonId === personId).forEach(item => addItem({
         id: item.id, kind: "meeting", date: item.meetingDate, dateLabel: formatHistoryDate(item.meetingDate, "Met"),
         title: `${item.meetingType || "Ministry"} meeting`, text: item.whatToRemember || item.whatWeTalkedAbout || item.nextFaithfulStep || "", sensitive: profileRecordIsSensitive(item, "meetingNotes")
       }));
-      db.notes.filter(item => item.relatedPersonId === personId).forEach(item => items.push({
+      db.notes.filter(item => item.relatedPersonId === personId).forEach(item => addItem({
         id: item.id, kind: "note", date: item.noteDate, dateLabel: formatHistoryDate(item.noteDate, "Note added"),
         title: item.noteType || "Note", text: item.content || "", sensitive: profileRecordIsSensitive(item, "notes")
       }));
-      db.prayerRequests.filter(item => item.relatedPersonId === personId).filter(item => settings.showArchivedOnProfiles || item.status !== "Archived").forEach(item => items.push({
+      db.prayerRequests.filter(item => item.relatedPersonId === personId).filter(item => settings.showArchivedOnProfiles || item.status !== "Archived").forEach(item => addItem({
         id: item.id, kind: "prayer", date: item.dateAdded, dateLabel: formatHistoryDate(item.dateAdded, item.status === "Answered" ? "Prayer answered" : "Prayer added"),
         title: item.status === "Answered" ? "Answered prayer" : item.status || "Prayer request", text: item.request || "", sensitive: profileRecordIsSensitive(item, "prayerRequests")
       }));
       db.tasks.filter(item => item.relatedPersonId === personId).forEach(item => {
         const createdDate = String(item.createdAt || "").slice(0, 10);
         const date = calendarDateParts(createdDate) ? createdDate : item.dueDate;
-        items.push({
+        addItem({
           id: item.id, kind: "task", date, dateLabel: formatHistoryDate(date, "Follow-up planned"),
           title: item.status === "Done / Archived" ? "Follow-up completed" : "Follow-up planned", text: item.title || "", sensitive: profileRecordIsSensitive(item, "tasks")
         });
       });
-      return profileDateSort(items, ["date"]);
+      return profileDateSort(items, ["date"]).slice(0, Number.isFinite(limit) && limit > 0 ? limit : items.length);
+    }
+
+    function profileRecordsForPerson(collection, personId, sortFields, key) {
+      const expanded = Array.isArray(view.profileHistoryExpanded) && view.profileHistoryExpanded.includes(key);
+      if (expanded) return profileDateSort(collection.filter(item => item.relatedPersonId === personId), sortFields);
+      const preview = [];
+      collection.forEach(item => {
+        if (item.relatedPersonId !== personId) return;
+        preview.push(item);
+        if (preview.length > 3) {
+          const sorted = profileDateSort(preview, sortFields);
+          preview.length = 0;
+          preview.push(...sorted.slice(0, 3));
+        }
+      });
+      return profileDateSort(preview, sortFields);
     }
 
     function renderProfileHistorySection(key, title, items, options = {}) {
@@ -9313,14 +9707,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       const capturePerson = personById(view.profileCapturePersonId) || person;
       view.profileCapturePersonId = capturePerson.id;
-      const notes = profileDateSort(db.notes.filter(item => item.relatedPersonId === person.id), ["noteDate", "updatedAt"]);
-      const meetings = profileDateSort(db.meetingNotes.filter(item => item.relatedPersonId === person.id), ["meetingDate", "updatedAt"]);
-      const prayers = profileDateSort(
-        db.prayerRequests.filter(item => item.relatedPersonId === person.id).filter(item => settings.showArchivedOnProfiles || item.status !== "Archived"),
-        ["dateAdded", "updatedAt"]
-      );
-      const tasks = profileDateSort(db.tasks.filter(item => item.relatedPersonId === person.id), ["dueDate", "updatedAt"]);
-      const timeline = buildProfileTimeline(person.id);
+      const notes = profileRecordsForPerson(db.notes, person.id, ["noteDate", "updatedAt"], "notes");
+      const meetings = profileRecordsForPerson(db.meetingNotes, person.id, ["meetingDate", "updatedAt"], "meetings");
+      const prayers = profileRecordsForPerson(db.prayerRequests.filter(item => settings.showArchivedOnProfiles || item.status !== "Archived"), person.id, ["dateAdded", "updatedAt"], "prayers");
+      const tasks = profileRecordsForPerson(db.tasks, person.id, ["dueDate", "updatedAt"], "tasks");
+      const timelineExpanded = Array.isArray(view.profileHistoryExpanded) && view.profileHistoryExpanded.includes("timeline");
+      const timeline = buildProfileTimeline(person.id, timelineExpanded ? null : 3);
       const followUpReason = usefulFollowUpReason(person);
       const phone = String(person.phone || "").trim();
       return `
@@ -9406,31 +9798,19 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function renderPrayerRequests() {
-      const filters = ["Active", "Follow-Up Needed", "Prayer Walk", "Answered Prayer", "Archived Prayer Requests", "Sensitive Prayer Requests", "Recently Added", "By Person"];
+      const filters = ["Active", "Follow-Up Needed", "Prayer Walk"];
       const filtered = getFilteredPrayers();
-      const answeredReady = db.prayerRequests.filter(prayer => prayer.status === "Answered").length;
-      const archivedCount = db.prayerRequests.filter(prayer => prayer.status === "Archived").length;
+      const visibleLimit = Math.max(12, Number(view.prayerVisibleLimit) || 12);
+      const visible = filtered.slice(0, visibleLimit);
+      const remaining = Math.max(0, filtered.length - visible.length);
       return `
         ${renderTopbar("Prayer", "Who or what should I pray for?")}
-        <section class="section">
-          <div class="surface">
-            <div class="row wrap">
-              <div>
-                <div class="item-title">Answered and archived prayer</div>
-                <div class="meta">Answered requests can stay visible until you are ready, then move into the archive without losing the story.</div>
-              </div>
-              <span class="pill green">${answeredReady} answered</span>
-              <span class="pill gray">${archivedCount} archived</span>
-              <button class="button" data-action="prayer-steward">Prayer Steward</button>
-              <button class="button" data-action="prayer-steward-copy">Copy Prayer Steward Audit</button>
-            </div>
-          </div>
-        </section>
         <div class="tabs" role="group" aria-label="Prayer filters">
           ${filters.map(filter => `<button class="tab ${view.prayerFilter === filter ? "active" : ""}" data-action="prayer-filter" data-filter="${filter}" aria-pressed="${view.prayerFilter === filter}">${escapeHtml(filter)}</button>`).join("")}
         </div>
         <section class="section">
-          ${filtered.length ? filtered.map(renderPrayerCard).join("") : emptyState(prayerEmptyState())}
+          ${visible.length ? visible.map(renderPrayerCard).join("") : emptyState(prayerEmptyState())}
+          ${remaining ? `<div class="section-footer" role="status" aria-live="polite"><span class="meta">Showing ${visible.length} of ${filtered.length} prayer requests.</span><button class="button quiet small" data-action="prayer-show-more">Show ${Math.min(12, remaining)} more</button></div>` : ""}
         </section>
       `;
     }
@@ -9442,12 +9822,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (view.prayerFilter === "Prayer Walk") return prayers.filter(prayer => {
         if (prayer.status === "Archived") return false;
         if (!settings.prayerWalkIncludeAnswered && prayer.status === "Answered") return false;
-        if (!settings.prayerWalkIncludeSensitive && prayer.sensitivityLevel === "Sensitive") return false;
+        if (!settings.prayerWalkIncludeSensitive && recordIsSensitive(prayer, "prayerRequests")) return false;
         return true;
       });
       if (view.prayerFilter === "Answered Prayer") return prayers.filter(prayer => prayer.status === "Answered");
       if (view.prayerFilter === "Archived Prayer Requests") return prayers.filter(prayer => prayer.status === "Archived").sort((a, b) => String(b.archivedAt || b.updatedAt || "").localeCompare(String(a.archivedAt || a.updatedAt || "")));
-      if (view.prayerFilter === "Sensitive Prayer Requests") return prayers.filter(prayer => prayer.sensitivityLevel === "Sensitive");
+      if (view.prayerFilter === "Sensitive Prayer Requests") return prayers.filter(prayer => recordIsSensitive(prayer, "prayerRequests"));
       if (view.prayerFilter === "Recently Added") return prayers.sort((a, b) => String(b.dateAdded || b.createdAt || "").localeCompare(String(a.dateAdded || a.createdAt || ""))).slice(0, 12);
       if (view.prayerFilter === "By Person") return prayers.sort((a, b) => String(personById(a.relatedPersonId)?.name || "").localeCompare(String(personById(b.relatedPersonId)?.name || "")));
       return prayers;
@@ -9463,41 +9843,36 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function renderPrayerCard(prayer) {
       const person = personById(prayer.relatedPersonId);
-      const sensitive = prayer.sensitivityLevel === "Sensitive";
+      const sensitive = recordIsSensitive(prayer, "prayerRequests");
+      const personSensitive = person && recordIsSensitive(person, "people");
+      const personLabel = sensitive || personSensitive ? "Private person" : (person ? person.name : "Unlinked person");
       const expanded = view.expandedPrayerIds.includes(prayer.id);
       return `
         <article class="item compact focus-card ${prayer.status === "Follow-Up Needed" ? "important" : ""}">
           <div class="item-title-row">
             <div>
-              <div class="item-title">${escapeHtml(person ? person.name : "Unlinked person")}</div>
-              <div class="meta">Added ${dateLabel(prayer.dateAdded)}${prayer.followUpDate ? " - Follow up " + dateLabel(prayer.followUpDate) : ""}</div>
+              <div class="item-title">${escapeHtml(personLabel)}</div>
+              <div class="meta">Added ${dateLabel(prayer.dateAdded)}${prayer.followUpDate ? " - " + formatFollowUpDate(prayer.followUpDate) : ""}</div>
             </div>
             <span class="pill ${prayer.status === "Follow-Up Needed" ? "gold" : prayer.status === "Answered" ? "green" : prayer.status === "Archived" ? "gray" : "violet"}">${escapeHtml(prayer.status)}</span>
           </div>
           <p class="item-preview">${escapeHtml(maskedText(sensitive, "Sensitive prayer request - tap to view.", prayer.request))}</p>
-          <div class="row wrap">
-            <span class="pill ${sensitive ? "rose" : "gray"}">${escapeHtml(prayer.sensitivityLevel)}</span>
-            <span class="pill gray">${escapeHtml(prayer.shareableStatus)}</span>
-            ${prayer.answeredNote ? `<span class="pill green">Answered note added</span>` : ""}
-            ${prayer.archivedAt ? `<span class="pill gray">Archived ${dateLabel(prayer.archivedAt)}</span>` : ""}
-            ${prayer.archivedFromStatus ? `<span class="pill gray">Moved from ${escapeHtml(prayer.archivedFromStatus)}</span>` : ""}
-          </div>
           ${timestampLine(prayer, "Added", prayer.dateAdded)}
           <div class="next-step-line">
-            <span class="pill green">Next</span>
+            <span class="meta">Next:</span>
             <strong>${escapeHtml(prayerNextStep(prayer))}</strong>
           </div>
           <div class="action-row focus-actions">
             ${renderPrayerPrimaryActions(prayer, person)}
             ${settings.showAdvancedActions ? "" : `<button class="button small" data-action="prayer-toggle-more" data-id="${escapeHtml(prayer.id)}">${expanded ? "Less" : "More"}</button>`}
-            ${prayer.status !== "Archived" ? `<button class="button small" data-action="followup-draft" data-source-type="prayerRequest" data-id="${escapeHtml(prayer.id)}">Draft Follow-Up</button>` : ""}
           </div>
           <div class="action-row extra-actions ${expanded ? "is-open" : ""}">
+            ${prayer.status !== "Archived" ? `<button class="button small" data-action="followup-draft" data-source-type="prayerRequest" data-id="${escapeHtml(prayer.id)}">Draft Follow-Up</button>` : ""}
             ${prayer.status !== "Archived" && prayer.status !== "Answered" ? `<button class="button small" data-action="prayer-note" data-id="${escapeHtml(prayer.id)}">Add Answered Note</button>` : ""}
             ${prayer.status !== "Archived" && prayer.status !== "Answered" ? `<button class="button small" data-action="prayer-follow-date" data-id="${escapeHtml(prayer.id)}">Set Follow-Up Date</button>` : ""}
             ${prayer.status !== "Archived" && prayer.status !== "Answered" ? `<button class="button small" data-action="prayer-archive" data-id="${escapeHtml(prayer.id)}">Archive</button>` : ""}
             ${settings.inlineEditing && prayer.status !== "Archived" ? `<button class="button small" data-action="edit-record-field" data-collection="prayerRequests" data-field="request" data-label="Prayer request" data-id="${escapeHtml(prayer.id)}">Edit Request</button>` : ""}
-            ${person && prayer.status !== "Archived" ? `<button class="button small primary" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Person Profile</button>` : ""}
+            ${person && !sensitive && !personSensitive && prayer.status !== "Archived" ? `<button class="button small" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Person Profile</button>` : ""}
           </div>
         </article>
       `;
@@ -9512,12 +9887,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function renderPrayerPrimaryActions(prayer, person) {
       if (prayer.status === "Archived") {
-        return `<button class="button small" data-action="prayer-restore" data-id="${escapeHtml(prayer.id)}">Restore</button>${person ? `<button class="button small primary" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Profile</button>` : ""}`;
+        return `<button class="button small primary" data-action="prayer-restore" data-id="${escapeHtml(prayer.id)}">Restore</button>`;
       }
       if (prayer.status === "Answered") {
-        return `<button class="button small primary" data-action="prayer-archive-answered" data-id="${escapeHtml(prayer.id)}">Archive Answered</button><button class="button small" data-action="prayer-note" data-id="${escapeHtml(prayer.id)}">Add Note</button>`;
+        return `<button class="button small primary" data-action="prayer-archive-answered" data-id="${escapeHtml(prayer.id)}">Archive Answered</button>`;
       }
-      return `<button class="button small primary" data-action="prayer-answered" data-id="${escapeHtml(prayer.id)}">Mark Answered</button><button class="button small" data-action="prayer-task" data-id="${escapeHtml(prayer.id)}">Create Follow-Up</button>`;
+      return `<button class="button small primary" data-action="prayer-answered" data-id="${escapeHtml(prayer.id)}">Mark Answered</button>`;
     }
 
     function renderFifteenMinutes() {
@@ -9592,6 +9967,18 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                   <button class="more-link" data-action="nav" data-screen="review"><strong>Unprocessed captures</strong><span>Work through one saved thought at a time.</span></button>
                   <button class="more-link" data-action="nav" data-screen="aiReview"><strong>Suggested updates</strong><span>Approve, edit, or reject proposals before saving.</span></button>
                   <button class="more-link" data-action="nav" data-screen="coach"><strong>App Coach</strong><span>Review optional local improvement suggestions.</span></button>
+                </div>
+              </details>
+              <details class="more-group">
+                <summary>Prayer tools</summary>
+                <div class="more-links">
+                  <button class="more-link" data-action="open-prayer-filter" data-filter="Answered Prayer"><strong>Answered prayer</strong><span>Review answered requests before archiving.</span></button>
+                  <button class="more-link" data-action="open-prayer-filter" data-filter="Archived Prayer Requests"><strong>Archived prayer</strong><span>Restore a request when it needs attention again.</span></button>
+                  <button class="more-link" data-action="open-prayer-filter" data-filter="Sensitive Prayer Requests"><strong>Sensitive prayer</strong><span>Review privacy-marked requests carefully.</span></button>
+                  <button class="more-link" data-action="open-prayer-filter" data-filter="Recently Added"><strong>Recently added</strong><span>See the newest prayer memories.</span></button>
+                  <button class="more-link" data-action="open-prayer-filter" data-filter="By Person"><strong>Prayer by person</strong><span>Find requests connected to one profile.</span></button>
+                  <button class="more-link" data-action="prayer-steward"><strong>Prayer Steward</strong><span>Prepare a local review proposal without changing records.</span></button>
+                  <button class="more-link" data-action="prayer-steward-copy"><strong>Copy Prayer Steward audit</strong><span>Copy a local-only stewardship summary.</span></button>
                 </div>
               </details>
               <details class="more-group">
@@ -10160,12 +10547,16 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function renderTaskCard(task) {
       const person = personById(task.relatedPersonId);
+      const relatedPrayer = db.prayerRequests.find(item => item.id === task.relatedPrayerRequestId);
+      const sensitive = recordIsSensitive(task, "tasks") || recordIsSensitive(relatedPrayer, "prayerRequests");
+      const personSensitive = person && recordIsSensitive(person, "people");
+      const personLabel = sensitive || personSensitive ? "Private person" : person?.name;
       return `
         <article class="item compact">
           <div class="item-title-row">
             <div>
-              <div class="item-title">${escapeHtml(task.title)}</div>
-              <div class="meta">${person ? escapeHtml(person.name) + " - " : ""}${escapeHtml(task.sourceType || "Follow-up")}</div>
+              <div class="item-title">${escapeHtml(maskedText(sensitive, "Sensitive follow-up task", conciseText(task.title, 120)))}</div>
+              <div class="meta">${personLabel ? escapeHtml(personLabel) + " - " : ""}${escapeHtml(task.sourceType || "Follow-up")}</div>
             </div>
             <span class="pill ${task.status === "Done / Archived" ? "gray" : task.status === "Waiting" ? "violet" : "gold"}">${escapeHtml(task.status)}</span>
           </div>
@@ -10176,7 +10567,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           <div class="action-row">
             <button class="button small" data-action="task-done" data-id="${escapeHtml(task.id)}">Done</button>
             <button class="button small" data-action="followup-draft" data-source-type="followUpTask" data-id="${escapeHtml(task.id)}">Draft Follow-Up</button>
-            ${person ? `<button class="button small primary" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Person Profile</button>` : ""}
+            ${person && !sensitive && !personSensitive ? `<button class="button small primary" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Person Profile</button>` : ""}
             ${settings.inlineEditing ? `<button class="button small" data-action="edit-record-field" data-collection="tasks" data-field="title" data-label="Task" data-id="${escapeHtml(task.id)}">Edit Task</button>` : ""}
           </div>
         </article>
@@ -10280,7 +10671,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         "follow-date": "Pick the day you want this request to reappear.",
         task: "Turn this prayer request into one clear next action."
       };
-      const prayerPreview = maskedText(prayer.sensitivityLevel === "Sensitive", "Sensitive prayer request.", prayer.request);
+      const prayerPreview = maskedText(recordIsSensitive(prayer, "prayerRequests"), "Sensitive prayer request.", prayer.request);
       const fields = {
         "answered-note": `
           ${sheetField("Answered note", `<textarea class="textarea small" id="sheet-prayer-answered-note" placeholder="What happened?"></textarea>`)}
@@ -10681,7 +11072,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               </div>
               <div class="field">
                 <div class="field-label">What will not be used</div>
-                ${renderAiContextList(context.notUsed, "No blocked or excluded context.")}
+                ${renderAiContextList(context.notUsed, "No blocked or excluded context.", true)}
               </div>
               <div class="field">
                 <div class="field-label">Sensitivity warnings</div>
@@ -10704,7 +11095,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const validation = validateAiActionExecution(proposal, sheet.actionIndexes || []);
       const selected = validation.selected || [];
       const sourceQuickGrab = validation.sourceQuickGrab;
-      const duplicateNames = validation.duplicatePeople.map(person => person.name).join(", ");
+      const sensitiveProposal = aiProposalDisplaySensitive(proposal);
+      const duplicateNames = sensitiveProposal ? "Sensitive person details hidden" : validation.duplicatePeople.map(person => person.name).join(", ");
+      const visibleValidationWarnings = sensitiveProposal && validation.warnings.length ? ["Sensitive warning details hidden."] : validation.warnings;
       const disabled = validation.errors.length ? "disabled" : "";
       return `
         <div class="sheet-backdrop" data-action="sheet-close">
@@ -10719,10 +11112,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             <div class="sheet-form">
               <div class="notice secure">Review each local change before saving it to ministry records.</div>
               ${validation.errors.length ? `<div class="settings-list">${validation.errors.map(error => `<div class="notice danger">${escapeHtml(error)}</div>`).join("")}</div>` : ""}
-              ${validation.warnings.length ? `<div class="settings-list">${validation.warnings.map(warning => `<div class="notice sensitive">${escapeHtml(warning)}</div>`).join("")}</div>` : ""}
+              ${visibleValidationWarnings.length ? `<div class="settings-list">${visibleValidationWarnings.map(warning => `<div class="notice sensitive">${escapeHtml(warning)}</div>`).join("")}</div>` : ""}
               <div class="field">
                 <div class="field-label">Selected actions to save</div>
-                ${selected.length ? `<div class="settings-list">${selected.map(item => `<div class="notice"><strong>${escapeHtml(labelFromCamel(aiActionType(item.action)))}</strong>${aiActionSummary(item.action) ? ` - ${escapeHtml(aiActionSummary(item.action))}` : ""}</div>`).join("")}</div>` : `<div class="meta">No selected action is ready to save.</div>`}
+                ${selected.length ? `<div class="settings-list">${selected.map(item => `<div class="notice"><strong>${escapeHtml(labelFromCamel(aiActionType(item.action)))}</strong>${aiActionDisplaySummary(proposal, item.action) ? ` - ${escapeHtml(aiActionDisplaySummary(proposal, item.action))}` : ""}</div>`).join("")}</div>` : `<div class="meta">No selected action is ready to save.</div>`}
               </div>
               <div class="field">
                 <div class="field-label">Links that will be added</div>
@@ -10956,7 +11349,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             <div class="sheet-body brief-grid">
               ${result.warnings.length ? `<div class="notice danger"><strong>Privacy reminder.</strong> Keep sensitive details vague unless this person expects them.</div>` : ""}
               <div class="draft-copy" role="status">${escapeHtml(selected?.text || "No draft is available.")}</div>
-              <div class="draft-variant-row" aria-label="Draft tone">
+              <div class="draft-variant-row" role="group" aria-label="Draft tone">
                 ${result.drafts.map((draft, index) => `<button class="button quiet small" data-action="profile-followup-variant" data-id="${escapeHtml(result.person.id)}" data-draft-index="${index}" aria-pressed="${index === selectedIndex}">${escapeHtml(draft.tone)}</button>`).join("")}
               </div>
               <div class="meta">Nothing is sent automatically. Opening or copying a draft does not mark this follow-up complete.</div>
@@ -11036,6 +11429,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       });
       document.querySelectorAll("[data-setting-toggle]").forEach(input => {
         input.addEventListener("change", event => {
+          if (event.target.dataset.settingToggle === "localEncryptionEnabled") rememberSheetReturnFocus(event.target);
           updateSetting(event.target.dataset.settingToggle, event.target.checked);
         });
       });
@@ -11088,12 +11482,17 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           view.globalSearch = event.target.value;
           view.searchVisibleLimits = {};
           saveCurrentDraftNow();
-          render();
-          const restoredSearch = document.getElementById("global-search");
-          if (restoredSearch) {
-            restoredSearch.focus({ preventScroll: true });
-            restoredSearch.setSelectionRange(caret, caret);
-          }
+          if (globalSearchTimer) window.clearTimeout(globalSearchTimer);
+          globalSearchTimer = window.setTimeout(() => {
+            globalSearchTimer = null;
+            if (view.screen !== "search") return;
+            render();
+            const restoredSearch = document.getElementById("global-search");
+            if (restoredSearch) {
+              restoredSearch.focus({ preventScroll: true });
+              restoredSearch.setSelectionRange(caret, caret);
+            }
+          }, 120);
         });
       }
       const quickText = document.getElementById("quick-text");
@@ -11258,7 +11657,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         }
         try {
           const payload = await readBackupFilePayload(file, passphrase, { allowPrompt: false });
-          applyRestoredPayload(payload);
+          await applyRestoredPayload(payload);
         } catch (error) {
           console.warn("Backup import failed", error);
           const passphraseNeeded = error && error.message === "Encrypted backup needs passphrase.";
@@ -11281,14 +11680,14 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
     }
 
-    function submitAutoMemorySheet(kind, snapshotId = "") {
+    async function submitAutoMemorySheet(kind, snapshotId = "") {
       if (!["restore", "delete", "clear"].includes(kind)) return;
       if (!document.getElementById("sheet-auto-memory-confirm")?.checked) {
         reportFieldError("sheet-auto-memory-confirm", "Confirm the Auto Memory action first.");
         return;
       }
       if (kind === "restore") {
-        restoreAutoMemorySnapshot(snapshotId);
+        await restoreAutoMemorySnapshot(snapshotId);
         return;
       }
       if (kind === "delete") {
@@ -11938,6 +12337,14 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const selected = validation.selected || [];
       const sourceQuickGrabId = validation.sourceQuickGrabId || "";
       const markSensitiveSelected = selected.some(item => aiActionType(item.action) === "markSensitive");
+      const sourceRecord = aiProposalSourceRecord(proposal);
+      const sourceCollection = aiSourceCollectionForProposal(proposal);
+      const sourceSensitive = Boolean(
+        (sourceRecord && recordIsSensitive(sourceRecord, sourceCollection))
+        || recordIsSensitive(proposal, "aiProposals")
+        || ["medium", "high"].includes(proposal?.sensitivityRisk)
+        || (validation.existingPersonId && recordIsSensitive(personById(validation.existingPersonId), "people"))
+      );
       let relatedPersonId = validation.existingPersonId || "";
       const createPersonItem = selected.find(item => aiActionType(item.action) === "createPerson");
       let createdPersonId = "";
@@ -11949,6 +12356,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         person.createdFromAIProposalId = proposal.id;
         person.sourceAIActionId = personExecutionKey;
         if (sourceQuickGrabId) person.createdFromQuickGrabId = sourceQuickGrabId;
+        if (sourceSensitive || markSensitiveSelected) person.sensitiveFlag = true;
         person.updatedAt = nowISO();
         relatedPersonId = person.id;
         createdPersonId = person.id;
@@ -11962,7 +12370,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         const type = aiActionType(action);
         const executionKey = aiActionExecutionKey(proposal, action, item.index);
         const personId = validation.chosenExistingPersonId || aiActionExistingPersonId(proposal, validation.sourceQuickGrab, action) || relatedPersonId;
-        const sensitiveFlag = Boolean(action.sensitiveFlag || validation.sourceQuickGrab?.sensitiveFlag || markSensitiveSelected);
+        const sensitiveFlag = Boolean(
+          sourceSensitive
+          || action.sensitiveFlag
+          || recordIsSensitive(action, "aiProposedActions")
+          || validation.sourceQuickGrab?.sensitiveFlag
+          || markSensitiveSelected
+        );
         if (type === "createPerson") continue;
         if (type === "createNote") {
           const note = createProfileNoteRecord(personId, {
@@ -12444,6 +12858,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "edit-record-field") openEditFieldSheet("record", id, button.dataset.field, button.dataset.label, button.dataset.collection);
       if (action === "prayer-filter") {
         view.prayerFilter = button.dataset.filter;
+        view.prayerVisibleLimit = 12;
+        render();
+      }
+      if (action === "prayer-show-more") {
+        view.prayerVisibleLimit = (Number(view.prayerVisibleLimit) || 12) + 12;
         render();
       }
       if (action === "search-show-more") {
@@ -12461,6 +12880,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "open-prayer-filter") {
         view.screen = "prayer";
         view.prayerFilter = button.dataset.filter;
+        view.prayerVisibleLimit = 12;
         requestPageHeadingFocus();
         render();
       }
@@ -12898,8 +13318,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           reject(new Error("Choose an image file."));
           return;
         }
-        if (Number(file.size) > 20 * 1024 * 1024) {
-          reject(new Error("Choose an image smaller than 20 MB."));
+        if (Number(file.size) > 8 * 1024 * 1024) {
+          reject(new Error("Choose an image smaller than 8 MB."));
           return;
         }
         const reader = new FileReader();
@@ -12908,6 +13328,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           const image = new Image();
           image.onerror = () => reject(new Error("Could not load that image."));
           image.onload = () => {
+            if (Number(image.width) * Number(image.height) > 36_000_000) {
+              reject(new Error("Choose an image with fewer than 36 megapixels."));
+              return;
+            }
             const maxSide = 360;
             const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
             const width = Math.max(1, Math.round(image.width * scale));
@@ -13129,6 +13553,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function prayerTaskDefaultTitle(prayer) {
+      if (recordIsSensitive(prayer, "prayerRequests")) return "Follow up on a private prayer concern.";
       return "Ask about " + prayer.request.replace(/[.?!]+$/, "").slice(0, 58).toLowerCase() + ".";
     }
 
@@ -13174,6 +13599,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         relatedPrayerRequestId: prayer.id,
         relatedMeetingNoteId: prayer.createdFromMeetingNoteId,
         createdFromQuickGrabId: prayer.createdFromQuickGrabId,
+        aiPrivacyTier: aiPrivacyTierForRecord(prayer, "prayerRequests"),
+        sensitiveFlag: recordIsSensitive(prayer, "prayerRequests"),
         createdAt: nowISO(),
         updatedAt: nowISO()
       };
@@ -13185,7 +13612,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       prayer.updatedAt = nowISO();
       if (person) {
         person.nextFollowUpDate = dueDate;
-        person.followUpReason = title;
+        person.followUpReason = recordIsSensitive(prayer, "prayerRequests")
+          ? "Follow up on a private prayer concern."
+          : title;
         person.updatedAt = nowISO();
       }
       return task;

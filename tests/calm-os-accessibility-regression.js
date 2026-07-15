@@ -68,6 +68,7 @@ check(html.includes("@media (forced-colors: active)"), "Windows forced-colors mo
 check(html.includes("max-height: min(88dvh, 760px)"), "sheets use the dynamic viewport and remain scrollable");
 check(html.includes("env(safe-area-inset-left)") && html.includes("env(safe-area-inset-right)"), "content, sheets, and mobile navigation respect horizontal safe areas");
 check(/\.mobile-nav button\s*\{[\s\S]*?white-space:\s*normal/.test(html), "mobile navigation labels can wrap under larger text");
+check(html.includes("grid-template-columns: minmax(96px, max-content) minmax(0, 1fr)"), "Right Now labels keep a readable column at large text sizes");
 
 if (failed) {
   console.error(`${failed} Calm OS accessibility regression check${failed === 1 ? "" : "s"} failed.`);

@@ -48,6 +48,7 @@ function makeFakeIndexedDb(seed = {}) {
     values,
     reads,
     writes,
+    failNextTransaction: false,
     open() {
       const request = {};
       setTimeout(() => {
@@ -56,7 +57,14 @@ function makeFakeIndexedDb(seed = {}) {
           createObjectStore() {},
           close() {},
           transaction(_storeName, mode) {
-            const transaction = {};
+            const transaction = {
+              mode,
+              pending: 0,
+              changes: new Map(),
+              shouldFail: mode === "readwrite" && api.failNextTransaction,
+              __values: values
+            };
+            if (transaction.shouldFail) api.failNextTransaction = false;
             const store = {
               get(key) {
                 reads.push(key);
@@ -65,17 +73,19 @@ function makeFakeIndexedDb(seed = {}) {
               put(value, key) {
                 writes.push(key);
                 return scheduleRequest(transaction, () => {
-                  values.set(key, clone(value));
+                  transaction.changes.set(key, { type: "put", value: clone(value) });
                   return key;
                 });
               },
               delete(key) {
                 writes.push(`delete:${key}`);
-                return scheduleRequest(transaction, () => values.delete(key));
+                return scheduleRequest(transaction, () => {
+                  transaction.changes.set(key, { type: "delete" });
+                  return true;
+                });
               }
             };
             transaction.objectStore = () => store;
-            transaction.mode = mode;
             return transaction;
           }
         };
@@ -90,21 +100,40 @@ function makeFakeIndexedDb(seed = {}) {
 
 function scheduleRequest(transaction, operation) {
   const request = {};
+  transaction.pending += 1;
   setTimeout(() => {
     try {
       request.result = operation();
       if (request.onsuccess) request.onsuccess();
-      setTimeout(() => {
-        if (transaction.oncomplete) transaction.oncomplete();
-      }, 0);
+      transaction.pending -= 1;
+      if (transaction.pending === 0) {
+        setTimeout(() => {
+          if (transaction.shouldFail) {
+            transaction.error = new Error("synthetic transaction abort");
+            if (transaction.onerror) transaction.onerror();
+            if (transaction.onabort) transaction.onabort();
+            return;
+          }
+          transaction.changes.forEach((change, key) => {
+            if (change.type === "delete") valuesForTransaction(transaction).delete(key);
+            else valuesForTransaction(transaction).set(key, clone(change.value));
+          });
+          if (transaction.oncomplete) transaction.oncomplete();
+        }, 0);
+      }
     } catch (error) {
       request.error = error;
       transaction.error = error;
       if (request.onerror) request.onerror();
       if (transaction.onerror) transaction.onerror();
+      if (transaction.onabort) transaction.onabort();
     }
   }, 0);
   return request;
+}
+
+function valuesForTransaction(transaction) {
+  return transaction.__values;
 }
 
 function makeHarness({ local = {}, idbSeed = null } = {}) {
@@ -269,6 +298,50 @@ async function testCorruptStorageRecoveryBoundary() {
   assert(Boolean(blocked.eval("view.startupRecoveryError")) && blocked.elements.app.innerHTML.includes("Local data check paused"), "corrupt local data without a mirror pauses the app instead of seeding demo data");
 }
 
+async function testStructuralMirrorAndAtomicEncryptedCommit() {
+  const mirrored = emptyData({ people: [{ id: "mirror-person", name: "IndexedDB Mirror" }] });
+  const partial = makeHarness({ local: { [KEYS.data]: {} }, idbSeed: { [KEYS.data]: mirrored } });
+  await partial.ready();
+  assert(partial.eval("db.people[0]?.name") === "IndexedDB Mirror", "a structurally incomplete local object yields to a valid IndexedDB mirror");
+
+  const oldEnvelope = { kind: "old-envelope", encryptedAt: "before" };
+  const oldSettings = { localEncryptionEnabled: false, autoMemoryVaultEnabled: false };
+  const atomic = makeHarness({ idbSeed: {
+    [KEYS.data]: emptyData({ people: [{ id: "plain-person", name: "Plain Durable" }] }),
+    [KEYS.settings]: oldSettings,
+    [KEYS.copy]: { "brand.title": "Private copy" },
+    [KEYS.autosave]: { "capture:main": { text: "draft" } },
+    [KEYS.encrypted]: oldEnvelope
+  } });
+  await atomic.ready();
+  atomic.sandbox.__encryptHook = async () => ({ kind: "new-envelope", encryptedAt: "after" });
+  atomic.eval(`encryptPayload = payload => globalThis.__encryptHook(payload); settings.localEncryptionEnabled = true; vaultPassphrase = "synthetic-passphrase";`);
+  atomic.fakeIdb.failNextTransaction = true;
+  const saved = await atomic.eval("persistEncryptedVault()");
+  assert(saved === false, "an aborted encrypted IndexedDB transaction reports failure");
+  assert(atomic.fakeIdb.values.get(KEYS.encrypted)?.kind === "old-envelope" && atomic.fakeIdb.values.get(KEYS.settings)?.localEncryptionEnabled === false, "an aborted encrypted transaction retains the prior envelope and settings");
+  assert(atomic.fakeIdb.values.has(KEYS.data) && atomic.fakeIdb.values.has(KEYS.autosave), "an aborted encrypted transaction retains plaintext recovery mirrors");
+
+  const enable = makeHarness({ local: { [KEYS.settings]: { autoMemoryVaultEnabled: false }, [KEYS.data]: emptyData({ people: [{ id: "enable-person", name: "Plain Before Enable" }] }) } });
+  await enable.ready();
+  enable.sandbox.__encryptHook = async () => { throw new Error("synthetic encryption failure"); };
+  enable.eval("encryptPayload = payload => globalThis.__encryptHook(payload);");
+  const enabled = await enable.eval("enableLocalEncryptionRecord('synthetic-passphrase', 'hint')");
+  assert(enabled === false && enable.eval("settings.localEncryptionEnabled") === false, "failed vault enable rolls back the in-memory encryption setting alias");
+}
+
+async function testLegacyAutoMemoryRestore() {
+  const legacyPayload = { db: emptyData({ people: [{ id: "legacy-memory", name: "Legacy Memory Person" }] }), settings: {} };
+  const harness = makeHarness({ local: {
+    [KEYS.settings]: { autoMemoryVaultEnabled: true },
+    [KEYS.data]: emptyData(),
+    [KEYS.autoMemory]: { version: 1, snapshots: [{ id: "legacy-memory-snapshot", savedAt: "2026-07-01T12:00:00.000Z", payload: legacyPayload }] }
+  } });
+  await harness.ready();
+  const restored = await harness.eval("restoreAutoMemorySnapshot('legacy-memory-snapshot')");
+  assert(restored === true && harness.eval("db.people[0]?.name") === "Legacy Memory Person", "legacy Auto Memory payloads with a nested db field restore through the current schema");
+}
+
 async function testFirstInstallAndMissingVault() {
   const fresh = makeHarness();
   await fresh.ready();
@@ -328,6 +401,8 @@ async function run() {
   await testPlaintextIndexedDbOnlyRecovery();
   await testEncryptedIndexedDbOnlyRecovery();
   await testCorruptStorageRecoveryBoundary();
+  await testStructuralMirrorAndAtomicEncryptedCommit();
+  await testLegacyAutoMemoryRestore();
   await testFirstInstallAndMissingVault();
   await testSerializedNewestEncryptedWrite();
   console.log("All Calm OS recovery regression checks passed.");

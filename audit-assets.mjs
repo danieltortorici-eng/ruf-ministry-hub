@@ -1,17 +1,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const root = process.cwd();
+const repositoryRoot = process.cwd();
+const audits = [
+  ['compatibility root', repositoryRoot],
+  ['canonical deploy', path.join(repositoryRoot, 'ruf-ministry-hub-deploy-working')]
+];
 const files = ['ruf-ministry-hub.html', 'ruf-ministry-hub.webmanifest', 'ruf-ministry-hub-sw.js', 'index.html'];
-const source = files.map(file => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
-const refs = new Set();
-for (const match of source.matchAll(/(?:href|src)="([^"]+)"/g)) refs.add(match[1]);
-for (const match of source.matchAll(/"([^"\\]+\.(?:html|webmanifest|svg|png|js))"/g)) refs.add(match[1]);
 const missing = [];
-for (const ref of refs) {
-  if (/^(https?:|data:|#|\$\{)/.test(ref)) continue;
-  const file = ref.replace(/^\.\//, '');
-  if (!fs.existsSync(path.join(root, file))) missing.push(ref);
+for (const [label, root] of audits) {
+  const source = files.map(file => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
+  const refs = new Set();
+  for (const match of source.matchAll(/(?:href|src)="([^"]+)"/g)) refs.add(match[1]);
+  for (const match of source.matchAll(/"([^"\\]+\.(?:html|webmanifest|svg|png|js))"/g)) refs.add(match[1]);
+  for (const ref of refs) {
+    if (/^(https?:|data:|#|\$\{)/.test(ref)) continue;
+    const file = ref.replace(/^\.\//, '');
+    if (!fs.existsSync(path.join(root, file))) missing.push(`${label}: ${ref}`);
+  }
 }
 if (missing.length) {
   console.error('Missing deploy assets:', missing.join(', '));

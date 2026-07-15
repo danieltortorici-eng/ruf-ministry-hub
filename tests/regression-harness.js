@@ -290,7 +290,7 @@ function testCalmPrimaryNavigation() {
 
   const more = appEval("renderMore()");
   assert(more.includes("Where are secondary tools and administration?") && more.includes('data-screen="search"'), "More keeps Search prominent without crowding primary navigation");
-  assert((more.match(/class="more-group"/g) || []).length === 3, "More progressively discloses secondary tools in three groups");
+  assert((more.match(/class="more-group"/g) || []).length === 4, "More progressively discloses secondary tools in four quiet groups");
   ["minutes", "weekly", "autopilot", "review", "aiReview", "coach", "advancedSettings", "duplicates", "readiness", "manual"].forEach(screen => {
     assert(more.includes(`data-screen="${screen}"`), `More keeps ${screen} reachable`);
   });
@@ -551,6 +551,88 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
   assert(!privacy.today.includes("Private approved task phrase") && !privacy.today.includes("Private approved profile phrase") && !privacy.search.includes("Private approved task phrase") && !privacy.search.includes("Private approved profile phrase"), "Today and Search mask privacy propagated from a sensitive capture");
 
   resetApp("emptyData()");
+  const tierPropagation = appEval(`(() => {
+    const person = createPerson("Tier-only privacy person");
+    const grab = makeQuickGrab("Tier-only sensitive source", [], "Whenever", null, { captureSource: "main", personId: person.id });
+    grab.aiPrivacyTier = "Sensitive";
+    grab.sensitiveFlag = false;
+    grab.relatedPersonId = person.id;
+    db.quickGrabs.push(grab);
+    const proposal = emptyAiProposal({
+      sourceType: "quickGrab",
+      sourceId: grab.id,
+      proposalKey: captureProposalKey(grab),
+      sensitivityRisk: "low",
+      proposedActions: [{ actionId: "tier-task", actionType: "createFollowUpTask", title: "Tier-only sensitive task", dueDate: todayISO() }]
+    });
+    db.aiProposals.push(proposal);
+    const validation = validateAiActionExecution(proposal, [0], { personChoice: { mode: "existing", existingPersonId: person.id }, enforcePersonChoice: true });
+    applyAiProposalActions(proposal, validation, { convertQuickGrab: true });
+    return { errors: validation.errors, sensitive: db.tasks[0]?.sensitiveFlag, today: JSON.stringify(buildTodayRecommendations()) };
+  })()`);
+  assert(tierPropagation.errors.length === 0 && tierPropagation.sensitive && !tierPropagation.today.includes("Tier-only sensitive task"), "privacy tiers without legacy flags propagate to approved records and Today masking");
+
+  resetApp("emptyData()");
+  const sensitiveProposal = appEval(`(() => {
+    const person = createPerson("Secret Person");
+    person.aiPrivacyTier = "Sensitive";
+    const grab = makeQuickGrab("TOPSECRET pastoral counseling detail", [], "Whenever", null, { captureSource: "main", personId: person.id });
+    grab.aiPrivacyTier = "Sensitive";
+    grab.relatedPersonId = person.id;
+    db.quickGrabs.push(grab);
+    const gate = renderAiGateSheet({ type: "ai-gate", sourceType: "quickGrab", sourceId: grab.id, nextAction: "quickGrabParse" });
+    const waiting = renderCaptureWaitingRow(grab);
+    const cardBefore = renderQuickGrabCard(grab);
+    createQuickGrabMockAiProposal(grab.id);
+    const proposal = db.aiProposals[0];
+    const card = renderAiProposalCard(proposal);
+    db.quickGrabs = [];
+    const sourceDeletedCard = renderAiProposalCard(proposal);
+    const duplicate = createPerson("Secret Person");
+    const duplicateProposal = emptyAiProposal({
+      id: "sensitive-duplicate",
+      aiPrivacyTier: "Sensitive",
+      proposedActions: [{ actionId: "new-secret", actionType: "createPerson", name: "Secret Person" }]
+    });
+    db.aiProposals.push(duplicateProposal);
+    view.aiConfirmProposalId = duplicateProposal.id;
+    view.aiConfirmActionIndexes = [0];
+    view.aiConfirmPersonChoice = { mode: "new", newPersonName: duplicate.name };
+    const duplicateConfirm = renderConfirmAiActions();
+    view.aiConfirmProposalId = proposal.id;
+    view.aiConfirmActionIndexes = proposal.proposedActions.map((action, index) => index);
+    const confirm = renderConfirmAiActions();
+    const legacyConfirm = renderAiActionConfirmSheet({ proposalId: proposal.id, actionIndexes: view.aiConfirmActionIndexes });
+    return { gate, waiting, cardBefore, proposal, card, sourceDeletedCard, duplicateConfirm, confirm, legacyConfirm };
+  })()`);
+  assert(!sensitiveProposal.gate.includes("TOPSECRET") && !sensitiveProposal.card.includes("TOPSECRET") && !sensitiveProposal.confirm.includes("TOPSECRET") && !sensitiveProposal.legacyConfirm.includes("TOPSECRET"), "blocked AI context, review, and confirmation surfaces never expose sensitive capture text");
+  assert(!sensitiveProposal.waiting.includes("Secret Person") && !sensitiveProposal.cardBefore.includes("Secret Person"), "capture waiting and review cards mask sensitive linked person identity");
+  assert(sensitiveProposal.proposal.contextPreview === "Sensitive context hidden until approval." && sensitiveProposal.proposal.rawInputPreview === "Sensitive input hidden until approval.", "sensitive proposal previews are redacted at durable creation time");
+  assert(sensitiveProposal.proposal.aiPrivacyTier === "Sensitive" && sensitiveProposal.sourceDeletedCard.includes("Sensitive suggested updates") && !sensitiveProposal.sourceDeletedCard.includes("TOPSECRET"), "sensitive proposal privacy remains masked after its source capture is removed");
+  assert(sensitiveProposal.duplicateConfirm.includes("Sensitive person details hidden") && !sensitiveProposal.duplicateConfirm.includes("Similar people already exist: Secret Person"), "sensitive final approval warnings do not reveal duplicate person names");
+
+  const sensitiveResult = appEval(`(() => {
+    const proposal = emptyAiProposal({ id: "sensitive-result", proposalType: "prayerSteward", sensitivityRisk: "medium", result: { steward: { activeOlderThan30: ["Hidden person: raw prayer detail"] } } });
+    return renderAiProposalCard(proposal);
+  })()`);
+  assert(sensitiveResult.includes("Suggested result details hidden") && !sensitiveResult.includes("Hidden person: raw prayer detail"), "sensitive proposal result panels hide raw generated details");
+
+  const candidatePrivacy = appEval(`(() => {
+    const blocked = createPerson("Blocked candidate");
+    blocked.aiPrivacyTier = "Do Not Send to AI";
+    const allowed = createPerson("Allowed candidate");
+    const grab = makeQuickGrab("Blocked candidate note", [], "Whenever", null, { captureSource: "main" });
+    grab.detectedPersonName = blocked.name;
+    const flags = { matchedPerson: blocked, possiblePeople: [blocked, allowed] };
+    const original = quickGrabMockFlags;
+    quickGrabMockFlags = () => flags;
+    const result = quickGrabCandidatePeopleForBackend(grab);
+    quickGrabMockFlags = original;
+    return result;
+  })()`);
+  assert(candidatePrivacy.every(person => person.name !== "Blocked candidate"), "Quick Grab backend candidate context excludes people blocked by their privacy tier");
+
+  resetApp("emptyData()");
   const backendApproval = appEval(`(() => {
     settings.aiMockMode = false;
     const person = createPerson("Backend Approval Person");
@@ -626,7 +708,7 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
     mirrorToIndexedDb = originalMirror;
     return { threw, events };
   })()`);
-  assert(quotaBoundary.threw && quotaBoundary.events[0] === `mirror:${appEval("STORAGE_KEY")}` && quotaBoundary.events.at(-1) === "threw", "quota failure requests an IndexedDB recovery write before surfacing an unconfirmed save");
+  assert(quotaBoundary.threw && quotaBoundary.events.length === 1 && quotaBoundary.events[0] === "threw", "quota failure does not mirror an uncommitted IndexedDB record before surfacing an unconfirmed save");
 
   resetApp("emptyData()");
   const restoreRollback = appEval(`(() => {
@@ -776,7 +858,9 @@ function testTodayRecommendationPriorityAndActions() {
     oldestCapture.createdAt = daysAgo(20) + "T12:00:00.000Z";
     const snoozedCapture = makeQuickGrab("Snoozed hidden capture", [], "Important", null, { captureSource: "main" });
     snoozedCapture.snoozedUntil = daysFromNow(3);
-    db.quickGrabs.push(importantCapture, oldestCapture, snoozedCapture);
+    const malformedSnoozed = makeQuickGrab("Malformed snooze hidden", [], "Important", null, { captureSource: "main" });
+    malformedSnoozed.snoozedUntil = "not-a-date";
+    db.quickGrabs.push(importantCapture, oldestCapture, snoozedCapture, malformedSnoozed);
     const prayer = {
       id: uid("prayer"), relatedPersonId: "", request: "Private prayer text", dateAdded: daysAgo(2), status: "Follow-Up Needed",
       sensitivityLevel: "Sensitive", followUpDate: todayISO(), shareableStatus: "Private", createdAt: nowISO(), updatedAt: nowISO()
@@ -798,7 +882,16 @@ function testTodayRecommendationPriorityAndActions() {
   assert(queue.every(item => item.reasonCode && item.explanation), "every Today recommendation keeps an internal testable explanation");
   assert(queue.find(item => item.recordId === ids.importantCapture).detail === "Sensitive capture hidden.", "Today masks sensitive capture details");
   assert(queue.find(item => item.recordId === ids.prayer).detail === "Sensitive prayer concern hidden.", "Today masks sensitive prayer details");
-  assert(!queue.some(item => item.title.includes("Completed hidden") || item.title.includes("Snoozed hidden")), "Today excludes completed and snoozed records");
+  assert(!queue.some(item => item.title.includes("Completed hidden") || item.title.includes("Snoozed hidden") || item.title.includes("Malformed snooze hidden")), "Today excludes completed, snoozed, and malformed-snooze records");
+
+  const archivedLinked = appEval(`(() => {
+    const person = createPerson("Archived Care Person");
+    person.status = "Archived";
+    db.tasks.push({ id: uid("archived-task"), relatedPersonId: person.id, title: "Archived linked task", dueDate: todayISO(), status: "Today / Soon", createdAt: nowISO(), updatedAt: nowISO() });
+    db.prayerRequests.push({ id: uid("archived-prayer"), relatedPersonId: person.id, request: "Archived linked prayer", followUpDate: todayISO(), status: "Follow-Up Needed", createdAt: nowISO(), updatedAt: nowISO() });
+    return buildTodayRecommendations().some(item => item.personId === person.id);
+  })()`);
+  assert(!archivedLinked, "Today excludes tasks and prayers linked to archived people");
 
   const markup = appEval('view.screen = "today"; renderToday()');
   assert((markup.match(/data-today-section=/g) || []).length === 3, "normal Today renders exactly three primary sections");
@@ -856,6 +949,7 @@ function testPeopleCardCalmContract() {
   assert(html.includes(".person-thumbnail") && html.includes("width: 48px") && html.includes("overflow-wrap: anywhere"), "People card geometry supports no-photo and long-name cases");
   assert(html.includes(':where(button, [role="button"], a, input, select, textarea, summary):focus-visible') && !html.includes(".person-card-open:focus-visible"), "People card keeps the shared high-contrast focus indicator");
   assert(html.includes("restoredSearch.focus({ preventScroll: true })") && html.includes("restoredSearch.setSelectionRange(caret, caret)"), "People search restores focus and caret after filtered rendering");
+  assert(html.includes("let globalSearchTimer = null") && html.includes("}, 120);"), "global Search debounces rerenders while preserving the typed fragment");
 
   const peopleMarkup = appEval('view.screen = "people"; renderPeople()');
   assert(peopleMarkup.includes("Who are you looking for or caring for?") && peopleMarkup.includes('aria-label="People"'), "People asks one calm screen question");
@@ -924,8 +1018,13 @@ async function testAdversarialCalmOsDataShapes() {
   const searchPrivacy = appEval(`(() => {
     const person = createPerson("Sensitive Search Person");
     person.followUpReason = "Private pastoral search phrase";
+    person.aiPrivacyTier = "Do Not Send to AI";
     person.sensitiveFlag = true;
     const task = createProfileFollowUpRecord(person.id, { title: "Private task search phrase", dueDate: todayISO(), sensitiveFlag: true, updatePersonDates: false });
+    const linkedPrayer = createProfilePrayerRecord(person.id, { request: "Private linked prayer phrase", dateAdded: todayISO(), sensitivityLevel: "Normal" });
+    const linkedGrab = makeQuickGrab("Private linked capture phrase", [], "Whenever", null, { captureSource: "profile", personId: person.id });
+    linkedGrab.relatedPersonId = person.id;
+    db.quickGrabs.push(linkedGrab);
     settings.includeSensitiveInSearch = false;
     settings.maskSensitivePreviews = true;
     const excluded = JSON.stringify(buildSearchResults("Private"));
@@ -933,10 +1032,10 @@ async function testAdversarialCalmOsDataShapes() {
     const masked = JSON.stringify(buildSearchResults("Private"));
     settings.maskSensitivePreviews = false;
     const revealed = JSON.stringify(buildSearchResults("Private"));
-    return { excluded, masked, revealed, taskId: task.id };
+    return { excluded, masked, revealed, taskId: task.id, linkedPrayerId: linkedPrayer.id, linkedGrabId: linkedGrab.id };
   })()`);
-  assert(!searchPrivacy.excluded.includes("Private pastoral search phrase") && !searchPrivacy.excluded.includes("Private task search phrase"), "Search excludes sensitive private text unless sensitive search is explicitly enabled");
-  assert(searchPrivacy.masked.includes("Sensitive care detail hidden") && searchPrivacy.masked.includes("Sensitive follow-up task") && !searchPrivacy.masked.includes("Private pastoral search phrase") && !searchPrivacy.masked.includes("Private task search phrase"), "enabled sensitive Search still masks private previews by default");
+  assert(!searchPrivacy.excluded.includes("Private pastoral search phrase") && !searchPrivacy.excluded.includes("Private task search phrase") && !searchPrivacy.excluded.includes("Private linked prayer phrase") && !searchPrivacy.excluded.includes("Private linked capture phrase") && !searchPrivacy.excluded.includes("Sensitive Search Person"), "Search excludes sensitive private text and linked identities unless sensitive search is explicitly enabled");
+  assert(searchPrivacy.masked.includes("Sensitive care detail hidden") && searchPrivacy.masked.includes("Sensitive follow-up task") && searchPrivacy.masked.includes("Sensitive grabbed item - open to process") && !searchPrivacy.masked.includes("Private pastoral search phrase") && !searchPrivacy.masked.includes("Private task search phrase") && !searchPrivacy.masked.includes("Private linked capture phrase"), "enabled sensitive Search still masks private previews by default");
   assert(searchPrivacy.revealed.includes("Private pastoral search phrase") && searchPrivacy.revealed.includes("Private task search phrase"), "private Search text appears only after both explicit search and preview settings allow it");
 
   resetApp("emptyData()");
@@ -1041,9 +1140,9 @@ async function testAdversarialCalmOsDataShapes() {
   try {
     await appEval('resizeProfilePhoto({ type: "image/jpeg", size: 21 * 1024 * 1024 })');
   } catch (error) {
-    oversizedPhotoRejected = /smaller than 20 MB/.test(String(error?.message || error));
+    oversizedPhotoRejected = /smaller than 8 MB/.test(String(error?.message || error));
   }
-  assert(oversizedPhotoRejected && html.includes('const maxSide = 360') && html.includes('toDataURL("image/jpeg", 0.78)'), "oversized photos fail before decoding while accepted photos retain bounded resize rules");
+  assert(oversizedPhotoRejected && html.includes('const maxSide = 360') && html.includes('36_000_000') && html.includes('toDataURL("image/jpeg", 0.78)'), "oversized and high-pixel photos fail before canvas resize while accepted photos retain bounded output");
 
   assert(html.includes("@media (max-width: 980px)") && html.includes("@media (max-width: 560px)") && html.includes("orientation: landscape") && html.includes("env(safe-area-inset-right)"), "390px, 430px, and landscape layout contracts retain responsive safe-area rules");
 }
@@ -1071,6 +1170,22 @@ async function testUnavailableCaptureProcessing() {
   })()`);
   await appEval(`createQuickGrabBackendAiProposal("${failedId}")`);
   assert(db().quickGrabs[0].rawContent === "Offline retry capture" && db().quickGrabs[0].processingState === "failed" && db().aiProposals.length === 0, "unavailable AI without local fallback leaves one retryable unprocessed capture and no partial proposal");
+
+  resetApp("emptyData()");
+  const blockedLinkedId = appEval(`(() => {
+    settings.quickGrabAiMode = "backendQuickGrab";
+    settings.aiMockMode = false;
+    const person = createPerson("Blocked linked person");
+    person.aiPrivacyTier = "Do Not Send to AI";
+    const grab = makeQuickGrab("Raw text names no person but is linked", [], "Whenever", null, { captureSource: "profile", personId: person.id });
+    grab.relatedPersonId = person.id;
+    db.quickGrabs.push(grab);
+    return grab.id;
+  })()`);
+  let blockedFetchCalls = 0;
+  sandbox.fetch = async () => { blockedFetchCalls += 1; throw new Error("must not send"); };
+  await appEval(`createQuickGrabBackendAiProposal("${blockedLinkedId}")`);
+  assert(blockedFetchCalls === 0 && db().quickGrabs[0].processingState === "failed", "backend Quick Grab blocks raw text linked to a Do Not Send person before network use");
   delete sandbox.fetch;
 }
 
@@ -1157,6 +1272,12 @@ function testCalmProfileContract() {
   appEval(`const sparse = createPerson("Sparse Person"); sparse.lastMeaningfulInteraction = "bad-date"; sparse.nextFollowUpDate = "also-bad"; view.screen = "person"; view.personId = sparse.id;`);
   const sparseProfile = appEval("renderPersonProfile()");
   assert(!sparseProfile.includes("data-profile-history=") && sparseProfile.includes("No active prayer concern saved.") && sparseProfile.includes("No current action saved."), "empty or corrupt-date profiles stay calm without invented history");
+  const snoozedPrayer = appEval(`(() => {
+    const prayer = { id: uid("snoozed-prayer"), relatedPersonId: sparse.id, request: "Future snoozed concern", status: "Active", snoozedUntil: daysFromNow(4), dateAdded: todayISO(), createdAt: nowISO(), updatedAt: nowISO() };
+    db.prayerRequests.push(prayer);
+    return buildProfileRightNow(sparse.id).pray.text;
+  })()`);
+  assert(snoozedPrayer === "No active prayer concern saved.", "Right Now excludes future-snoozed prayer concerns");
   appEval(`openProfileBrief(view.personId)`);
   assert(appEval("renderSheet()").includes("very little saved"), "Brief Me states plainly when little information exists");
 }
@@ -1462,7 +1583,7 @@ function testServiceWorkerShape() {
   assert(/ruf-ministry-hub-v(?:3[5-9]|[4-9]\d+)-calm-os-[^"']+/.test(serviceWorkerSource), "service worker cache version is bumped for Calm OS");
   assert(serviceWorkerSource.includes('"index.html"'), "service worker caches redirect entry point");
   assert(serviceWorkerSource.includes("ruf-ministry-hub-icon.svg"), "service worker caches the SVG icon");
-  assert(serviceWorkerSource.includes("async function cacheAsset") && serviceWorkerSource.includes("Do not fail the whole service-worker install"), "service worker treats unavailable assets as non-blocking");
+  assert(serviceWorkerSource.includes("async function cacheAsset") && serviceWorkerSource.includes("Optional icons and metadata do not block an otherwise valid app shell."), "service worker treats optional assets as non-blocking while requiring the app shell");
   assert(serviceWorkerSource.includes("networkFirstNavigation"), "service worker uses network-first document navigation");
   assert(serviceWorkerSource.includes('requestUrl.pathname.startsWith("/api/")'), "service worker leaves Pages Function routes uncached");
   assert(serviceWorkerSource.includes("key.startsWith(CACHE_PREFIX)") && serviceWorkerSource.includes("key !== CACHE_NAME"), "service worker cleans only its own old caches");
@@ -1475,6 +1596,7 @@ function testServiceWorkerShape() {
   assert(html.includes("A newer offline copy is available. Update when you are not in the middle of typing."), "app explains that a waiting update can be deferred safely");
   const registrationSource = html.slice(html.indexOf("function registerServiceWorker()"), html.indexOf("function applyAppUpdate()"));
   assert(!registrationSource.includes("render();"), "service worker update discovery does not rerender and erase in-progress form input");
+  assert(registrationSource.includes("await flushRecoveryState()") && registrationSource.includes("Reload was deferred"), "controller changes secure recoverable work before reloading");
   assert(serviceWorkerSource.includes("await cache.put(request, response.clone())"), "runtime asset caching settles before the fetch response completes");
   ["install", "activate", "fetch", "message"].forEach(eventName => {
     assert(serviceWorkerSource.includes(`addEventListener("${eventName}"`), `service worker registers ${eventName}`);
