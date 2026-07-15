@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "ruf-ministry-hub-";
-const CACHE_NAME = "ruf-ministry-hub-v45-calm-os-qa-v2";
+const CACHE_NAME = "ruf-ministry-hub-v46-calm-os-qa-v3";
 const APP_SHELL = "ruf-ministry-hub.html";
 const ASSETS = [
   "./",

@@ -1712,7 +1712,7 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-qa-v2";
+    const APP_VERSION = "2026.07.15-calm-os-qa-v3";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
@@ -2159,12 +2159,13 @@
     function aiPrivacyTierForRecord(record = {}, collection = "") {
       if (!record || typeof record !== "object") return "Normal";
       const explicitTier = normalizeAiPrivacyTier(record.aiPrivacyTier || record.aiContextPrivacyTier || "", "");
-      if (explicitTier) return explicitTier;
+      if (explicitTier && explicitTier !== "Normal") return explicitTier;
       if (record.aiDoNotSendToAi === true) return "Do Not Send to AI";
       const sensitivity = normalizeAiPrivacyTier(record.sensitivityLevel || "", "");
+      if (sensitivity && sensitivity !== "Normal") return sensitivity;
+      if (record.sensitivityLevel === "Sensitive" || record.sensitiveFlag === true) return "Sensitive";
+      if (explicitTier) return explicitTier;
       if (sensitivity) return sensitivity;
-      if (record.sensitivityLevel === "Sensitive") return "Sensitive";
-      if (record.sensitiveFlag === true) return "Sensitive";
       return collection === "prayerRequests" && record.sensitivityLevel === "Sensitive" ? "Sensitive" : "Normal";
     }
 
@@ -5133,9 +5134,9 @@
         const delta = calendarDayDelta(task.dueDate, reference);
         if (delta === null || delta > 0) return;
         const relatedPrayer = prayerMap.get(task.relatedPrayerRequestId);
-        const sensitive = recordIsSensitive(relatedPrayer, "prayerRequests") || recordIsSensitive(task, "tasks");
         const person = personMap.get(task.relatedPersonId);
         if (person && !personIsActive(person)) return;
+        const sensitive = recordIsSensitive(relatedPrayer, "prayerRequests") || recordIsSensitive(task, "tasks") || recordIsSensitive(person, "people");
         const taskPersonLabel = person && recordIsSensitive(person, "people") ? "a private person" : person?.name;
         add({
           id: `task-due:${task.id}`,
@@ -5148,7 +5149,7 @@
           subjectKey: person?.id ? `person:${person.id}` : `task:${task.id}`,
           sortDate: task.dueDate,
           title: sensitive ? "Complete a sensitive follow-up" : String(task.title || "Complete this follow-up"),
-          detail: sensitive || (person && recordIsSensitive(person, "people")) ? "Sensitive follow-up detail hidden." : (taskPersonLabel ? `For ${taskPersonLabel}` : "A concrete follow-up is ready."),
+          detail: sensitive ? "Sensitive follow-up detail hidden." : (taskPersonLabel ? `For ${taskPersonLabel}` : "A concrete follow-up is ready."),
           dateText: formatDueDate(task.dueDate, reference),
           proactive: false
         });
@@ -5160,7 +5161,8 @@
         const dueDelta = calendarDayDelta(capture.remindAt || capture.detectedDate, reference);
         if (capture.urgency !== "Important" && capture.urgency !== "Today" && (dueDelta === null || dueDelta > 0)) return;
         prioritizedCaptureIds.add(capture.id);
-        const sensitive = recordIsSensitive(capture, "quickGrabs");
+        const person = personMap.get(capture.relatedPersonId);
+        const sensitive = recordIsSensitive(capture, "quickGrabs") || recordIsSensitive(person, "people");
         add({
           id: `capture-due:${capture.id}`,
           tier: 4,
@@ -5185,6 +5187,7 @@
         if (delta === null || delta > 0) return;
         const person = personMap.get(prayer.relatedPersonId);
         if (person && !personIsActive(person)) return;
+        const sensitive = recordIsSensitive(prayer, "prayerRequests") || recordIsSensitive(person, "people");
         add({
           id: `prayer-follow-up:${prayer.id}`,
           tier: 5,
@@ -5195,8 +5198,8 @@
           personId: person?.id || "",
           subjectKey: person?.id ? `person:${person.id}` : `prayer:${prayer.id}`,
           sortDate: prayer.followUpDate,
-          title: recordIsSensitive(prayer, "prayerRequests") ? "Follow up on a private prayer request" : (person ? `Follow up on prayer with ${personLabel(person)}` : "Follow up on a prayer request"),
-          detail: recordIsSensitive(prayer, "prayerRequests") ? "Sensitive prayer concern hidden." : String(prayer.request || "Prayer follow-up is ready."),
+          title: sensitive ? "Follow up on a private prayer request" : (person ? `Follow up on prayer with ${personLabel(person)}` : "Follow up on a prayer request"),
+          detail: sensitive ? "Sensitive prayer concern hidden." : String(prayer.request || "Prayer follow-up is ready."),
           dateText: formatFollowUpDate(prayer.followUpDate, reference),
           proactive: false
         });
@@ -5227,21 +5230,25 @@
         .filter(capture => !prioritizedCaptureIds.has(capture.id))
         .filter(capture => !["Done", "Converted", "Archived"].includes(capture.status))
         .filter(capture => recordSnoozeIsDue(capture, reference))
-        .forEach(capture => add({
-          id: `capture-oldest:${capture.id}`,
-          tier: 7,
-          reasonCode: "oldest-unprocessed-capture",
-          explanation: "This is an unprocessed capture; older captures sort first within this tier.",
-          kind: "capture",
-          recordId: capture.id,
-          personId: capture.relatedPersonId || "",
-          subjectKey: `capture:${capture.id}`,
-          sortDate: capture.createdAt,
-          title: "Sort one saved thought",
-          detail: recordIsSensitive(capture, "quickGrabs") ? "Sensitive capture hidden." : String(capture.rawContent || "Unprocessed capture"),
-          dateText: formatHistoryDate(capture.createdAt, "Captured", reference),
-          proactive: false
-        }));
+        .forEach(capture => {
+          const person = personMap.get(capture.relatedPersonId);
+          const sensitive = recordIsSensitive(capture, "quickGrabs") || recordIsSensitive(person, "people");
+          add({
+            id: `capture-oldest:${capture.id}`,
+            tier: 7,
+            reasonCode: "oldest-unprocessed-capture",
+            explanation: "This is an unprocessed capture; older captures sort first within this tier.",
+            kind: "capture",
+            recordId: capture.id,
+            personId: capture.relatedPersonId || "",
+            subjectKey: `capture:${capture.id}`,
+            sortDate: capture.createdAt,
+            title: "Sort one saved thought",
+            detail: sensitive ? "Sensitive capture hidden." : String(capture.rawContent || "Unprocessed capture"),
+            dateText: formatHistoryDate(capture.createdAt, "Captured", reference),
+            proactive: false
+          });
+        });
 
       const proactivePeople = [
         ...(appSettings.pinnedPersonIds || []),
@@ -9426,7 +9433,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function profileRecordIsSensitive(record, collection = "") {
-      return recordIsSensitive(record, collection);
+      const linkedPerson = record?.relatedPersonId ? personById(record.relatedPersonId) : null;
+      return recordIsSensitive(record, collection) || recordIsSensitive(linkedPerson, "people");
     }
 
     function profileDateSort(items, fields = []) {
@@ -11996,6 +12004,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       target.aiPrivacyTier = "Do Not Send to AI";
       target.updatedAt = nowISO();
       if (sourceRecord && proposal) {
+        proposal.aiPrivacyTier = "Do Not Send to AI";
+        proposal.contextPreview = "Sensitive context hidden until approval.";
+        proposal.rawInputPreview = "Sensitive input hidden until approval.";
         proposal.updatedAt = nowISO();
         proposal.warnings = Array.from(new Set([...(proposal.warnings || []), "Related source marked Do Not Send to AI."]));
       }

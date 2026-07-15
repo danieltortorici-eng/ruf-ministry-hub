@@ -549,6 +549,8 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
   assert(privacy.validationErrors.length === 0 && privacy.taskSensitive && privacy.personSensitive, "sensitive approved actions propagate privacy to follow-up tasks and person-detail updates");
   assert(privacy.taskTitle === "Private approved task phrase" && privacy.reason === "Private approved profile phrase", "approved sensitive content remains stored locally without being discarded");
   assert(!privacy.today.includes("Private approved task phrase") && !privacy.today.includes("Private approved profile phrase") && !privacy.search.includes("Private approved task phrase") && !privacy.search.includes("Private approved profile phrase"), "Today and Search mask privacy propagated from a sensitive capture");
+  const mixedPrivacy = appEval(`({ normalPlusFlag: aiPrivacyTierForRecord({ aiPrivacyTier: "Normal", sensitiveFlag: true }), normalPlusSensitivity: aiPrivacyTierForRecord({ aiPrivacyTier: "Normal", sensitivityLevel: "Sensitive" }) })`);
+  assert(mixedPrivacy.normalPlusFlag === "Sensitive" && mixedPrivacy.normalPlusSensitivity === "Sensitive", "mixed legacy privacy flags fail closed instead of allowing Normal to override sensitivity");
 
   resetApp("emptyData()");
   const tierPropagation = appEval(`(() => {
@@ -610,6 +612,19 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
   assert(sensitiveProposal.proposal.contextPreview === "Sensitive context hidden until approval." && sensitiveProposal.proposal.rawInputPreview === "Sensitive input hidden until approval.", "sensitive proposal previews are redacted at durable creation time");
   assert(sensitiveProposal.proposal.aiPrivacyTier === "Sensitive" && sensitiveProposal.sourceDeletedCard.includes("Sensitive suggested updates") && !sensitiveProposal.sourceDeletedCard.includes("TOPSECRET"), "sensitive proposal privacy remains masked after its source capture is removed");
   assert(sensitiveProposal.duplicateConfirm.includes("Sensitive person details hidden") && !sensitiveProposal.duplicateConfirm.includes("Similar people already exist: Secret Person"), "sensitive final approval warnings do not reveal duplicate person names");
+
+  resetApp("emptyData()");
+  const gateDeletion = appEval(`(() => {
+    const grab = makeQuickGrab("Gate marked raw detail", [], "Whenever", null, { captureSource: "main" });
+    db.quickGrabs.push(grab);
+    const proposal = emptyAiProposal({ sourceType: "quickGrab", sourceId: grab.id, title: "Gate marked raw title", rawInputPreview: "Gate marked raw input" });
+    db.aiProposals.push(proposal);
+    view.sheet = { type: "ai-gate", proposalId: proposal.id };
+    markAiGateDoNotSend();
+    db.quickGrabs = [];
+    return { tier: proposal.aiPrivacyTier, context: proposal.contextPreview, card: renderAiProposalCard(proposal) };
+  })()`);
+  assert(gateDeletion.tier === "Do Not Send to AI" && gateDeletion.context === "Sensitive context hidden until approval." && !gateDeletion.card.includes("Gate marked raw title") && !gateDeletion.card.includes("Gate marked raw input"), "marking a proposal Do Not Send persists redaction after its source is removed");
 
   const sensitiveResult = appEval(`(() => {
     const proposal = emptyAiProposal({ id: "sensitive-result", proposalType: "prayerSteward", sensitivityRisk: "medium", result: { steward: { activeOlderThan30: ["Hidden person: raw prayer detail"] } } });
@@ -883,6 +898,37 @@ function testTodayRecommendationPriorityAndActions() {
   assert(queue.find(item => item.recordId === ids.importantCapture).detail === "Sensitive capture hidden.", "Today masks sensitive capture details");
   assert(queue.find(item => item.recordId === ids.prayer).detail === "Sensitive prayer concern hidden.", "Today masks sensitive prayer details");
   assert(!queue.some(item => item.title.includes("Completed hidden") || item.title.includes("Snoozed hidden") || item.title.includes("Malformed snooze hidden")), "Today excludes completed, snoozed, and malformed-snooze records");
+
+  const linkedSensitiveToday = appEval(`(() => {
+    const taskPerson = createPerson("Secret Task Person");
+    const prayerPerson = createPerson("Secret Prayer Person");
+    const capturePerson = createPerson("Secret Capture Person");
+    const oldestPerson = createPerson("Secret Oldest Person");
+    [taskPerson, prayerPerson, capturePerson, oldestPerson].forEach(person => { person.aiPrivacyTier = "Sensitive"; });
+    const task = { id: uid("linked-sensitive-task"), relatedPersonId: taskPerson.id, title: "Meet Secret Task Person about private issue", dueDate: todayISO(), status: "Today / Soon", createdAt: nowISO(), updatedAt: nowISO() };
+    const prayer = { id: uid("linked-sensitive-prayer"), relatedPersonId: prayerPerson.id, request: "Secret Prayer Person private prayer detail", followUpDate: todayISO(), status: "Follow-Up Needed", dateAdded: todayISO(), createdAt: nowISO(), updatedAt: nowISO() };
+    const capture = makeQuickGrab("Secret Capture Person private capture detail", [], "Important", null, { captureSource: "profile", personId: capturePerson.id });
+    capture.relatedPersonId = capturePerson.id;
+    const oldest = makeQuickGrab("Secret Oldest Person oldest private capture", [], "Whenever", null, { captureSource: "profile", personId: oldestPerson.id });
+    oldest.relatedPersonId = oldestPerson.id;
+    oldest.createdAt = daysAgo(40) + "T12:00:00.000Z";
+    db.tasks.push(task);
+    db.prayerRequests.push(prayer);
+    db.quickGrabs.push(capture, oldest);
+    const recommendations = buildTodayRecommendations();
+    return {
+      task: recommendations.find(item => item.recordId === task.id),
+      prayer: recommendations.find(item => item.recordId === prayer.id),
+      capture: recommendations.find(item => item.recordId === capture.id),
+      oldest: recommendations.find(item => item.recordId === oldest.id),
+      profileTaskSensitive: profileRecordIsSensitive(task, "tasks")
+    };
+  })()`);
+  assert(linkedSensitiveToday.task.title === "Complete a sensitive follow-up" && linkedSensitiveToday.task.detail === "Sensitive follow-up detail hidden." && !JSON.stringify(linkedSensitiveToday.task).includes("Secret Task Person"), "Today masks normal task titles and details linked to a sensitive person");
+  assert(linkedSensitiveToday.prayer.title === "Follow up on a private prayer request" && linkedSensitiveToday.prayer.detail === "Sensitive prayer concern hidden." && !JSON.stringify(linkedSensitiveToday.prayer).includes("Secret Prayer Person"), "Today masks normal prayer text linked to a sensitive person");
+  assert(linkedSensitiveToday.capture.detail === "Sensitive capture hidden.", "Today masks important capture text linked to a sensitive person");
+  assert(linkedSensitiveToday.oldest.detail === "Sensitive capture hidden.", "Today masks oldest-capture text linked to a sensitive person");
+  assert(linkedSensitiveToday.profileTaskSensitive === true, "profile history inherits sensitivity from the linked person");
 
   const archivedLinked = appEval(`(() => {
     const person = createPerson("Archived Care Person");
