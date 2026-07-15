@@ -99,3 +99,15 @@ Status: implemented locally on 2026-07-15; verification recorded with the phase 
 - Updated deploy-only PWA naming/theme metadata to Calm OS while retaining the RUF Ministry Hub identity and install ID.
 - Paired app/package version, service-worker cache, and CSP identity. Pages routes, Functions, storage, records, and production settings are unchanged.
 - Verification: `node check-app-syntax.mjs`, service-worker `node --check`, `node tests/deployment-config-regression.js`, and `node tests/regression-harness.js` all exited 0. The regression harness retained its service-worker safety assertions and now recognizes the intentional Calm OS release family.
+
+## Phase 4 — Contextual dates and compatibility foundation
+
+Status: implemented locally on 2026-07-15; verification recorded with the phase commit.
+
+- Added one local-calendar date system for interaction, follow-up, due, historical, and audit contexts. Date-only values are parsed as calendar components instead of UTC timestamps.
+- Added `dataSchemaVersion: 3` without changing the version-2 backup envelope or any browser storage key.
+- Version-2 backups with the six historical ministry collections may omit `aiProposals`; the missing newer collection safely normalizes to an empty array.
+- Removed preferred contact from demo/new records, creation, normal cards/profiles, search, briefings, and data-quality suggestions. Unknown legacy values remain untouched as dormant data through import/export/re-import.
+- Administrative Created/Updated timestamps are now hidden in normal UI and available only in collapsed Record details when both advanced actions and inline editing are deliberately enabled.
+- Added synthetic regression coverage for today/yesterday/tomorrow/weekday/overdue/next-week/same-year/prior-year/date-only boundaries, schema markers, old backup import, dormant-field round trip, and timestamp dormancy.
+- Verification: the focused app syntax, profile, deployment-contract, and regression commands exited 0; `npm test` then completed all maintained checks and audits with exit code 0.

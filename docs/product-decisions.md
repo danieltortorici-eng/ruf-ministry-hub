@@ -85,3 +85,13 @@ This is the decision record for the Calm OS redesign. Decisions are constrained 
 - **Compatibility effect:** No record migration; only existing dates/statuses are read.
 - **Files affected:** Architecture docs; later app/test source.
 - **Tests used:** Planned priority-tier and date-boundary matrices.
+
+### PD-009 — Keep legacy contact preference dormant, not deleted
+
+- **Decision:** Stop creating, displaying, searching, briefing, or auditing `preferredContactMethod`, while preserving any existing value as an unknown-compatible person property through normalization and backup round trips.
+- **Alternatives considered:** Delete the field during migration; continue showing it under Profile Details; rename it.
+- **Reason:** Contact preference is not required for the next act of care, and deleting it would create unnecessary backup risk.
+- **Cognitive-load effect:** Removes one classification choice from person creation and one repeated metadata item from cards and profiles.
+- **Compatibility effect:** Synthetic pre-Calm version-2 import/export/re-import keeps the exact legacy field value; new people omit it.
+- **Files affected:** Authoritative deploy HTML, regression harness, migration/implementation records.
+- **Tests used:** Contextual date and legacy profile compatibility regression; full backup validation regression.

@@ -610,6 +610,82 @@ function testBackupValidationBoundary() {
   assert(!/data-(?:id|person-id|from|to)="\$\{(?!escapeHtml\()/.test(html), "dynamic record identifiers are escaped before HTML attribute interpolation");
 }
 
+function testContextualDatesAndLegacyProfileCompatibility() {
+  const dates = appEval(`(() => {
+    const reference = new Date(2026, 6, 15, 12, 0, 0);
+    return {
+      today: formatInteractionDate("2026-07-15", reference),
+      yesterday: formatInteractionDate("2026-07-14", reference),
+      twoWeeks: formatInteractionDate("2026-07-01", reference),
+      followToday: formatFollowUpDate("2026-07-15", reference),
+      tomorrow: formatFollowUpDate("2026-07-16", reference),
+      weekday: formatFollowUpDate("2026-07-17", reference),
+      overdue: formatFollowUpDate("2026-07-11", reference),
+      nextWeek: formatDueDate("2026-07-22", reference),
+      sameYear: formatHistoryDate("2026-07-08", "Met", reference),
+      priorYear: formatHistoryDate("2025-07-12", "", reference),
+      dateOnlyParts: calendarDateParts("2026-01-01")
+    };
+  })()`);
+
+  assert(dates.today === "Met today" && dates.yesterday === "Met yesterday", "contextual dates describe today and yesterday");
+  assert(dates.twoWeeks === "Met 2 weeks ago", "contextual dates summarize recent interaction weeks");
+  assert(dates.followToday === "Follow up today" && dates.tomorrow === "Follow up tomorrow", "contextual follow-up dates describe today and tomorrow");
+  assert(dates.weekday === "Follow up Friday", "contextual follow-up dates use a near weekday");
+  assert(dates.overdue === "Follow-up overdue by 4 days", "contextual follow-up dates describe overdue distance");
+  assert(dates.nextWeek === "Due next week", "contextual due dates describe next week");
+  assert(dates.sameYear === "Met Jul 8" && dates.priorYear === "Jul 12, 2025", "history dates stay concise and include prior years");
+  assert(dates.dateOnlyParts.year === 2026 && dates.dateOnlyParts.month === 1 && dates.dateOnlyParts.day === 1, "date-only values do not shift across timezone boundaries");
+
+  resetApp("emptyData()");
+  const compatibility = appEval(`(() => {
+    const legacy = {
+      app: "RUF Ministry Hub",
+      version: 2,
+      data: {
+        people: [{
+          id: "person_legacy",
+          name: "Legacy Person",
+          preferredContactMethod: "Carrier pigeon",
+          phone: "",
+          createdAt: "2025-01-01T12:00:00.000Z",
+          updatedAt: "2025-01-01T12:00:00.000Z"
+        }],
+        quickGrabs: [],
+        notes: [],
+        meetingNotes: [],
+        prayerRequests: [],
+        tasks: []
+      }
+    };
+    validateBackupPayload(legacy);
+    applyRestoredPayload(legacy, { captureBefore: false, toast: "Legacy restored." });
+    const restoredLegacyValue = db.people[0].preferredContactMethod;
+    const exported = currentPortablePayload();
+    const roundTripped = normalizeData(JSON.parse(JSON.stringify(exported.data)));
+    const created = createPerson("New Calm Person");
+    view.personId = db.people[0].id;
+    return {
+      restoredLegacyValue,
+      exportedLegacyValue: exported.data.people[0].preferredContactMethod,
+      roundTripLegacyValue: roundTripped.people[0].preferredContactMethod,
+      topSchemaVersion: exported.dataSchemaVersion,
+      dataSchemaVersion: exported.data.dataSchemaVersion,
+      createdHasPreferredContact: Object.prototype.hasOwnProperty.call(created, "preferredContactMethod"),
+      personMarkup: renderPersonProfile(),
+      peopleMarkup: renderPersonListCard(db.people[0]),
+      createMarkup: renderCreatePersonSheet()
+    };
+  })()`);
+
+  assert(compatibility.restoredLegacyValue === "Carrier pigeon", "pre-Calm backups retain dormant preferred-contact data on import");
+  assert(compatibility.exportedLegacyValue === "Carrier pigeon" && compatibility.roundTripLegacyValue === "Carrier pigeon", "dormant preferred-contact data survives export round trip");
+  assert(compatibility.topSchemaVersion === 3 && compatibility.dataSchemaVersion === 3, "portable backups declare additive data schema version 3");
+  assert(compatibility.createdHasPreferredContact === false, "new people no longer create preferred-contact data");
+  assert(!compatibility.personMarkup.includes("Preferred contact") && !compatibility.peopleMarkup.includes("Preferred contact") && !compatibility.createMarkup.includes("Preferred contact"), "preferred contact remains dormant in normal profile, card, and creation UI");
+  assert(!compatibility.personMarkup.includes("Created:") && !compatibility.peopleMarkup.includes("Updated:"), "normal profile and people UI hide administrative timestamps");
+}
+
 function testServiceWorkerShape() {
   assert(/const APP_VERSION = "2026\.07\.15-calm-os-[^"]+"/.test(html), "deploy app version is in the Calm OS release family");
   assert(/ruf-ministry-hub-v(?:3[5-9]|[4-9]\d+)-calm-os-[^"']+/.test(serviceWorkerSource), "service worker cache version is bumped for Calm OS");
@@ -665,6 +741,7 @@ async function run() {
   await testSecuritySheets();
   await testDataSafetySheets();
   testBackupValidationBoundary();
+  testContextualDatesAndLegacyProfileCompatibility();
   testServiceWorkerShape();
   testRedirectAndServiceWorkerRouting();
   testCurrentDocsDoNotClaimRemovedScreens();

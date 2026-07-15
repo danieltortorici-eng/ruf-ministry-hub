@@ -1121,6 +1121,24 @@
       content: "−";
     }
 
+    .record-audit {
+      margin-top: var(--space-2);
+      color: var(--muted);
+    }
+
+    .record-audit > summary {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .record-audit > .meta {
+      padding: 0 0 var(--space-2);
+    }
+
     .visually-hidden {
       position: absolute !important;
       width: 1px !important;
@@ -1324,7 +1342,9 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-design-system";
+    const APP_VERSION = "2026.07.15-calm-os-dates-v1";
+    const DATA_SCHEMA_VERSION = 3;
+    const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const MAX_BACKUP_FILE_BYTES = 8 * 1024 * 1024;
     const MAX_BACKUP_RECORDS_PER_COLLECTION = 10000;
     const MAX_BACKUP_TOTAL_RECORDS = 30000;
@@ -1653,10 +1673,97 @@
       return d;
     }
 
+    function calendarDateParts(value) {
+      if (value instanceof Date) {
+        if (Number.isNaN(value.getTime())) return null;
+        return { year: value.getFullYear(), month: value.getMonth() + 1, day: value.getDate() };
+      }
+      const raw = String(value || "").trim();
+      const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (dateOnly) {
+        const year = Number(dateOnly[1]);
+        const month = Number(dateOnly[2]);
+        const day = Number(dateOnly[3]);
+        const check = new Date(year, month - 1, day, 12);
+        if (check.getFullYear() !== year || check.getMonth() + 1 !== month || check.getDate() !== day) return null;
+        return { year, month, day };
+      }
+      const timestamp = new Date(raw);
+      if (Number.isNaN(timestamp.getTime())) return null;
+      return { year: timestamp.getFullYear(), month: timestamp.getMonth() + 1, day: timestamp.getDate() };
+    }
+
+    function calendarDateFromParts(parts) {
+      return parts ? new Date(parts.year, parts.month - 1, parts.day, 12) : null;
+    }
+
+    function calendarDayNumber(value) {
+      const parts = calendarDateParts(value);
+      return parts ? Math.floor(Date.UTC(parts.year, parts.month - 1, parts.day) / 86400000) : null;
+    }
+
+    function calendarDayDelta(value, reference = new Date()) {
+      const target = calendarDayNumber(value);
+      const origin = calendarDayNumber(reference);
+      return target === null || origin === null ? null : target - origin;
+    }
+
+    function formatCalendarDay(value, reference = new Date()) {
+      const parts = calendarDateParts(value);
+      const referenceParts = calendarDateParts(reference);
+      if (!parts || !referenceParts) return "";
+      const options = { month: "short", day: "numeric" };
+      if (parts.year !== referenceParts.year) options.year = "numeric";
+      return new Intl.DateTimeFormat("en-US", options).format(calendarDateFromParts(parts));
+    }
+
+    function formatWeekday(value) {
+      const parts = calendarDateParts(value);
+      return parts ? new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(calendarDateFromParts(parts)) : "";
+    }
+
+    function formatInteractionDate(value, reference = new Date()) {
+      const delta = calendarDayDelta(value, reference);
+      if (delta === null) return "No interaction recorded";
+      if (delta === 0) return "Met today";
+      if (delta === -1) return "Met yesterday";
+      if (delta < -1 && delta > -7) return `Met ${Math.abs(delta)} days ago`;
+      if (delta <= -7 && delta > -49) {
+        const weeks = Math.max(1, Math.round(Math.abs(delta) / 7));
+        return `Met ${weeks} week${weeks === 1 ? "" : "s"} ago`;
+      }
+      return `Met ${formatCalendarDay(value, reference)}`;
+    }
+
+    function formatFollowUpDate(value, reference = new Date()) {
+      const delta = calendarDayDelta(value, reference);
+      if (delta === null) return "No follow-up planned";
+      if (delta < 0) return `Follow-up overdue by ${Math.abs(delta)} day${delta === -1 ? "" : "s"}`;
+      if (delta === 0) return "Follow up today";
+      if (delta === 1) return "Follow up tomorrow";
+      if (delta < 7) return `Follow up ${formatWeekday(value)}`;
+      if (delta < 14) return "Follow up next week";
+      return `Follow up ${formatCalendarDay(value, reference)}`;
+    }
+
+    function formatDueDate(value, reference = new Date()) {
+      const delta = calendarDayDelta(value, reference);
+      if (delta === null) return "No due date";
+      if (delta < 0) return `Overdue by ${Math.abs(delta)} day${delta === -1 ? "" : "s"}`;
+      if (delta === 0) return "Due today";
+      if (delta === 1) return "Due tomorrow";
+      if (delta < 7) return `Due ${formatWeekday(value)}`;
+      if (delta < 14) return "Due next week";
+      return `Due ${formatCalendarDay(value, reference)}`;
+    }
+
+    function formatHistoryDate(value, label = "", reference = new Date()) {
+      const formatted = formatCalendarDay(value, reference);
+      return formatted ? `${label ? `${label} ` : ""}${formatted}` : "";
+    }
+
     function dateLabel(value) {
-      if (!value) return "Not set";
-      const d = new Date(value + "T12:00:00");
-      return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+      return formatHistoryDate(value) || "Not set";
     }
 
     function dateTimeLabel(value) {
@@ -1674,11 +1781,12 @@
     }
 
     function timestampLine(record, primaryLabel = "", primaryValue = "") {
+      if (!settings?.showAdvancedActions || !settings?.inlineEditing) return "";
       const parts = [];
       if (primaryLabel && primaryValue) parts.push(`${primaryLabel}: ${dateTimeLabel(primaryValue)}`);
       if (record?.createdAt) parts.push(`Created: ${dateTimeLabel(record.createdAt)}`);
       if (record?.updatedAt) parts.push(`Updated: ${dateTimeLabel(record.updatedAt)}`);
-      return parts.length ? `<div class="meta">${escapeHtml(parts.join(" • "))}</div>` : "";
+      return parts.length ? `<details class="record-audit"><summary>Record details</summary><div class="meta">${escapeHtml(parts.join(" • "))}</div></details>` : "";
     }
 
     function nowISO() {
@@ -1866,6 +1974,7 @@
 
     function emptyData() {
       return {
+        dataSchemaVersion: DATA_SCHEMA_VERSION,
         people: [],
         quickGrabs: [],
         notes: [],
@@ -1917,11 +2026,11 @@
         throw new Error("Backup app or version is not supported.");
       }
       if (!isPlainBackupObject(payload.data)) throw new Error("Backup data is missing.");
-      const expectedCollections = Object.keys(emptyData());
+      const expectedCollections = DATA_COLLECTIONS;
       let totalRecords = 0;
       const seenIds = new Set();
       expectedCollections.forEach(collection => {
-        const records = payload.data[collection];
+        const records = collection === "aiProposals" && payload.data[collection] === undefined ? [] : payload.data[collection];
         if (!Array.isArray(records)) throw new Error(`Backup collection ${collection} is missing.`);
         if (records.length > MAX_BACKUP_RECORDS_PER_COLLECTION) throw new Error(`Backup collection ${collection} is too large.`);
         totalRecords += records.length;
@@ -1949,9 +2058,10 @@
     function normalizeData(raw) {
       if (!raw || typeof raw !== "object") throw new Error("Backup data is missing.");
       const normalized = { ...raw };
-      Object.keys(emptyData()).forEach(key => {
+      DATA_COLLECTIONS.forEach(key => {
         normalized[key] = Array.isArray(raw[key]) ? raw[key] : [];
       });
+      normalized.dataSchemaVersion = DATA_SCHEMA_VERSION;
       normalized.aiProposals = normalizeAiProposals(raw.aiProposals);
       normalized.people.forEach(person => {
         if (!("phone" in person)) person.phone = "";
@@ -2049,7 +2159,7 @@
       } catch (error) {
         console.warn("Could not load saved Ministry Hub data", error);
       }
-      const seed = demoData();
+      const seed = normalizeData(demoData());
       localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
       return seed;
     }
@@ -2488,6 +2598,7 @@
         exportedAt: nowISO(),
         app: "RUF Ministry Hub",
         version: 2,
+        dataSchemaVersion: DATA_SCHEMA_VERSION,
         data: db,
         settings,
         customCopy,
@@ -2917,7 +3028,6 @@
             personType: "Student",
             status: "Active",
             careLevel: "Check in soon",
-            preferredContactMethod: "Text",
             phone: "555-0104",
             photoDataUrl: "",
             email: "avery.brooks@example.com",
@@ -2939,7 +3049,6 @@
             personType: "Student",
             status: "Active",
             careLevel: "Pray this week",
-            preferredContactMethod: "Text",
             phone: "555-0148",
             photoDataUrl: "",
             email: "jonah.miller@example.com",
@@ -2961,7 +3070,6 @@
             personType: "Donor",
             status: "Active",
             careLevel: "Send encouragement",
-            preferredContactMethod: "Email",
             phone: "555-0193",
             photoDataUrl: "",
             email: "sarah.cole@example.com",
@@ -2983,7 +3091,6 @@
             personType: "Student",
             status: "New",
             careLevel: "Get to know",
-            preferredContactMethod: "Instagram",
             phone: "",
             photoDataUrl: "",
             email: "maya.davis@example.com",
@@ -3001,6 +3108,7 @@
           }
         ];
       return {
+        dataSchemaVersion: DATA_SCHEMA_VERSION,
         people,
         quickGrabs: [
           makeQuickGrab("Coffee with Jonah. Encouraged by Large Group. Needs prayer for wisdom with summer plans.", ["People", "Prayer"], "Soon", people),
@@ -4783,7 +4891,7 @@
       const q = query.toLowerCase();
       const matches = fields => fields.filter(Boolean).join(" ").toLowerCase().includes(q);
       const people = db.people
-        .filter(person => matches([person.name, person.personType, person.status, person.careLevel, person.preferredContactMethod, person.phone, person.email, person.classYear, person.fraternitySorority, person.major, person.hometown, person.rufInvolvement, person.donorStatus, person.followUpReason]))
+        .filter(person => matches([person.name, person.personType, person.status, person.careLevel, person.phone, person.email, person.classYear, person.fraternitySorority, person.major, person.hometown, person.rufInvolvement, person.donorStatus, person.followUpReason]))
         .map(person => ({
           kind: "Person",
           title: person.name,
@@ -5072,8 +5180,8 @@
       return [
         `Name: ${person.name || "Unnamed"}`,
         `Care level: ${person.careLevel || "Not set"}`,
-        `Last meaningful interaction: ${dateLabel(person.lastMeaningfulInteraction)}`,
-        `Next follow-up: ${dateLabel(person.nextFollowUpDate)}`,
+        `Last meaningful interaction: ${formatInteractionDate(person.lastMeaningfulInteraction)}`,
+        `Next follow-up: ${formatFollowUpDate(person.nextFollowUpDate)}`,
         `Follow-up reason: ${person.followUpReason || "Not set"}`
       ].join(" | ");
     }
@@ -5427,7 +5535,6 @@
       return {
         duplicatePeople: dataJanitorDuplicatePeople(people),
         missingCareLevel: people.filter(person => !String(person.careLevel || "").trim()),
-        missingPreferredContact: people.filter(person => !String(person.preferredContactMethod || "").trim()),
         missingFollowUpFields: people.filter(person => !person.nextFollowUpDate && !String(person.followUpReason || "").trim()),
         staleNextFollowUp: people.filter(person => person.nextFollowUpDate && dataJanitorDateBefore(person.nextFollowUpDate, today)),
         activeNoRecentInteraction: people.filter(person => person.status === "Active" && (!person.lastMeaningfulInteraction || dataJanitorDateBefore(person.lastMeaningfulInteraction, daysAgo(60)))),
@@ -5464,7 +5571,6 @@
         duplicatePeople: findings.duplicatePeople.map(([a, b]) => `${a.name} / ${b.name}`),
         peopleProfileGaps: [
           ...findings.missingCareLevel.map(person => `${dataJanitorPersonLabel(person)} - missing care level.`),
-          ...findings.missingPreferredContact.map(person => `${dataJanitorPersonLabel(person)} - missing preferred contact method.`),
           ...findings.missingFollowUpFields.map(person => `${dataJanitorPersonLabel(person)} - missing useful follow-up fields.`)
         ],
         staleFollowUps: [
@@ -5507,9 +5613,6 @@
       });
       findings.missingCareLevel.slice(0, 5).forEach(person => {
         actions.push({ actionType: "updatePerson", reviewOnly: true, personId: person.id, label: `Choose a care level for ${person.name}` });
-      });
-      findings.missingPreferredContact.slice(0, 5).forEach(person => {
-        actions.push({ actionType: "updatePerson", reviewOnly: true, personId: person.id, label: `Add a preferred contact method for ${person.name}` });
       });
       findings.missingFollowUpFields.slice(0, 5).forEach(person => {
         actions.push({ actionType: "updatePerson", reviewOnly: true, personId: person.id, label: `Add follow-up fields for ${person.name}` });
@@ -8116,9 +8219,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             </div>
           </div>
           <div class="stat-grid">
-            ${miniStat("Last interaction", dateLabel(person.lastMeaningfulInteraction))}
-            ${miniStat("Next follow-up", dateLabel(person.nextFollowUpDate))}
-            ${miniStat("Preferred contact", person.preferredContactMethod || "Not set")}
+            ${miniStat("Last interaction", formatInteractionDate(person.lastMeaningfulInteraction))}
+            ${miniStat("Next follow-up", formatFollowUpDate(person.nextFollowUpDate))}
             ${miniStat("Reason", person.followUpReason || "Not set")}
           </div>
           ${timestampLine(person)}
@@ -8157,15 +8259,14 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         <section class="section">
           <div class="stat-grid">
             ${miniStat("Care level", person.careLevel)}
-            ${miniStat("Last meaningful interaction", dateLabel(person.lastMeaningfulInteraction))}
-            ${miniStat("Next follow-up", dateLabel(person.nextFollowUpDate))}
+            ${miniStat("Last meaningful interaction", formatInteractionDate(person.lastMeaningfulInteraction))}
+            ${miniStat("Next follow-up", formatFollowUpDate(person.nextFollowUpDate))}
             ${miniStat("Phone number", person.phone || "Not set")}
           </div>
           ${timestampLine(person)}
           <div class="surface">
             <div class="form-grid">
               ${profileField("Person type", person.personType)}
-              ${profileField("Preferred contact", person.preferredContactMethod)}
               ${profileField("Phone number", person.phone || "Not set")}
               ${profileField("Email", person.email || "Not set")}
               ${profileField("Class year", person.classYear || "Not applicable")}
@@ -8254,7 +8355,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function profileField(label, value) {
       const fieldMap = {
         "Person type": "personType",
-        "Preferred contact": "preferredContactMethod",
         "Phone number": "phone",
         "Email": "email",
         "Class year": "classYear",
@@ -9166,7 +9266,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             <span class="pill ${task.status === "Done / Archived" ? "gray" : task.status === "Waiting" ? "violet" : "gold"}">${escapeHtml(task.status)}</span>
           </div>
           <div class="row wrap">
-            <span class="meta">Due ${dateLabel(task.dueDate)}</span>
+            <span class="meta">${formatDueDate(task.dueDate)}</span>
           </div>
           ${timestampLine(task, "Due", task.dueDate)}
           <div class="action-row">
@@ -9684,8 +9784,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         .map(option => `<option ${option === "Student" ? "selected" : ""}>${option}</option>`).join("");
       const careOptions = ["Get to know", "Check in soon", "Pastoral care", "Leader", "Donor care", "Low touch"]
         .map(option => `<option ${option === "Get to know" ? "selected" : ""}>${option}</option>`).join("");
-      const contactOptions = ["Text", "Call", "Email", "In person", "Unknown"]
-        .map(option => `<option ${option === "Text" ? "selected" : ""}>${option}</option>`).join("");
       return `
         <div class="sheet-backdrop" data-action="sheet-close">
           <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="create-person-sheet-title" data-sheet-panel>
@@ -9708,7 +9806,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                 ${sheetField("Email", `<input class="input" id="sheet-person-email" type="email" placeholder="Optional">`)}
                 ${sheetField("Person type", `<select class="select" id="sheet-person-type">${typeOptions}</select>`)}
                 ${sheetField("Care level", `<select class="select" id="sheet-person-care">${careOptions}</select>`)}
-                ${sheetField("Preferred contact", `<select class="select" id="sheet-person-contact">${contactOptions}</select>`)}
                 ${sheetField("RUF involvement", `<input class="input" id="sheet-person-involvement" placeholder="Small group, donor, visitor...">`)}
               </div>
             </div>
@@ -10411,7 +10508,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       person.email = document.getElementById("sheet-person-email")?.value.trim() || "";
       person.personType = document.getElementById("sheet-person-type")?.value || "Student";
       person.careLevel = document.getElementById("sheet-person-care")?.value || "Get to know";
-      person.preferredContactMethod = document.getElementById("sheet-person-contact")?.value || "Text";
       person.rufInvolvement = document.getElementById("sheet-person-involvement")?.value.trim() || "";
       person.updatedAt = nowISO();
       saveData();
@@ -11887,7 +11983,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         personType: "Student",
         status: "New",
         careLevel: "Get to know",
-        preferredContactMethod: "Text",
         phone: phone.trim(),
         photoDataUrl: "",
         email: "",
@@ -12204,9 +12299,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return [
         `Local Briefing: ${person.name}`,
         `Care level: ${person.careLevel || "Not set"}`,
-        `Last meaningful interaction: ${dateLabel(person.lastMeaningfulInteraction)}`,
-        `Next follow-up: ${dateLabel(person.nextFollowUpDate)}${person.followUpReason ? ` (${person.followUpReason})` : ""}`,
-        person.preferredContactMethod ? `Preferred contact: ${person.preferredContactMethod}` : "",
+        `Last meaningful interaction: ${formatInteractionDate(person.lastMeaningfulInteraction)}`,
+        `Next follow-up: ${formatFollowUpDate(person.nextFollowUpDate)}${person.followUpReason ? ` (${person.followUpReason})` : ""}`,
         "",
         section("Remember before meeting", briefing.rememberBeforeMeeting),
         "",
