@@ -225,6 +225,15 @@
       min-height: 34px;
     }
 
+    .section-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      margin-top: var(--space-4);
+      padding: 2px;
+    }
+
     .section-title {
       margin: 0;
       font-size: 1.05rem;
@@ -1592,6 +1601,11 @@
         display: grid;
       }
 
+      .section-footer {
+        align-items: stretch;
+        display: grid;
+      }
+
       .action-row,
       .row,
       .section-header {
@@ -1664,7 +1678,7 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-recovery-v1";
+    const APP_VERSION = "2026.07.15-calm-os-qa-v1";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CAPTURE_PROCESSOR_VERSION = "calm-os-capture-v1";
@@ -1755,6 +1769,9 @@
       ["prayer", "Prayer"],
       ["settings", "More"]
     ];
+    const PEOPLE_BATCH_SIZE = 40;
+    const SEARCH_BATCH_SIZE = 30;
+    const PROFILE_HISTORY_BATCH_SIZE = 50;
 
     function calmLaunchScreen(screen) {
       return NAV.some(([key]) => key === screen) ? screen : "today";
@@ -1783,12 +1800,15 @@
       aiConfirmValidationErrors: [],
       aiConfirmValidationWarnings: [],
       search: "",
+      peopleVisibleLimit: PEOPLE_BATCH_SIZE,
+      searchVisibleLimits: {},
       quickGrabDraftText: "",
 	      profileCaptureOwnerId: "",
 	      profileCapturePersonId: "",
 	      profileCaptureDraftText: "",
 	      profileCaptureDraftTargetId: "",
 	      profileHistoryExpanded: [],
+	      profileHistoryVisibleLimits: {},
 	      globalSearch: "",
 	      focusMode: true,
 	      locked: Boolean(settings.appLockEnabled && settings.pinHash),
@@ -2015,14 +2035,37 @@
       });
     }
 
-    function applyAppUpdate() {
+    async function applyAppUpdate() {
       const waiting = serviceWorkerRegistration && serviceWorkerRegistration.waiting;
+      const updateButtons = typeof document !== "undefined"
+        ? Array.from(document.querySelectorAll('[data-action="app-update"]'))
+        : [];
+      updateButtons.forEach(button => {
+        button.disabled = true;
+        button.setAttribute?.("aria-busy", "true");
+      });
+      showToast("Securing your current work before updating...");
+      let recoveryFlushed = false;
+      try {
+        recoveryFlushed = await flushRecoveryState();
+      } catch (error) {
+        console.warn("Could not secure recovery state before update", error);
+      }
+      if (!recoveryFlushed) {
+        updateButtons.forEach(button => {
+          button.disabled = false;
+          button.removeAttribute?.("aria-busy");
+        });
+        showToast("Could not secure your current work. The update is still waiting.", "error");
+        return false;
+      }
       if (waiting) {
         waiting.postMessage({ type: "SKIP_WAITING" });
         showToast("Updating app...");
-        return;
+        return true;
       }
       if (typeof window !== "undefined") window.location.reload();
+      return true;
     }
 
     function checkForAppUpdate() {
@@ -2282,6 +2325,7 @@
       normalized.quickGrabs = normalized.quickGrabs.map(normalizeQuickGrab);
       normalized.aiProposals = normalizeAiProposals(raw.aiProposals);
       normalized.people.forEach(person => {
+        if (!String(person.name || "").trim()) person.name = "Unnamed person";
         if (!("phone" in person)) person.phone = "";
         if (!("photoDataUrl" in person)) person.photoDataUrl = "";
       });
@@ -2317,10 +2361,62 @@
       });
     }
 
+    function localStorageSnapshot(keys) {
+      const snapshot = new Map();
+      keys.forEach(key => {
+        try {
+          snapshot.set(key, localStorage.getItem(key));
+        } catch (error) {
+          snapshot.set(key, null);
+        }
+      });
+      return snapshot;
+    }
+
+    function restoreLocalStorageSnapshot(snapshot) {
+      snapshot.forEach((value, key) => {
+        try {
+          if (value === null) localStorage.removeItem(key);
+          else localStorage.setItem(key, value);
+        } catch (error) {
+          console.warn(`Could not restore local storage key ${key}`, error);
+        }
+      });
+    }
+
+    function writeLocalStorageBatch(entries) {
+      const unique = new Map(entries);
+      const snapshot = localStorageSnapshot(Array.from(unique.keys()));
+      try {
+        unique.forEach((value, key) => {
+          if (value === null) localStorage.removeItem(key);
+          else localStorage.setItem(key, value);
+        });
+        return snapshot;
+      } catch (error) {
+        restoreLocalStorageSnapshot(snapshot);
+        throw error;
+      }
+    }
+
+    function persistPlainRecord(key, value) {
+      const snapshot = cloneJson(value);
+      mirrorToIndexedDb(key, snapshot);
+      try {
+        localStorage.setItem(key, JSON.stringify(snapshot));
+      } catch (error) {
+        console.warn(`Could not save ${key} to local storage; a recovery write was requested.`, error);
+        showToast("Local storage is full or unavailable. Your change was not confirmed.", "error");
+        throw error;
+      }
+    }
+
     function saveSettings() {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-      localStorage.setItem(CALM_MODE_KEY, settings.calmMode ? "on" : "off");
       mirrorToIndexedDb(SETTINGS_KEY, settings);
+      writeLocalStorageBatch([
+        [SETTINGS_KEY, JSON.stringify(settings)],
+        [CALM_MODE_KEY, settings.calmMode ? "on" : "off"]
+      ]);
       captureAutoMemorySnapshot("Settings update");
     }
 
@@ -2351,8 +2447,7 @@
         scheduleVaultSave();
         return;
       }
-      localStorage.setItem(COPY_KEY, JSON.stringify(customCopy));
-      mirrorToIndexedDb(COPY_KEY, customCopy);
+      persistPlainRecord(COPY_KEY, customCopy);
       captureAutoMemorySnapshot("Wording update");
     }
 
@@ -2381,8 +2476,7 @@
         scheduleVaultSave();
         return;
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-      mirrorToIndexedDb(STORAGE_KEY, db);
+      persistPlainRecord(STORAGE_KEY, db);
       captureAutoMemorySnapshot("Auto save");
     }
 
@@ -3284,12 +3378,15 @@
         aiConfirmValidationErrors: [],
         aiConfirmValidationWarnings: [],
         search: "",
+        peopleVisibleLimit: PEOPLE_BATCH_SIZE,
+        searchVisibleLimits: {},
         quickGrabDraftText: "",
         profileCaptureOwnerId: "",
         profileCapturePersonId: "",
         profileCaptureDraftText: "",
         profileCaptureDraftTargetId: "",
         profileHistoryExpanded: [],
+        profileHistoryVisibleLimits: {},
         globalSearch: "",
         focusMode: true,
         locked: Boolean(settings.appLockEnabled && settings.pinHash),
@@ -3310,19 +3407,46 @@
         localEncryptionHint: settings.localEncryptionHint,
         localEncryptionUpdatedAt: settings.localEncryptionUpdatedAt
       };
-      if (options.captureBefore !== false) captureAutoMemorySnapshot(options.beforeLabel || "Before backup restore", { force: true });
-      recordUndo(options.undoLabel || "backup restore");
-      db = restoredData;
-      settings = normalizeSettings({ ...incomingSettings, ...keepVault });
-      customCopy = validatedPayload.customCopy && typeof validatedPayload.customCopy === "object" ? validatedPayload.customCopy : {};
-      autosaveDraftsCache = validatedPayload.autosaveDrafts && typeof validatedPayload.autosaveDrafts === "object" ? validatedPayload.autosaveDrafts : {};
-      saveSettings();
-      saveData();
-      saveCustomCopy();
-      saveAutosaveDrafts(autosaveDraftsCache || {});
-      resetViewAfterRestore();
-      showToast(options.toast || "Backup restored.");
-      render();
+      const previous = {
+        db,
+        settings,
+        customCopy,
+        autosaveDraftsCache,
+        view
+      };
+      const persistenceKeys = [SETTINGS_KEY, CALM_MODE_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, ENCRYPTED_STORAGE_KEY, AUTO_MEMORY_KEY];
+      const persistenceSnapshot = localStorageSnapshot(persistenceKeys);
+      try {
+        if (options.captureBefore !== false) captureAutoMemorySnapshot(options.beforeLabel || "Before backup restore", { force: true });
+        recordUndo(options.undoLabel || "backup restore");
+        db = restoredData;
+        settings = normalizeSettings({ ...incomingSettings, ...keepVault });
+        customCopy = validatedPayload.customCopy && typeof validatedPayload.customCopy === "object" ? validatedPayload.customCopy : {};
+        autosaveDraftsCache = validatedPayload.autosaveDrafts && typeof validatedPayload.autosaveDrafts === "object" ? validatedPayload.autosaveDrafts : {};
+        saveSettings();
+        saveData();
+        saveCustomCopy();
+        saveAutosaveDrafts(autosaveDraftsCache || {});
+        resetViewAfterRestore();
+        showToast(options.toast || "Backup restored.");
+        render();
+        return true;
+      } catch (error) {
+        db = previous.db;
+        settings = previous.settings;
+        customCopy = previous.customCopy;
+        autosaveDraftsCache = previous.autosaveDraftsCache;
+        view = previous.view;
+        restoreLocalStorageSnapshot(persistenceSnapshot);
+        mirrorToIndexedDb(SETTINGS_KEY, settings);
+        mirrorToIndexedDb(STORAGE_KEY, db);
+        mirrorToIndexedDb(COPY_KEY, customCopy);
+        mirrorToIndexedDb(AUTOSAVE_KEY, autosaveDraftsCache || {});
+        console.warn("Backup restore was rolled back because local persistence failed", error);
+        showToast("Backup restore could not be saved. Your previous data remains in place.", "error");
+        render();
+        return false;
+      }
     }
 
     function loadAutosaveDrafts() {
@@ -3344,8 +3468,7 @@
         scheduleVaultSave();
         return;
       }
-      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(drafts));
-      mirrorToIndexedDb(AUTOSAVE_KEY, drafts);
+      persistPlainRecord(AUTOSAVE_KEY, drafts);
     }
 
     function autosaveDraftKey() {
@@ -3782,11 +3905,15 @@
       const lockedPersonId = captureOptions.personId && (peopleList || db.people).some(person => person.id === captureOptions.personId)
         ? captureOptions.personId
         : "";
+      const possiblePeople = parsed.detectedPersonName
+        ? similarPeopleInList(parsed.detectedPersonName, peopleList || db.people)
+        : [];
+      const unambiguousPersonId = possiblePeople.length === 1 ? parsed.relatedPersonId : "";
       return {
         id,
         rawContent,
         detectedPersonName: parsed.detectedPersonName,
-        relatedPersonId: lockedPersonId || parsed.relatedPersonId,
+        relatedPersonId: lockedPersonId || unambiguousPersonId,
         detectedDate: parsed.detectedDate,
         detectedPrayerRequest: parsed.detectedPrayerRequest,
         detectedFollowUp: parsed.detectedFollowUp,
@@ -3817,7 +3944,11 @@
       const raw = rawContent.trim();
       const lower = raw.toLowerCase();
       const knownPeople = peopleList || (db && db.people ? db.people : []);
-      const related = knownPeople.find(person => lower.includes(person.name.toLowerCase().split(" ")[0]) || lower.includes(person.name.toLowerCase())) || null;
+      const related = knownPeople.find(person => {
+        const name = String(person?.name || "").trim().toLowerCase();
+        if (!name) return false;
+        return lower.includes(name.split(" ")[0]) || lower.includes(name);
+      }) || null;
       const hasPrayer = /\bpray|prayer|sick|surgery|wisdom|anxiety|hard\b/i.test(raw);
       const hasMeeting = /\bmet|coffee|talked|lunch|meeting|called|sat down\b/i.test(raw);
       const hasFollow = /\bfollow up|check in|remind me|ask .* about|send .* text|send .* note\b/i.test(raw);
@@ -4022,7 +4153,7 @@
           return Date.now() - new Date(grab.createdAt).getTime() >= promptAfterMs;
         }
         return new Date(grab.remindAt + "T00:00:00") <= today;
-      }).sort((a, b) => urgencyRank(b.urgency) - urgencyRank(a.urgency) || b.createdAt.localeCompare(a.createdAt));
+      }).sort((a, b) => urgencyRank(b.urgency) - urgencyRank(a.urgency) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
     }
 
     function urgencyRank(urgency) {
@@ -4032,21 +4163,21 @@
     function openQuickGrabs() {
       return db.quickGrabs
         .filter(grab => !["Done", "Converted", "Archived"].includes(grab.status))
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
     }
 
     function peopleToCareFor() {
       const today = startOfToday();
       return db.people
         .filter(person => person.nextFollowUpDate && new Date(person.nextFollowUpDate + "T00:00:00") <= new Date(today.getTime() + 7 * 86400000))
-        .sort((a, b) => a.nextFollowUpDate.localeCompare(b.nextFollowUpDate));
+        .sort((a, b) => String(a.nextFollowUpDate || "").localeCompare(String(b.nextFollowUpDate || "")));
     }
 
     function taskDueSoon() {
       const cutoff = new Date(startOfToday().getTime() + 7 * 86400000);
       return db.tasks
         .filter(task => task.status !== "Done / Archived" && task.dueDate && new Date(task.dueDate + "T00:00:00") <= cutoff)
-        .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+        .sort((a, b) => String(a.dueDate || "").localeCompare(String(b.dueDate || "")));
     }
 
     function hashPin(pin) {
@@ -4195,22 +4326,35 @@
 
     function disableLocalEncryptionRecord() {
       const autoMemoryVault = normalizeAutoMemoryVault(memoryVaultCache || emptyAutoMemoryVault());
-      settings.localEncryptionEnabled = false;
-      settings.localEncryptionHint = "";
-      settings.localEncryptionUpdatedAt = "";
-      vaultPassphrase = "";
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-      localStorage.setItem(COPY_KEY, JSON.stringify(customCopy));
-      if (autosaveDraftsCache && Object.keys(autosaveDraftsCache).length) {
-        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(autosaveDraftsCache));
-        mirrorToIndexedDb(AUTOSAVE_KEY, autosaveDraftsCache);
+      const nextSettings = normalizeSettings({
+        ...settings,
+        localEncryptionEnabled: false,
+        localEncryptionHint: "",
+        localEncryptionUpdatedAt: ""
+      });
+      try {
+        writeLocalStorageBatch([
+          [STORAGE_KEY, JSON.stringify(db)],
+          [COPY_KEY, JSON.stringify(customCopy)],
+          [AUTOSAVE_KEY, autosaveDraftsCache && Object.keys(autosaveDraftsCache).length ? JSON.stringify(autosaveDraftsCache) : null],
+          [AUTO_MEMORY_KEY, autoMemoryVault.snapshots.length ? JSON.stringify(autoMemoryVault) : null],
+          [SETTINGS_KEY, JSON.stringify(nextSettings)],
+          [CALM_MODE_KEY, nextSettings.calmMode ? "on" : "off"],
+          [ENCRYPTED_STORAGE_KEY, null]
+        ]);
+      } catch (error) {
+        console.warn("Could not stage plaintext records while disabling encrypted storage", error);
+        showToast("Encrypted storage remains on because plaintext records could not be saved.", "error");
+        return false;
       }
-      autosaveDraftsCache = null;
-      localStorage.removeItem(ENCRYPTED_STORAGE_KEY);
+      settings = nextSettings;
+      vaultPassphrase = "";
       mirrorToIndexedDb(STORAGE_KEY, db);
       mirrorToIndexedDb(COPY_KEY, customCopy);
-      if (autoMemoryVault.snapshots.length) saveAutoMemoryVault(autoMemoryVault);
-      saveSettings();
+      if (autosaveDraftsCache && Object.keys(autosaveDraftsCache).length) mirrorToIndexedDb(AUTOSAVE_KEY, autosaveDraftsCache);
+      if (autoMemoryVault.snapshots.length) mirrorToIndexedDb(AUTO_MEMORY_KEY, autoMemoryVault);
+      mirrorToIndexedDb(SETTINGS_KEY, settings);
+      autosaveDraftsCache = null;
       memoryVaultCache = null;
       deleteFromIndexedDb(ENCRYPTED_STORAGE_KEY);
       return true;
@@ -4428,21 +4572,58 @@
 
     function duplicatePersonPairs(sourcePeople, limit = 12) {
       const people = sourcePeople.map(person => {
-        const name = normalizedName(person.name);
-        return { person, name, first: name.split(" ")[0] || "" };
+        const name = normalizedName(person.name).slice(0, 160);
+        const parts = name.split(" ").filter(Boolean);
+        return {
+          person,
+          name,
+          first: parts[0] || "",
+          last: parts.at(-1) || "",
+          prefix: name.slice(0, 3),
+          lengthBand: Math.floor(name.length / 4)
+        };
       });
       const pairs = [];
+      const indexes = new Map();
+      const compared = new Set();
+      const maximumComparisons = Math.max(600, Math.min(12000, people.length * 24));
+      let comparisons = 0;
+      const candidateKeys = entry => [
+        `first:${entry.first}`,
+        `last:${entry.last}`,
+        `prefix:${entry.prefix}`,
+        `length:${entry.lengthBand}`,
+        `length:${entry.lengthBand - 1}`,
+        `length:${entry.lengthBand + 1}`
+      ].filter(key => !key.endsWith(":"));
       for (let i = 0; i < people.length; i += 1) {
-        for (let j = i + 1; j < people.length; j += 1) {
-          const a = people[i];
-          const b = people[j];
-          if (!a.name || !b.name) continue;
+        const b = people[i];
+        if (!b.name) continue;
+        const candidates = new Set();
+        for (const key of candidateKeys(b)) {
+          const bucket = indexes.get(key) || [];
+          bucket.slice(-32).forEach(index => candidates.add(index));
+        }
+        for (const j of candidates) {
+          if (comparisons >= maximumComparisons) break;
+          const pairKey = `${j}:${i}`;
+          if (compared.has(pairKey)) continue;
+          compared.add(pairKey);
+          comparisons += 1;
+          const a = people[j];
           const sameFirst = a.first && a.first === b.first;
           const contained = a.name.includes(b.name) || b.name.includes(a.name);
-          const close = contained || (Math.abs(a.name.length - b.name.length) <= 3 && levenshtein(a.name, b.name) <= 3);
+          const close = contained || levenshtein(a.name, b.name, 3) <= 3;
           if (sameFirst || close) pairs.push([a.person, b.person]);
           if (pairs.length === limit) return pairs;
         }
+        for (const key of candidateKeys(b)) {
+          const bucket = indexes.get(key) || [];
+          bucket.push(i);
+          if (bucket.length > 64) bucket.shift();
+          indexes.set(key, bucket);
+        }
+        if (comparisons >= maximumComparisons) break;
       }
       return pairs;
     }
@@ -4845,7 +5026,7 @@
 
       const sorted = candidates.sort((a, b) => a.tier - b.tier
         || String(a.sortDate || "9999").localeCompare(String(b.sortDate || "9999"))
-        || a.id.localeCompare(b.id));
+        || String(a.id || "").localeCompare(String(b.id || "")));
       const seenSubjects = new Set();
       return sorted.filter(item => {
         if (seenSubjects.has(item.subjectKey)) return false;
@@ -5640,57 +5821,81 @@
       if (!visibleGroups.length) {
         return `<section class="section">${emptyState("Nothing matched that search. Try one smaller word, a first name, or a phrase you remember.")}</section>`;
       }
-      return visibleGroups.map(group => `
-        <section class="section">
-          <div class="section-header">
-            <h2 class="section-title">${escapeHtml(group.label)}</h2>
-            <span class="pill gray">${group.items.length}</span>
-          </div>
-          ${group.items.map(renderSearchResultCard).join("")}
-        </section>
-      `).join("");
+      return visibleGroups.map(group => {
+        const key = group.key || slugifyCopyKey(group.label);
+        const limit = Math.max(SEARCH_BATCH_SIZE, Number(view.searchVisibleLimits?.[key]) || SEARCH_BATCH_SIZE);
+        const visibleItems = group.items.slice(0, limit);
+        const remaining = Math.max(0, group.items.length - visibleItems.length);
+        return `
+          <section class="section" data-search-group="${escapeHtml(key)}">
+            <div class="section-header">
+              <h2 class="section-title">${escapeHtml(group.label)}</h2>
+              <span class="pill gray">${group.items.length}</span>
+            </div>
+            ${visibleItems.map(renderSearchResultCard).join("")}
+            ${remaining ? `
+              <div class="section-footer" role="status" aria-live="polite">
+                <span class="meta">Showing ${visibleItems.length} of ${group.items.length} ${escapeHtml(group.label.toLowerCase())}.</span>
+                <button class="button quiet small" data-action="search-show-more" data-group="${escapeHtml(key)}">Show ${Math.min(SEARCH_BATCH_SIZE, remaining)} more</button>
+              </div>
+            ` : ""}
+          </section>
+        `;
+      }).join("");
     }
 
     function buildSearchResults(query) {
       const q = query.toLowerCase();
       const matches = fields => fields.filter(Boolean).join(" ").toLowerCase().includes(q);
+      const isSensitive = (record, collection) => aiPrivacyTierForRecord(record, collection) !== "Normal";
       const personMap = personMapFrom(db.people);
+      const prayerMap = new Map(db.prayerRequests.map(prayer => [prayer.id, prayer]));
       const people = db.people
-        .filter(person => matches([person.name, person.personType, person.status, person.careLevel, person.phone, person.email, person.classYear, person.fraternitySorority, person.major, person.hometown, person.rufInvolvement, person.donorStatus, person.followUpReason]))
-        .map(person => ({
-          kind: "Person",
-          title: person.name,
-          meta: `${person.personType} - ${person.careLevel}`,
-          preview: person.followUpReason || person.rufInvolvement || "Open the profile for the whole ministry history.",
-          personId: person.id,
-          createdAt: person.createdAt,
-          updatedAt: person.updatedAt
-        }));
+        .filter(person => {
+          const safeFields = [person.name, person.personType, person.status, person.careLevel, person.phone, person.email, person.classYear, person.fraternitySorority, person.major, person.hometown, person.rufInvolvement, person.donorStatus];
+          return matches(settings.includeSensitiveInSearch ? [...safeFields, person.followUpReason] : safeFields);
+        })
+        .map(person => {
+          const sensitive = isSensitive(person, "people");
+          return {
+            kind: "Person",
+            title: person.name,
+            meta: `${person.personType} - ${person.careLevel}`,
+            preview: maskedText(sensitive, "Sensitive care detail hidden.", person.followUpReason || person.rufInvolvement || "Open the profile for the whole ministry history."),
+            personId: person.id,
+            createdAt: person.createdAt,
+            updatedAt: person.updatedAt
+          };
+        });
       const quickGrabs = db.quickGrabs
-        .filter(grab => (settings.includeArchivedInSearch || grab.status !== "Archived") && (settings.includeSensitiveInSearch || !grab.sensitiveFlag) && matches([grab.rawContent, grab.detectedPersonName, grab.detectedPrayerRequest, grab.detectedFollowUp, grab.detectedMeetingSummary, grab.category, grab.status, grab.urgency]))
-        .map(grab => ({
-          kind: "Quick Grab",
-          title: `${grab.category} Quick Grab`,
-          meta: `${grab.status} - ${grab.urgency}`,
-          preview: maskedText(grab.sensitiveFlag, "Sensitive grabbed item - open to process.", grab.rawContent),
-          quickGrabId: grab.id,
-          createdAt: grab.createdAt,
-          updatedAt: grab.updatedAt
-        }));
+        .filter(grab => (settings.includeArchivedInSearch || grab.status !== "Archived") && (settings.includeSensitiveInSearch || !isSensitive(grab, "quickGrabs")) && matches([grab.rawContent, grab.detectedPersonName, grab.detectedPrayerRequest, grab.detectedFollowUp, grab.detectedMeetingSummary, grab.category, grab.status, grab.urgency]))
+        .map(grab => {
+          const sensitive = isSensitive(grab, "quickGrabs");
+          return {
+            kind: "Quick Grab",
+            title: `${grab.category} Quick Grab`,
+            meta: `${grab.status} - ${grab.urgency}`,
+            preview: maskedText(sensitive, "Sensitive grabbed item - open to process.", grab.rawContent),
+            quickGrabId: grab.id,
+            createdAt: grab.createdAt,
+            updatedAt: grab.updatedAt
+          };
+        });
       const prayers = db.prayerRequests
         .filter(prayer => {
           if (!settings.includeArchivedInSearch && prayer.status === "Archived") return false;
-          if (!settings.includeSensitiveInSearch && prayer.sensitivityLevel === "Sensitive") return false;
+          if (!settings.includeSensitiveInSearch && isSensitive(prayer, "prayerRequests")) return false;
           const person = personMap.get(prayer.relatedPersonId);
           return matches([person?.name, prayer.request, prayer.status, prayer.sensitivityLevel, prayer.shareableStatus, prayer.answeredNote]);
         })
         .map(prayer => {
           const person = personMap.get(prayer.relatedPersonId);
+          const sensitive = isSensitive(prayer, "prayerRequests");
           return {
             kind: "Prayer Request",
             title: person ? person.name : "Unlinked person",
             meta: `${prayer.status} - ${dateLabel(prayer.dateAdded)}`,
-            preview: maskedText(prayer.sensitivityLevel === "Sensitive", "Sensitive prayer request - open related profile.", prayer.request),
+            preview: maskedText(sensitive, "Sensitive prayer request - open related profile.", prayer.request),
             personId: prayer.relatedPersonId,
             prayerStatus: prayer.status,
             createdAt: prayer.createdAt,
@@ -5701,17 +5906,18 @@
         });
       const meetings = db.meetingNotes
         .filter(meeting => {
-          if (!settings.includeSensitiveInSearch && meeting.sensitiveFlag) return false;
+          if (!settings.includeSensitiveInSearch && isSensitive(meeting, "meetingNotes")) return false;
           const person = personMap.get(meeting.relatedPersonId);
           return matches([person?.name, meeting.meetingType, meeting.location, meeting.whatWeTalkedAbout, meeting.whatToRemember, meeting.prayerRequestText, meeting.nextFaithfulStep]);
         })
         .map(meeting => {
           const person = personMap.get(meeting.relatedPersonId);
+          const sensitive = isSensitive(meeting, "meetingNotes");
           return {
             kind: "Meeting Note",
             title: `${meeting.meetingType} meeting${person ? " with " + person.name : ""}`,
             meta: dateLabel(meeting.meetingDate),
-            preview: maskedText(meeting.sensitiveFlag, "Sensitive meeting note - open related profile.", meeting.whatWeTalkedAbout),
+            preview: maskedText(sensitive, "Sensitive meeting note - open related profile.", meeting.whatWeTalkedAbout),
             personId: meeting.relatedPersonId,
             createdAt: meeting.createdAt,
             updatedAt: meeting.updatedAt,
@@ -5721,17 +5927,18 @@
         });
       const notes = db.notes
         .filter(note => {
-          if (!settings.includeSensitiveInSearch && note.sensitiveFlag) return false;
+          if (!settings.includeSensitiveInSearch && isSensitive(note, "notes")) return false;
           const person = personMap.get(note.relatedPersonId);
           return matches([person?.name, note.noteType, note.content]);
         })
         .map(note => {
           const person = personMap.get(note.relatedPersonId);
+          const sensitive = isSensitive(note, "notes");
           return {
             kind: "Note",
             title: `${note.noteType}${person ? " - " + person.name : ""}`,
             meta: dateLabel(note.noteDate),
-            preview: maskedText(note.sensitiveFlag, "Sensitive note - open related profile.", note.content),
+            preview: maskedText(sensitive, "Sensitive note - open related profile.", note.content),
             personId: note.relatedPersonId,
             createdAt: note.createdAt,
             updatedAt: note.updatedAt,
@@ -5741,16 +5948,21 @@
         });
       const tasks = db.tasks
         .filter(task => {
+          const relatedPrayer = prayerMap.get(task.relatedPrayerRequestId);
+          const sensitive = isSensitive(task, "tasks") || isSensitive(relatedPrayer, "prayerRequests");
+          if (!settings.includeSensitiveInSearch && sensitive) return false;
           const person = personMap.get(task.relatedPersonId);
           return matches([person?.name, task.title, task.status, task.sourceType]);
         })
         .map(task => {
           const person = personMap.get(task.relatedPersonId);
+          const relatedPrayer = prayerMap.get(task.relatedPrayerRequestId);
+          const sensitive = isSensitive(task, "tasks") || isSensitive(relatedPrayer, "prayerRequests");
           return {
             kind: "Follow-Up Task",
-            title: task.title,
+            title: maskedText(sensitive, "Sensitive follow-up task", task.title),
             meta: `${task.status} - ${dateLabel(task.dueDate)}`,
-            preview: person ? `Connected to ${person.name}` : task.sourceType || "Follow-up task",
+            preview: maskedText(sensitive, "Sensitive follow-up detail hidden.", person ? `Connected to ${person.name}` : task.sourceType || "Follow-up task"),
             personId: task.relatedPersonId,
             createdAt: task.createdAt,
             updatedAt: task.updatedAt,
@@ -5759,12 +5971,12 @@
           };
         });
       return [
-        { label: "People", items: people },
-        { label: "Quick Grabs", items: quickGrabs },
-        { label: "Prayer Requests", items: prayers },
-        { label: "Meeting Notes", items: meetings },
-        { label: "Notes", items: notes },
-        { label: "Follow-Up Tasks", items: tasks }
+        { key: "people", label: "People", items: people },
+        { key: "captures", label: "Quick Grabs", items: quickGrabs },
+        { key: "prayers", label: "Prayer Requests", items: prayers },
+        { key: "meetings", label: "Meeting Notes", items: meetings },
+        { key: "notes", label: "Notes", items: notes },
+        { key: "tasks", label: "Follow-Up Tasks", items: tasks }
       ];
     }
 
@@ -6480,13 +6692,13 @@
       return {
         openQuickGrabs: quickGrabs
           .filter(grab => openQuickGrabStatuses.includes(grab.status))
-          .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")),
+          .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || ""))),
         staleQuickGrabs: quickGrabs
           .filter(grab => !["Done", "Converted", "Archived"].includes(grab.status) && dataJanitorDateBefore(grab.createdAt, daysAgo(7)))
-          .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")),
+          .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || ""))),
         dueFollowUpTasks: tasks
           .filter(task => task.status !== "Done / Archived" && task.dueDate && String(task.dueDate).slice(0, 10) <= today)
-          .sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || "")),
+          .sort((a, b) => String(a.dueDate || "").localeCompare(String(b.dueDate || ""))),
         peopleNeedingCare: activePeople
           .filter(person => (person.nextFollowUpDate && String(person.nextFollowUpDate).slice(0, 10) <= soon) || !person.lastMeaningfulInteraction || dataJanitorDateBefore(person.lastMeaningfulInteraction, daysAgo(45)))
           .sort((a, b) => String(a.nextFollowUpDate || "9999-99-99").localeCompare(String(b.nextFollowUpDate || "9999-99-99"))),
@@ -7772,7 +7984,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const selectedPersonId = personChoice.existingPersonId || validation.existingPersonId || "";
       const peopleOptions = db.people
         .slice()
-        .sort((a, b) => a.name.localeCompare(b.name))
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
         .map(person => `<option value="${escapeHtml(person.id)}" ${selectedPersonId === person.id ? "selected" : ""}>${escapeHtml(person.name)} - ${escapeHtml(person.personType)}</option>`)
         .join("");
       const disabled = validation.errors.length ? "disabled" : "";
@@ -7868,7 +8080,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const lower = raw.toLowerCase();
       const parsed = parseQuickGrab(raw, grab?.category ? [grab.category] : [], grab?.urgency || "Whenever", db.people);
       const possiblePeople = parsed.detectedPersonName ? similarPeople(parsed.detectedPersonName) : [];
-      const matchedPerson = parsed.relatedPersonId ? personById(parsed.relatedPersonId) : null;
+      const personMatchAmbiguous = possiblePeople.length > 1;
+      const matchedPerson = !personMatchAmbiguous && parsed.relatedPersonId ? personById(parsed.relatedPersonId) : null;
       const hasMeeting = Boolean(parsed.detectedMeetingSummary) || /\b(met|meeting|coffee|lunch|called|talked|sat down|conversation)\b/i.test(raw);
       const hasPrayer = Boolean(parsed.detectedPrayerRequest) || /\b(pray|prayer|wisdom|sick|surgery|anxiety|hard|grief)\b/i.test(raw);
       const hasFollowUp = Boolean(parsed.detectedFollowUp || parsed.detectedFollowUpDate) || /\b(follow up|check in|ask .* about|send .* text|remind me|reach out)\b/i.test(raw);
@@ -7883,6 +8096,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         lower,
         parsed,
         possiblePeople,
+        personMatchAmbiguous,
         matchedPerson,
         hasMeeting,
         hasPrayer,
@@ -8223,12 +8437,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         : grab.sensitiveFlag ? "medium" : "low";
       const personText = flags.matchedPerson
         ? `Matched ${flags.matchedPerson.name}.`
+        : flags.personMatchAmbiguous
+          ? `Multiple people may match ${flags.parsed.detectedPersonName}. Choose the person before saving.`
         : flags.parsed.detectedPersonName
           ? `Possible new or unmatched person: ${flags.parsed.detectedPersonName}.`
           : "No clear person match.";
       const typeText = proposedActions.map(action => labelFromCamel(action.actionType)).join(", ");
       const warnings = [
         ...flags.warnings,
+        ...(flags.personMatchAmbiguous ? ["Multiple people match this capture. Choose the person explicitly before saving."] : []),
         ...(flags.noGoodPersonMatch ? ["No good person match was found. Review before creating a person."] : []),
         ...(flags.ambiguousFollowUp ? ["Follow-up timing is ambiguous. Choose a real due date before saving."] : [])
       ];
@@ -8251,6 +8468,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         result: {
           possiblePersonId: flags.matchedPerson ? flags.matchedPerson.id : "",
           possiblePersonName: flags.matchedPerson ? flags.matchedPerson.name : flags.parsed.detectedPersonName,
+          possiblePersonIds: flags.possiblePeople.map(person => person.id),
+          personMatchAmbiguous: flags.personMatchAmbiguous,
           recordTypes: proposedActions.map(action => action.actionType),
           detectedDate: flags.parsed.detectedDate,
           detectedFollowUpDate: flags.parsed.detectedFollowUpDate,
@@ -8798,7 +9017,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const pinnedIds = new Set(settings.pinnedPersonIds);
       const people = db.people
         .filter(person => !q || [person.name, person.personType, person.careLevel, person.rufInvolvement, person.phone, person.email].join(" ").toLowerCase().includes(q))
-        .sort((a, b) => Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id)) || a.name.localeCompare(b.name));
+        .sort((a, b) => Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id)) || String(a.name || "").localeCompare(String(b.name || "")));
+      const visibleLimit = Math.max(PEOPLE_BATCH_SIZE, Number(view.peopleVisibleLimit) || PEOPLE_BATCH_SIZE);
+      const visiblePeople = people.slice(0, visibleLimit);
+      const remaining = Math.max(0, people.length - visiblePeople.length);
       return `
         ${renderTopbar("People", "Who are you looking for or caring for?")}
         <section class="section" aria-label="Find a person">
@@ -8811,7 +9033,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           </div>
         </section>
         <section class="section" aria-label="People">
-          ${people.length ? `<div class="person-list">${people.map(renderPersonListCard).join("")}</div>` : emptyState("No people match that search.")}
+          ${people.length ? `
+            <div class="person-list">${visiblePeople.map(renderPersonListCard).join("")}</div>
+            <div class="section-footer" role="status" aria-live="polite">
+              <span class="meta">Showing ${visiblePeople.length} of ${people.length} people.</span>
+              ${remaining ? `<button class="button quiet small" data-action="people-show-more">Show ${Math.min(PEOPLE_BATCH_SIZE, remaining)} more</button>` : ""}
+            </div>
+          ` : emptyState("No people match that search.")}
         </section>
       `;
     }
@@ -9016,7 +9244,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function renderProfileHistorySection(key, title, items, options = {}) {
       if (!items.length) return "";
       const expanded = Array.isArray(view.profileHistoryExpanded) && view.profileHistoryExpanded.includes(key);
-      const visibleItems = expanded ? items : items.slice(0, 3);
+      const expandedLimit = Math.max(PROFILE_HISTORY_BATCH_SIZE, Number(view.profileHistoryVisibleLimits?.[key]) || PROFILE_HISTORY_BATCH_SIZE);
+      const visibleItems = expanded ? items.slice(0, expandedLimit) : items.slice(0, 3);
+      const remaining = Math.max(0, items.length - visibleItems.length);
       return `
         <section class="profile-history-section ${options.fullWidth ? "full-width" : ""}" data-profile-history="${escapeHtml(key)}" data-visible-count="${visibleItems.length}">
           <div class="section-header">
@@ -9024,6 +9254,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             <button class="button quiet small" data-action="profile-history-toggle" data-id="${escapeHtml(key)}" aria-expanded="${expanded}">${expanded ? "Show recent" : "View all"}</button>
           </div>
           <div class="profile-preview-list">${visibleItems.map(item => renderProfilePreview(options.kind || key, item, expanded)).join("")}</div>
+          ${expanded && remaining ? `
+            <div class="section-footer" role="status" aria-live="polite">
+              <span class="meta">Showing ${visibleItems.length} of ${items.length} ${escapeHtml(title.toLowerCase())}.</span>
+              <button class="button quiet small" data-action="profile-history-more" data-id="${escapeHtml(key)}">Show ${Math.min(PROFILE_HISTORY_BATCH_SIZE, remaining)} more</button>
+            </div>
+          ` : ""}
         </section>
       `;
     }
@@ -9073,6 +9309,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         view.profileCaptureDraftText = "";
         view.profileCaptureDraftTargetId = "";
         view.profileHistoryExpanded = [];
+        view.profileHistoryVisibleLimits = {};
       }
       const capturePerson = personById(view.profileCapturePersonId) || person;
       view.profileCapturePersonId = capturePerson.id;
@@ -9209,10 +9446,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return true;
       });
       if (view.prayerFilter === "Answered Prayer") return prayers.filter(prayer => prayer.status === "Answered");
-      if (view.prayerFilter === "Archived Prayer Requests") return prayers.filter(prayer => prayer.status === "Archived").sort((a, b) => (b.archivedAt || b.updatedAt || "").localeCompare(a.archivedAt || a.updatedAt || ""));
+      if (view.prayerFilter === "Archived Prayer Requests") return prayers.filter(prayer => prayer.status === "Archived").sort((a, b) => String(b.archivedAt || b.updatedAt || "").localeCompare(String(a.archivedAt || a.updatedAt || "")));
       if (view.prayerFilter === "Sensitive Prayer Requests") return prayers.filter(prayer => prayer.sensitivityLevel === "Sensitive");
-      if (view.prayerFilter === "Recently Added") return prayers.sort((a, b) => b.dateAdded.localeCompare(a.dateAdded)).slice(0, 12);
-      if (view.prayerFilter === "By Person") return prayers.sort((a, b) => (personById(a.relatedPersonId)?.name || "").localeCompare(personById(b.relatedPersonId)?.name || ""));
+      if (view.prayerFilter === "Recently Added") return prayers.sort((a, b) => String(b.dateAdded || b.createdAt || "").localeCompare(String(a.dateAdded || a.createdAt || ""))).slice(0, 12);
+      if (view.prayerFilter === "By Person") return prayers.sort((a, b) => String(personById(a.relatedPersonId)?.name || "").localeCompare(String(personById(b.relatedPersonId)?.name || "")));
       return prayers;
     }
 
@@ -10391,7 +10628,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               <button class="button small" data-action="sheet-close" aria-label="Close">Close</button>
             </div>
             <div class="sheet-form">
-              ${sheetField("Name", `<input class="input" id="sheet-person-name" aria-describedby="sheet-duplicate-warning" placeholder="First and last name">`)}
+              ${sheetField("Name", `<input class="input" id="sheet-person-name" maxlength="120" autocomplete="name" aria-describedby="sheet-duplicate-warning" placeholder="First and last name">`)}
               <div class="notice" id="sheet-duplicate-warning" role="status" aria-live="polite" aria-atomic="true">Type a name to check for similar people.</div>
               <label class="check" id="sheet-duplicate-confirm-row" style="display:none;">
                 <input type="checkbox" id="sheet-duplicate-confirm">
@@ -10752,9 +10989,24 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function toggleProfileHistory(key) {
       const expanded = new Set(Array.isArray(view.profileHistoryExpanded) ? view.profileHistoryExpanded : []);
-      if (expanded.has(key)) expanded.delete(key);
-      else expanded.add(key);
+      if (expanded.has(key)) {
+        expanded.delete(key);
+        view.profileHistoryVisibleLimits = { ...(view.profileHistoryVisibleLimits || {}) };
+        delete view.profileHistoryVisibleLimits[key];
+      } else {
+        expanded.add(key);
+        view.profileHistoryVisibleLimits = { ...(view.profileHistoryVisibleLimits || {}), [key]: PROFILE_HISTORY_BATCH_SIZE };
+      }
       view.profileHistoryExpanded = Array.from(expanded);
+      render();
+    }
+
+    function showMoreProfileHistory(key) {
+      if (!Array.isArray(view.profileHistoryExpanded) || !view.profileHistoryExpanded.includes(key)) return;
+      view.profileHistoryVisibleLimits = {
+        ...(view.profileHistoryVisibleLimits || {}),
+        [key]: (Number(view.profileHistoryVisibleLimits?.[key]) || PROFILE_HISTORY_BATCH_SIZE) + PROFILE_HISTORY_BATCH_SIZE
+      };
       render();
     }
 
@@ -10819,6 +11071,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         peopleSearch.addEventListener("input", event => {
           const caret = Number.isFinite(event.target.selectionStart) ? event.target.selectionStart : event.target.value.length;
           view.search = event.target.value;
+          view.peopleVisibleLimit = PEOPLE_BATCH_SIZE;
           saveCurrentDraftNow();
           render();
           const restoredSearch = document.getElementById("people-search");
@@ -10833,6 +11086,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         globalSearch.addEventListener("input", event => {
           const caret = Number.isFinite(event.target.selectionStart) ? event.target.selectionStart : event.target.value.length;
           view.globalSearch = event.target.value;
+          view.searchVisibleLimits = {};
           saveCurrentDraftNow();
           render();
           const restoredSearch = document.getElementById("global-search");
@@ -11463,13 +11717,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function aiActionExistingPersonId(proposal, sourceQuickGrab, action = {}) {
       const result = proposal?.result && typeof proposal.result === "object" ? proposal.result : {};
-      const candidates = [
+      const explicitCandidates = [
         action.relatedPersonId,
         action.personId,
-        action.targetPersonId,
-        result.possiblePersonId,
-        sourceQuickGrab?.relatedPersonId
+        action.targetPersonId
       ].filter(Boolean);
+      const inferredCandidates = result.personMatchAmbiguous === true
+        ? []
+        : [result.possiblePersonId, sourceQuickGrab?.relatedPersonId].filter(Boolean);
+      const candidates = [...explicitCandidates, ...inferredCandidates];
       return candidates.find(id => personById(id)) || "";
     }
 
@@ -11585,7 +11841,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const needsPersonResolution = selectedNeedsPerson && !existingPersonId;
 
       if (!proposal) errors.push("This AI suggestion is no longer available.");
-      if (!settings.aiMockMode) errors.push("Mock AI is off in Settings.");
       if (!selected.length) errors.push("No supported actions are selected.");
       for (const index of actionIndexes) {
         const action = actions[index];
@@ -11758,6 +12013,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             title: aiActionText(action, ["title", "task", "label"]) || validation.sourceQuickGrab?.detectedFollowUp || "Follow up",
             dueDate: aiSafeDate(action.dueDate || proposal.result?.detectedFollowUpDate, daysFromNow(3)),
             status: action.status || "Today / Soon",
+            sensitiveFlag,
             updatePersonDates: false
           });
           if (!task) throw new Error("Could not create the follow-up task.");
@@ -11777,6 +12033,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           if (!person) throw new Error("Could not find the person to update.");
           const patch = aiSafePersonUpdatePatch(action);
           Object.assign(person, patch);
+          if (sensitiveFlag) person.sensitiveFlag = true;
           person.updatedFromAIProposalId = proposal.id;
           person.lastAIProposalId = proposal.id;
           person.updatedAt = nowISO();
@@ -11813,7 +12070,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       proposal.createdPersonId = createdPersonId;
       proposal.result = {
         ...(proposal.result && typeof proposal.result === "object" ? proposal.result : {}),
-        mockOnly: true,
+        mockOnly: proposal.result?.backendMode === "real" ? false : proposal.result?.mockOnly === true,
         executedAt: timestamp,
         savedAt: timestamp,
         approvedAt: timestamp,
@@ -12168,6 +12425,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         render();
       }
       if (action === "person-pin") togglePinnedPerson(id);
+      if (action === "people-show-more") {
+        view.peopleVisibleLimit = (Number(view.peopleVisibleLimit) || PEOPLE_BATCH_SIZE) + PEOPLE_BATCH_SIZE;
+        render();
+      }
       if (action === "person-create") openCreatePersonSheet();
       if (action === "person-followed-up") markFollowedUp(id);
       if (action === "profile-brief-open") openProfileBrief(id);
@@ -12176,6 +12437,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "profile-followup-copy") copyProfileFollowUpDraft(id, button.dataset.draftIndex);
       if (action === "profile-followup-mark") markProfileFollowedUp(id);
       if (action === "profile-history-toggle") toggleProfileHistory(id);
+      if (action === "profile-history-more") showMoreProfileHistory(id);
       if (action === "followup-draft") openFollowUpDraftMockAiGate(button.dataset.sourceType, id);
       if (action === "person-remove-photo") removePersonPhoto(id);
       if (action === "person-edit-field") openEditFieldSheet("person", id, button.dataset.field, button.dataset.label);
@@ -12183,6 +12445,16 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "prayer-filter") {
         view.prayerFilter = button.dataset.filter;
         render();
+      }
+      if (action === "search-show-more") {
+        const group = button.dataset.group;
+        if (group) {
+          view.searchVisibleLimits = {
+            ...(view.searchVisibleLimits || {}),
+            [group]: (Number(view.searchVisibleLimits?.[group]) || SEARCH_BATCH_SIZE) + SEARCH_BATCH_SIZE
+          };
+          render();
+        }
       }
       if (action === "prayer-steward") openPrayerStewardMockAiGate();
       if (action === "prayer-steward-copy") copyPrayerStewardAudit();
@@ -12550,32 +12822,54 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function similarPeople(name) {
-      const cleaned = name.trim().toLowerCase();
+      return similarPeopleInList(name, db.people);
+    }
+
+    function similarPeopleInList(name, people = []) {
+      const cleaned = normalizedName(name).slice(0, 160);
       if (!cleaned) return [];
-      return db.people.filter(person => {
-        const candidate = person.name.toLowerCase();
-        return candidate.includes(cleaned) || cleaned.includes(candidate) || levenshtein(candidate, cleaned) <= 3 || candidate.split(" ")[0] === cleaned.split(" ")[0];
+      return people.filter(person => {
+        const candidate = normalizedName(person.name).slice(0, 160);
+        if (!candidate) return false;
+        return candidate.includes(cleaned)
+          || cleaned.includes(candidate)
+          || candidate.split(" ")[0] === cleaned.split(" ")[0]
+          || levenshtein(candidate, cleaned, 3) <= 3;
       });
     }
 
-    function levenshtein(a, b) {
-      const matrix = Array.from({ length: a.length + 1 }, () => []);
-      for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
-      for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
-      for (let i = 1; i <= a.length; i++) {
-        for (let j = 1; j <= b.length; j++) {
-          matrix[i][j] = a[i - 1] === b[j - 1]
-            ? matrix[i - 1][j - 1]
-            : Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+    function levenshtein(left, right, maxDistance = Number.POSITIVE_INFINITY) {
+      const a = String(left || "").slice(0, 160);
+      const b = String(right || "").slice(0, 160);
+      const bounded = Number.isFinite(maxDistance);
+      if (bounded && Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1;
+      if (!a.length) return b.length;
+      if (!b.length) return a.length;
+      let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+      let current = new Array(b.length + 1);
+      for (let i = 1; i <= a.length; i += 1) {
+        current[0] = i;
+        let rowMinimum = current[0];
+        const start = bounded ? Math.max(1, i - maxDistance) : 1;
+        const end = bounded ? Math.min(b.length, i + maxDistance) : b.length;
+        for (let j = 1; j < start; j += 1) current[j] = maxDistance + 1;
+        for (let j = start; j <= end; j += 1) {
+          current[j] = a[i - 1] === b[j - 1]
+            ? previous[j - 1]
+            : Math.min(previous[j - 1] + 1, current[j - 1] + 1, previous[j] + 1);
+          rowMinimum = Math.min(rowMinimum, current[j]);
         }
+        for (let j = end + 1; j <= b.length; j += 1) current[j] = maxDistance + 1;
+        if (bounded && rowMinimum > maxDistance) return maxDistance + 1;
+        [previous, current] = [current, previous];
       }
-      return matrix[a.length][b.length];
+      return previous[b.length];
     }
 
     function createPerson(name, phone = "") {
       const person = {
         id: uid("person"),
-        name,
+        name: String(name || "").trim().slice(0, 120),
         personType: "Student",
         status: "New",
         careLevel: "Get to know",
@@ -12602,6 +12896,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return new Promise((resolve, reject) => {
         if (!file || !file.type || !file.type.startsWith("image/")) {
           reject(new Error("Choose an image file."));
+          return;
+        }
+        if (Number(file.size) > 20 * 1024 * 1024) {
+          reject(new Error("Choose an image smaller than 20 MB."));
           return;
         }
         const reader = new FileReader();
@@ -12762,6 +13060,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         title,
         dueDate,
         status: options.status || "Today / Soon",
+        sensitiveFlag: Boolean(options.sensitiveFlag),
         sourceType: "Person Profile",
         relatedPrayerRequestId: null,
         relatedMeetingNoteId: null,
@@ -13013,12 +13312,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         aiConfirmValidationErrors: [],
         aiConfirmValidationWarnings: [],
         search: "",
+        peopleVisibleLimit: PEOPLE_BATCH_SIZE,
+        searchVisibleLimits: {},
 	        quickGrabDraftText: "",
 	        profileCaptureOwnerId: "",
 	        profileCapturePersonId: "",
 	        profileCaptureDraftText: "",
 	        profileCaptureDraftTargetId: "",
 	        profileHistoryExpanded: [],
+	        profileHistoryVisibleLimits: {},
 	        globalSearch: "",
 	        focusMode: true,
 	        locked: Boolean(settings.appLockEnabled && settings.pinHash),

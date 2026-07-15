@@ -194,6 +194,17 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 - Turn off Mask Sensitive Previews and confirm details return.
 - If using Device Vault, verify the app asks for the vault passphrase after a fresh launch.
 
+## Adversarial Calm OS Checks
+
+- With synthetic data only, load more than 40 People and confirm the first view is bounded, Show more adds the next batch, and every person remains reachable.
+- Search for a phrase matching more than 30 synthetic people. Confirm Search reveals results in batches without moving the caret or hiding later matches.
+- Add more than 50 synthetic notes to one profile. Confirm the normal preview remains three items and View all reveals 50 at a time without changing the quiet profile top.
+- Create two synthetic people sharing a first name, then process a capture using only that first name. Confirm neither person is preselected and final save requires an explicit person choice.
+- Mark a synthetic capture sensitive, approve a follow-up task and person-detail update, then inspect Today and Search with preview masking on. Confirm the saved text exists locally but is not exposed in either preview.
+- Import a synthetic version-2 backup containing a person ID with no name. Confirm the person appears as **Unnamed person**, Capture still works, and re-export succeeds. Never use deliberately malformed fixtures with real ministry data.
+- Start typing a synthetic capture while an app update is waiting. Tap Update now and confirm activation occurs only after the draft is recoverable; reopen offline and confirm the cached app shell loads.
+- Exercise a real browser storage-quota boundary only on a disposable synthetic origin. Confirm a failed restore keeps the previous data and a failed Device Vault disable leaves encryption enabled. Node regression evidence does not prove Safari quota behavior.
+
 ## Pass Criteria
 
 - No blank screens.

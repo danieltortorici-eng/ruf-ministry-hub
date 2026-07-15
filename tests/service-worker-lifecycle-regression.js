@@ -26,16 +26,21 @@ class FakeRequest {
 
 let runtimePutResolve = null;
 let delayRuntimePut = false;
+let rejectNetwork = false;
+const cachedAppShell = { ok: true, source: "cached-app-shell" };
 
 const context = vm.createContext({
   Request: FakeRequest,
   Response: { error: () => ({ ok: false }) },
   URL,
   console,
-  fetch: async request => ({
-    ok: true,
-    clone: () => ({ ok: true, request })
-  }),
+  fetch: async request => {
+    if (rejectNetwork) throw new Error("synthetic offline");
+    return {
+      ok: true,
+      clone: () => ({ ok: true, request })
+    };
+  },
   caches: {
     async open() {
       return {
@@ -45,8 +50,8 @@ const context = vm.createContext({
             await new Promise(resolve => { runtimePutResolve = resolve; });
           }
         },
-        async match() {
-          return null;
+        async match(asset) {
+          return String(asset?.url || asset) === "ruf-ministry-hub.html" ? cachedAppShell : null;
         }
       };
     },
@@ -115,6 +120,25 @@ async function run() {
   runtimePutResolve();
   await responsePromise;
   assert(responseSettled === true, "runtime fetch completes after the cache write");
+
+  rejectNetwork = true;
+  let navigationPromise;
+  listeners.get("fetch")({
+    request: new FakeRequest("https://synthetic.invalid/app?offline=1", { mode: "navigate", destination: "document" }),
+    respondWith(promise) {
+      navigationPromise = Promise.resolve(promise);
+    }
+  });
+  assert(await navigationPromise === cachedAppShell, "offline document navigation falls back to the cached app shell");
+
+  let apiResponded = false;
+  listeners.get("fetch")({
+    request: new FakeRequest("https://synthetic.invalid/api/ai/quick-grab"),
+    respondWith() {
+      apiResponded = true;
+    }
+  });
+  assert(apiResponded === false, "service worker leaves same-origin API requests to the network without respondWith");
 
   console.log("All service-worker lifecycle regression checks passed.");
 }

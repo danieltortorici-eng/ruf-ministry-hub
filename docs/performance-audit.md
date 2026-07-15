@@ -73,6 +73,18 @@ The candidate is also 2,590 raw bytes smaller than the accepted base despite the
 
 Focused synthetic evidence covers IDB-only plaintext and encrypted startup, corrupt-local recovery and fail-closed pause, no-IDB first install, orphan vault state, revision races, synthetic encryption failure/retry, draft lifecycle flush, and proposal resumption. Real Safari storage quota, OS process termination, battery, memory, LCP, INP, and CLS remain `NOT VERIFIED`.
 
+## Phase 12 bounded-work and durability closure
+
+- People renders 40 cards initially and in 40-card increments. A 500-person synthetic set retains all records while limiting initial card output to 40.
+- Search builds every matching result in memory but renders each result group in 30-item increments. A 499-match synthetic People result renders 30, then 60 on request.
+- Profile history keeps three-item normal previews and reveals expanded collections in 50-record increments. A 300-note profile renders 3 normally, then 50/100/all through deliberate disclosure.
+- Duplicate review now normalizes names once, indexes bounded candidate buckets, uses a two-row distance calculation with a maximum-distance early exit, and caps comparisons at 12,000 for a 500-person set. The advisory result remains capped at 12.
+- New profile photos reject inputs above 20 MB before decode and retain the existing 360px/0.78 JPEG resize boundary.
+- Plaintext writes request the IndexedDB recovery mirror before localStorage confirmation. Backup restore and Device Vault disable use rollback/staging boundaries under deterministic quota failures.
+- Service-worker activation waits for a successful draft/vault flush; offline document navigation returns the cached app shell in the executed worker simulation.
+
+These are deterministic source/VM measurements, not browser performance vitals. Real 390px/430px Safari rendering, slow-device input latency, storage quota behavior, memory, battery, LCP, INP, CLS, and OS suspension remain `NOT VERIFIED` pending manual device evidence.
+
 ## Evidence limits
 
 Source measurements are `OBSERVED`; focused synthetic regressions are `AUTOMATED`. LCP, INP, CLS, memory, battery, real Safari quota, slow-device behavior, and real offline startup are `NOT VERIFIED` until browser/device evidence is captured.

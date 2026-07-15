@@ -36,7 +36,7 @@ Run the service-worker update lifecycle simulation:
 node tests/service-worker-lifecycle-regression.js
 ```
 
-This check uses a synthetic in-memory service-worker environment. It proves that install caches the app shell without activating a replacement worker, unrelated messages cannot activate it, and only the app's explicit update action sends the activation message. It does not register a worker in a real browser or access the network.
+This check uses a synthetic in-memory service-worker environment. It proves that install caches the app shell without activating a replacement worker, unrelated messages cannot activate it, only the app's explicit update action sends the activation message, offline document navigation returns the cached shell, and `/api/*` is not intercepted. It does not register a worker in a real browser or access the network.
 
 Run the focused current person-profile checks:
 
@@ -101,6 +101,8 @@ RUF_HUB_APP_DIR="/path/to/ruf-ministry-hub-deploy" node tests/regression-harness
 - Cloudflare Pages AI health and Quick Grab proposal routes, mock fallback, OpenAI Responses API request shape, no frontend key exposure, and AI proposal approval before any local save.
 - Deploy-source AI Review cards, including selected/skipped action persistence across reload, editable action drafts, partial approval filtering, and confirmation-only record creation.
 - Deploy-source Quick Grab AI proposal review and save behavior; behavioral harnesses do not use the stale `dist` artifact as application authority.
+- Calm OS adversarial shapes for empty data, 500 People, 600 Search matches, 300 profile-history records, long/missing names, corrupt/missing dates, repeated capture taps, oversized photos, same-name ambiguity, sensitive derived records, offline/unavailable AI, and truthful real-backend approval provenance.
+- Deterministic local persistence failures proving IndexedDB recovery-write ordering, backup-restore rollback, Device Vault disable staging, and app-update recovery flush ordering.
 - Cloudflare Pages extensionless rewrites, direct HTML loading, and service worker bypass for `/api/*` routes.
 - Cloudflare Pages deploy-root shape, public file boundary, Pages Function locations, and Wrangler/ignore guardrails.
 - Service worker registration shape, cache version, and current asset list.
@@ -112,7 +114,7 @@ RUF_HUB_APP_DIR="/path/to/ruf-ministry-hub-deploy" node tests/regression-harness
 
 ## Notes
 
-These are local logic/render checks. They are not a full browser screenshot suite and not a real iPhone Safari test. They do not call live backend or OpenAI services and intentionally avoid cloud sync, native APIs, and real iOS Share Sheet behavior. Pages Function code is exercised locally with synthetic inputs and stubbed network calls.
+These are local logic/render checks. They are not a full browser screenshot suite and not a real iPhone Safari test. They do not call live backend or OpenAI services and intentionally avoid cloud sync, native APIs, and real iOS Share Sheet behavior. Pages Function code is exercised locally with synthetic inputs and stubbed network calls. Synthetic quota and service-worker simulations are not proof of real Safari quota, OS suspension, or installed-PWA behavior.
 
 Run the manual iPhone Safari checklist before relying on a release on your phone:
 

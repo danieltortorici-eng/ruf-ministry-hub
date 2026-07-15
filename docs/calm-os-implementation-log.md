@@ -202,3 +202,20 @@ Status: implemented locally on 2026-07-15; verification recorded with the phase 
 - Raised switches/small buttons to 44px, strengthened focus/muted contrast, added horizontal safe-area and `dvh` sheet handling, wrapping navigation labels, landscape adjustments, reduced-motion preservation, and forced-colors support.
 - Added focused recovery and accessibility suites to `npm test`; paired `APP_VERSION`, package version, service-worker cache v43, and CSP hash. Storage identifiers, backup envelope, Functions, Workers, production settings, and secrets are unchanged.
 - Manual VoiceOver, Dynamic Type, real iPhone landscape/one-handed behavior, real browser process termination, and performance vitals remain explicitly `NOT VERIFIED` pending Phase 12/13 browser and device evidence.
+
+## Phase 12 — Regression and adversarial QA
+
+Status: implemented locally on 2026-07-15; final command evidence recorded with the phase commit.
+
+- Bounded People to 40-card increments, Search groups to 30-result increments, and expanded profile history to 50-record increments while preserving complete stored access through Show more.
+- Replaced worst-case quadratic full-matrix name comparison with normalized, length-banded candidate indexes, a deterministic comparison ceiling, and a two-row bounded-distance helper. New names are capped at 120 characters; imported legacy names remain nondestructively displayable.
+- Made same-first-name capture matching explicitly ambiguous: raw capture stays unlinked, the proposal stores candidate IDs and low confidence, and final approval requires an explicit person choice.
+- Closed privacy propagation boundaries so sensitive capture approvals create sensitive tasks and mark sensitive person-detail updates; Today and Search keep the derived text masked.
+- Closed sensitive Search query leakage, missing/corrupt-date sort crashes, real-backend approval when local mock fallback is off, and false `mockOnly` provenance after real-backend approval.
+- Made app update activation await draft/vault recovery flush. Added offline cached-document navigation and `/api/*` pass-through execution coverage.
+- Requested an IndexedDB recovery write before surfacing a plaintext quota failure; made backup restore roll back in-memory/local state; staged all plaintext before Device Vault disable so failure leaves the prior encrypted envelope intact.
+- Normalized legacy person records missing a name to the explicit `Unnamed person` fallback and hardened capture parsing. Import, render, capture, and re-export remain safe.
+- Adversarial fixtures cover empty data, long/no-photo people, 500 people, 600 Search matches, 300 profile records, multiple overdue items, sensitive prayer/task/profile text, same-name ambiguity, missing/corrupt dates, repeated taps, oversized photos, unavailable AI, backend provenance, quota failures, service-worker interruption, and old backup shapes.
+- Read-only adversarial re-audit reported no unresolved P0/P1 defects. Real Safari/iPhone, VoiceOver, OS suspension, storage quota, slow-device vitals, and live provider AI remain `NOT VERIFIED`, not synthetic passes.
+- `npm test`, both extreme-timezone regression runs, the five tracked mandatory regression commands, all six tracked JavaScript syntax commands, CSP/deploy validation, generated-output drift, secret audit, asset audit, and whitespace checks exited 0.
+- Newer control-center instructions name candidate Calendar/Secretary/optimizer/steward files and four related suites that are not present in this branch's tracked tree. Those absent paths are `NOT VERIFIED`; no substitute pass is claimed and no unapproved candidate Worker was created, deployed, bound, or credentialed.

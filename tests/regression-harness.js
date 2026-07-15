@@ -513,6 +513,182 @@ function testProposalActionsDoNotHidePersonDateUpdates() {
   assert(result.duplicateBlocked && result.meetingsAfterRetry === 1 && result.tasksAfterRetry === 1, "repeated proposal execution cannot duplicate structured records");
 }
 
+async function testAdversarialApprovalAndPersistenceBoundaries() {
+  resetApp("emptyData()");
+  const privacy = appEval(`(() => {
+    const person = createPerson("Privacy Propagation Person");
+    const grab = makeQuickGrab("Private follow-up source", [], "Whenever", null, { captureSource: "main", personId: person.id });
+    grab.sensitiveFlag = true;
+    db.quickGrabs.push(grab);
+    const proposal = emptyAiProposal({
+      sourceType: "quickGrab",
+      sourceId: grab.id,
+      proposalKey: captureProposalKey(grab),
+      sensitivityRisk: "high",
+      result: { possiblePersonId: person.id, possiblePersonName: person.name, mockOnly: true },
+      proposedActions: [
+        { actionId: "private-task", actionType: "createFollowUpTask", title: "Private approved task phrase", dueDate: todayISO() },
+        { actionId: "private-person-update", actionType: "updatePerson", updates: { followUpReason: "Private approved profile phrase", nextFollowUpDate: todayISO() } }
+      ]
+    });
+    db.aiProposals.push(proposal);
+    const validation = validateAiActionExecution(proposal, [0, 1], { personChoice: { mode: "existing", existingPersonId: person.id }, enforcePersonChoice: true });
+    applyAiProposalActions(proposal, validation, { convertQuickGrab: true });
+    settings.includeSensitiveInSearch = true;
+    settings.maskSensitivePreviews = true;
+    return {
+      validationErrors: validation.errors,
+      taskSensitive: db.tasks[0].sensitiveFlag,
+      personSensitive: person.sensitiveFlag,
+      today: JSON.stringify(buildTodayRecommendations()),
+      search: JSON.stringify(buildSearchResults("Private approved")),
+      taskTitle: db.tasks[0].title,
+      reason: person.followUpReason
+    };
+  })()`);
+  assert(privacy.validationErrors.length === 0 && privacy.taskSensitive && privacy.personSensitive, "sensitive approved actions propagate privacy to follow-up tasks and person-detail updates");
+  assert(privacy.taskTitle === "Private approved task phrase" && privacy.reason === "Private approved profile phrase", "approved sensitive content remains stored locally without being discarded");
+  assert(!privacy.today.includes("Private approved task phrase") && !privacy.today.includes("Private approved profile phrase") && !privacy.search.includes("Private approved task phrase") && !privacy.search.includes("Private approved profile phrase"), "Today and Search mask privacy propagated from a sensitive capture");
+
+  resetApp("emptyData()");
+  const backendApproval = appEval(`(() => {
+    settings.aiMockMode = false;
+    const person = createPerson("Backend Approval Person");
+    const grab = makeQuickGrab("Backend reviewed note", [], "Whenever", null, { captureSource: "main", personId: person.id });
+    db.quickGrabs.push(grab);
+    const proposal = normalizeBackendQuickGrabProposal({
+      ok: true,
+      mode: "real",
+      route: "/api/ai/quick-grab",
+      proposal: {
+        title: "Backend proposal",
+        summary: "Review this grounded note.",
+        confidence: "high",
+        relatedPersonIdSuggestion: person.id,
+        detectedPersonName: person.name,
+        proposedActions: [{ actionId: "backend-note", actionType: "createNote", relatedPersonId: person.id, content: "Backend approved note body" }],
+        result: { mockOnly: false }
+      }
+    }, grab);
+    db.aiProposals.push(proposal);
+    const validation = validateAiActionExecution(proposal, [0], { personChoice: { mode: "existing", existingPersonId: person.id }, enforcePersonChoice: true });
+    applyAiProposalActions(proposal, validation, { convertQuickGrab: true });
+    return {
+      errors: validation.errors,
+      notes: db.notes.length,
+      note: db.notes[0]?.content,
+      status: proposal.status,
+      backendMode: proposal.result.backendMode,
+      mockOnly: proposal.result.mockOnly
+    };
+  })()`);
+  assert(backendApproval.errors.length === 0 && backendApproval.notes === 1 && backendApproval.note === "Backend approved note body", "reviewed backend proposals can be approved when local mock fallback is off");
+  assert(backendApproval.status === "approved" && backendApproval.backendMode === "real" && backendApproval.mockOnly === false, "approved real-backend proposals preserve truthful provenance metadata");
+
+  resetApp("emptyData()");
+  const updateOrder = await appEval(`(async () => {
+    const originalFlush = flushRecoveryState;
+    const originalRegistration = serviceWorkerRegistration;
+    const events = [];
+    let release;
+    serviceWorkerRegistration = { waiting: { postMessage() { events.push("post"); } } };
+    flushRecoveryState = () => new Promise(resolve => {
+      release = () => { events.push("flush"); resolve(true); };
+    });
+    const updatePromise = applyAppUpdate();
+    await Promise.resolve();
+    const beforeRelease = events.slice();
+    release();
+    const success = await updatePromise;
+    flushRecoveryState = () => Promise.resolve(false);
+    const refused = await applyAppUpdate();
+    flushRecoveryState = originalFlush;
+    serviceWorkerRegistration = originalRegistration;
+    return { beforeRelease, events, success, refused };
+  })()`);
+  assert(updateOrder.beforeRelease.length === 0 && updateOrder.events[0] === "flush" && updateOrder.events[1] === "post", "app update waits for draft and vault recovery flush before activating the service worker");
+  assert(updateOrder.success === true && updateOrder.refused === false && updateOrder.events.filter(event => event === "post").length === 1, "failed recovery flush leaves the waiting update inactive");
+
+  resetApp("emptyData()");
+  const quotaBoundary = appEval(`(() => {
+    settings.autoMemoryVaultEnabled = false;
+    const originalSet = localStorage.setItem;
+    const originalMirror = mirrorToIndexedDb;
+    const events = [];
+    mirrorToIndexedDb = key => { events.push("mirror:" + key); };
+    localStorage.setItem = function(key, value) {
+      if (key === STORAGE_KEY) throw new Error("synthetic quota");
+      return originalSet.call(localStorage, key, value);
+    };
+    let threw = false;
+    try { saveData(); } catch (error) { threw = true; events.push("threw"); }
+    localStorage.setItem = originalSet;
+    mirrorToIndexedDb = originalMirror;
+    return { threw, events };
+  })()`);
+  assert(quotaBoundary.threw && quotaBoundary.events[0] === `mirror:${appEval("STORAGE_KEY")}` && quotaBoundary.events.at(-1) === "threw", "quota failure requests an IndexedDB recovery write before surfacing an unconfirmed save");
+
+  resetApp("emptyData()");
+  const restoreRollback = appEval(`(() => {
+    settings.autoMemoryVaultEnabled = false;
+    const original = createPerson("Original Restore Person");
+    saveData();
+    saveSettings();
+    const oldStorage = localStorage.getItem(STORAGE_KEY);
+    const oldSettings = localStorage.getItem(SETTINGS_KEY);
+    const payload = JSON.parse(JSON.stringify(currentPortablePayload()));
+    payload.data.people = [{ id: "replacement", name: "Replacement Person" }];
+    payload.settings.launchScreen = "people";
+    const originalSet = localStorage.setItem;
+    localStorage.setItem = function(key, value) {
+      if (key === STORAGE_KEY) throw new Error("synthetic restore quota");
+      return originalSet.call(localStorage, key, value);
+    };
+    const restored = applyRestoredPayload(payload, { captureBefore: false });
+    localStorage.setItem = originalSet;
+    return {
+      restored,
+      personName: db.people[0]?.name,
+      launchScreen: settings.launchScreen,
+      storageSame: localStorage.getItem(STORAGE_KEY) === oldStorage,
+      settingsSame: localStorage.getItem(SETTINGS_KEY) === oldSettings,
+      originalId: original.id
+    };
+  })()`);
+  assert(restoreRollback.restored === false && restoreRollback.personName === "Original Restore Person" && restoreRollback.launchScreen === "today", "backup restore rolls in-memory state back when persistence cannot complete");
+  assert(restoreRollback.storageSame && restoreRollback.settingsSame, "failed backup restore preserves the prior persisted data and settings");
+
+  resetApp("emptyData()");
+  const vaultDisableRollback = appEval(`(() => {
+    settings.localEncryptionEnabled = true;
+    settings.localEncryptionHint = "keep";
+    vaultPassphrase = "synthetic-passphrase";
+    autosaveDraftsCache = { "capture:main": { fields: { "quick-text": "Safe draft" } } };
+    memoryVaultCache = emptyAutoMemoryVault();
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(COPY_KEY);
+    localStorage.setItem(ENCRYPTED_STORAGE_KEY, JSON.stringify({ version: 1, ciphertext: "sentinel" }));
+    const envelopeBefore = localStorage.getItem(ENCRYPTED_STORAGE_KEY);
+    const originalSet = localStorage.setItem;
+    localStorage.setItem = function(key, value) {
+      if (key === COPY_KEY) throw new Error("synthetic plaintext quota");
+      return originalSet.call(localStorage, key, value);
+    };
+    const disabled = disableLocalEncryptionRecord();
+    localStorage.setItem = originalSet;
+    return {
+      disabled,
+      encryptionEnabled: settings.localEncryptionEnabled,
+      hint: settings.localEncryptionHint,
+      envelopeSame: localStorage.getItem(ENCRYPTED_STORAGE_KEY) === envelopeBefore,
+      plaintextAbsent: localStorage.getItem(STORAGE_KEY) === null && localStorage.getItem(COPY_KEY) === null,
+      passphraseKept: vaultPassphrase === "synthetic-passphrase"
+    };
+  })()`);
+  assert(vaultDisableRollback.disabled === false && vaultDisableRollback.encryptionEnabled && vaultDisableRollback.hint === "keep" && vaultDisableRollback.passphraseKept, "failed vault disable leaves encryption state and unlock context intact");
+  assert(vaultDisableRollback.envelopeSame && vaultDisableRollback.plaintextAbsent, "failed vault disable preserves the prior envelope without a mixed plaintext state");
+}
+
 function testCoreLocalActions() {
   resetApp("demoData()");
   const firstPersonId = db().people[0].id;
@@ -684,6 +860,218 @@ function testPeopleCardCalmContract() {
   const peopleMarkup = appEval('view.screen = "people"; renderPeople()');
   assert(peopleMarkup.includes("Who are you looking for or caring for?") && peopleMarkup.includes('aria-label="People"'), "People asks one calm screen question");
   assert(!peopleMarkup.includes("Preferred contact") && !peopleMarkup.includes("Created") && !peopleMarkup.includes("Updated"), "People list omits dormant and administrative metadata");
+}
+
+async function testAdversarialCalmOsDataShapes() {
+  resetApp("emptyData()");
+  appEval('settings.backupReminderDays = "0"');
+  const emptyToday = appEval("renderToday()");
+  assert(emptyToday.includes("Nothing is pressing") && (emptyToday.match(/data-today-section=/g) || []).length === 3, "empty database keeps the complete calm Today contract");
+
+  const largePeople = appEval(`(() => {
+    const longName = "Alexandria " + "Verylongministryname".repeat(18) + " Rivera";
+    db.people = Array.from({ length: 500 }, (_, index) => ({
+      id: "adversarial_person_" + index,
+      name: index === 0 ? longName : "Synthetic Person " + String(index).padStart(3, "0"),
+      personType: index % 2 ? "Student" : "Donor",
+      careLevel: "Get to know",
+      rufInvolvement: index % 3 ? "" : "Leadership team",
+      nextFollowUpDate: index % 17 ? "" : "corrupt-date",
+      followUpReason: "",
+      photoDataUrl: ""
+    }));
+    view.screen = "people";
+    view.search = "";
+    view.peopleVisibleLimit = PEOPLE_BATCH_SIZE;
+    const first = renderPeople();
+    view.peopleVisibleLimit += PEOPLE_BATCH_SIZE;
+    const second = renderPeople();
+    return { first, second, longName };
+  })()`);
+  assert((largePeople.first.match(/data-person-card=/g) || []).length === 40 && largePeople.first.includes("Showing 40 of 500 people"), "hundreds of people render in a bounded first batch");
+  assert((largePeople.second.match(/data-person-card=/g) || []).length === 80 && largePeople.second.includes("Showing 80 of 500 people"), "People progressive disclosure preserves access without a 500-card initial render");
+  assert(largePeople.first.includes(largePeople.longName) && largePeople.first.includes('data-person-thumbnail="initials"'), "very long names and no-photo initials remain available in the bounded People list");
+  assert(!largePeople.first.includes("Invalid Date") && !largePeople.first.includes("NaN"), "corrupt People dates do not leak broken date text");
+
+  const largeSearch = appEval(`(() => {
+    view.searchVisibleLimits = {};
+    const results = buildSearchResults("Synthetic Person");
+    const first = renderSearchResults(results);
+    view.searchVisibleLimits.people = 60;
+    const second = renderSearchResults(results);
+    return { first, second, stored: results.find(group => group.key === "people").items.length };
+  })()`);
+  assert(largeSearch.stored === 499 && (largeSearch.first.match(/class="item compact focus-card"/g) || []).length === 30 && largeSearch.first.includes("Showing 30 of 499 people"), "hundreds of Search matches render in a bounded first batch");
+  assert((largeSearch.second.match(/class="item compact focus-card"/g) || []).length === 60 && largeSearch.second.includes("Showing 60 of 499 people"), "Search progressive disclosure preserves access to later matches");
+
+  const duplicateScale = appEval(`(() => {
+    db.people = Array.from({ length: 500 }, (_, index) => ({
+      id: "unique_duplicate_" + index,
+      name: "Unique" + String(index).padStart(4, "0") + " Surname" + String(index).padStart(4, "0")
+    }));
+    const original = levenshtein;
+    let calls = 0;
+    levenshtein = (...args) => { calls += 1; return original(...args); };
+    const pairs = duplicatePersonPairs(db.people);
+    levenshtein = original;
+    const created = createPerson("N".repeat(1000));
+    return { calls, pairs: pairs.length, createdLength: created.name.length, boundedDistance: levenshtein("a".repeat(1000), "z".repeat(1000), 3) };
+  })()`);
+  assert(duplicateScale.calls <= 12000 && duplicateScale.pairs <= 12, "500 names keep duplicate comparison work and advisory results under deterministic ceilings");
+  assert(duplicateScale.createdLength === 120 && duplicateScale.boundedDistance > 3 && html.includes('maxlength="120"'), "new-person names and fuzzy comparison work are bounded while legacy imported display remains nondestructive");
+
+  resetApp("emptyData()");
+  const searchPrivacy = appEval(`(() => {
+    const person = createPerson("Sensitive Search Person");
+    person.followUpReason = "Private pastoral search phrase";
+    person.sensitiveFlag = true;
+    const task = createProfileFollowUpRecord(person.id, { title: "Private task search phrase", dueDate: todayISO(), sensitiveFlag: true, updatePersonDates: false });
+    settings.includeSensitiveInSearch = false;
+    settings.maskSensitivePreviews = true;
+    const excluded = JSON.stringify(buildSearchResults("Private"));
+    settings.includeSensitiveInSearch = true;
+    const masked = JSON.stringify(buildSearchResults("Private"));
+    settings.maskSensitivePreviews = false;
+    const revealed = JSON.stringify(buildSearchResults("Private"));
+    return { excluded, masked, revealed, taskId: task.id };
+  })()`);
+  assert(!searchPrivacy.excluded.includes("Private pastoral search phrase") && !searchPrivacy.excluded.includes("Private task search phrase"), "Search excludes sensitive private text unless sensitive search is explicitly enabled");
+  assert(searchPrivacy.masked.includes("Sensitive care detail hidden") && searchPrivacy.masked.includes("Sensitive follow-up task") && !searchPrivacy.masked.includes("Private pastoral search phrase") && !searchPrivacy.masked.includes("Private task search phrase"), "enabled sensitive Search still masks private previews by default");
+  assert(searchPrivacy.revealed.includes("Private pastoral search phrase") && searchPrivacy.revealed.includes("Private task search phrase"), "private Search text appears only after both explicit search and preview settings allow it");
+
+  resetApp("emptyData()");
+  const missingDates = appEval(`(() => {
+    db.quickGrabs = [
+      { ...makeQuickGrab("Missing created date"), id: "missing_created", createdAt: "" },
+      { ...makeQuickGrab("Valid created date"), id: "valid_created", createdAt: nowISO() }
+    ];
+    db.prayerRequests = [
+      { id: "missing_prayer_date", relatedPersonId: "", request: "No date", status: "Active", sensitivityLevel: "Normal", dateAdded: "", createdAt: "" },
+      { id: "valid_prayer_date", relatedPersonId: "", request: "Has date", status: "Active", sensitivityLevel: "Normal", dateAdded: todayISO(), createdAt: nowISO() }
+    ];
+    view.prayerFilter = "Recently Added";
+    return { captures: openQuickGrabs().length, prayers: getFilteredPrayers().length, markup: renderPrayerRequests() };
+  })()`);
+  assert(missingDates.captures === 2 && missingDates.prayers === 2 && !missingDates.markup.includes("Invalid Date"), "missing capture and prayer dates sort and render without crashing or inventing broken dates");
+
+  resetApp("emptyData()");
+  const overdue = appEval(`(() => {
+    const recent = createPerson("Recently Overdue");
+    recent.nextFollowUpDate = daysAgo(1);
+    const oldest = createPerson("Most Overdue");
+    oldest.nextFollowUpDate = daysAgo(21);
+    const middle = createPerson("Middle Overdue");
+    middle.nextFollowUpDate = daysAgo(8);
+    const prayer = {
+      id: "adversarial_sensitive_prayer", relatedPersonId: "", request: "Synthetic private prayer detail",
+      dateAdded: todayISO(), status: "Follow-Up Needed", sensitivityLevel: "Sensitive", followUpDate: todayISO(),
+      shareableStatus: "Private", createdAt: nowISO(), updatedAt: nowISO()
+    };
+    db.prayerRequests.push(prayer);
+    const queue = buildTodayRecommendations();
+    return { queue, oldestId: oldest.id, prayerId: prayer.id };
+  })()`);
+  assert(overdue.queue[0].recordId === overdue.oldestId && overdue.queue[0].reasonCode === "overdue-person-follow-up", "multiple overdue people deterministically choose the longest-overdue follow-up");
+  assert(overdue.queue.find(item => item.recordId === overdue.prayerId).detail === "Sensitive prayer concern hidden.", "adversarial sensitive prayer text remains masked in recommendations");
+
+  resetApp("emptyData()");
+  const extensiveProfile = appEval(`(() => {
+    const person = createPerson("Extensive History Person");
+    for (let index = 0; index < 300; index += 1) {
+      createProfileNoteRecord(person.id, {
+        content: "Synthetic historical note " + index,
+        noteDate: index % 29 === 0 ? "bad-date" : daysAgo(index % 365),
+        noteType: "Care note"
+      });
+    }
+    view.screen = "person";
+    view.personId = person.id;
+    const markup = renderPersonProfile();
+    return { markup, storedNotes: db.notes.length };
+  })()`);
+  assert(extensiveProfile.storedNotes === 300 && (extensiveProfile.markup.match(/data-profile-preview="notes"/g) || []).length === 3, "extensive profile history stays stored while the initial Notes preview remains bounded");
+  assert((extensiveProfile.markup.match(/data-profile-preview="timeline"/g) || []).length === 3 && extensiveProfile.markup.length < 80000, "extensive history keeps the normal profile output bounded and story-first");
+  const expandedHistory = appEval(`(() => {
+    toggleProfileHistory("notes");
+    const first = renderPersonProfile();
+    showMoreProfileHistory("notes");
+    const second = renderPersonProfile();
+    view.profileHistoryVisibleLimits.notes = 500;
+    const all = renderPersonProfile();
+    return { first, second, all, stored: db.notes.length };
+  })()`);
+  assert((expandedHistory.first.match(/data-profile-preview="notes"/g) || []).length === 50 && expandedHistory.first.includes("Showing 50 of 300 notes"), "View all history begins with a bounded 50-record batch");
+  assert((expandedHistory.second.match(/data-profile-preview="notes"/g) || []).length === 100 && expandedHistory.second.includes("Showing 100 of 300 notes"), "expanded history reveals additional records in calm batches");
+  assert((expandedHistory.all.match(/data-profile-preview="notes"/g) || []).length === 300 && expandedHistory.stored === 300, "progressive history disclosure retains complete access to every stored record");
+
+  resetApp("emptyData()");
+  const ambiguousMatch = appEval(`(() => {
+    const smith = createPerson("Alex Smith");
+    const jones = createPerson("Alex Jones");
+    const grab = makeQuickGrab("Met Alex for coffee and follow up tomorrow", [], "Whenever", null, { captureSource: "main" });
+    db.quickGrabs.push(grab);
+    const proposal = createQuickGrabMockAiProposal(grab.id);
+    const executable = allExecutableAiActionIndexes(proposal);
+    const validation = validateAiActionExecution(proposal, executable, { enforcePersonChoice: true });
+    return {
+      smith: smith.id,
+      jones: jones.id,
+      grabPerson: grab.relatedPersonId,
+      possiblePersonId: proposal.result.possiblePersonId,
+      possiblePersonIds: proposal.result.possiblePersonIds,
+      ambiguous: proposal.result.personMatchAmbiguous,
+      confidence: proposal.confidence,
+      existingPersonId: validation.existingPersonId,
+      personErrors: validation.personResolutionErrors,
+      records: db.notes.length + db.meetingNotes.length + db.prayerRequests.length + db.tasks.length
+    };
+  })()`);
+  assert(ambiguousMatch.ambiguous && ambiguousMatch.confidence === "low" && ambiguousMatch.possiblePersonIds.length === 2, "same-first-name capture is classified as a low-confidence ambiguous match");
+  assert(ambiguousMatch.grabPerson === "" && ambiguousMatch.possiblePersonId === "" && ambiguousMatch.existingPersonId === "" && ambiguousMatch.personErrors.length > 0, "ambiguous capture never preselects either person and requires an explicit choice");
+  assert(ambiguousMatch.records === 0, "ambiguous matching creates no structured record before human resolution and approval");
+
+  resetApp("emptyData()");
+  makeElement("quick-text").value = "Repeated tap capture stays singular";
+  sandbox.__repeatCaptureButton = { dataset: { target: "quick-text" }, disabled: false };
+  appEval('submitUnifiedCapture("main", "", "later", __repeatCaptureButton)');
+  appEval('submitUnifiedCapture("main", "", "later", __repeatCaptureButton)');
+  assert(db().quickGrabs.length === 1 && sandbox.__repeatCaptureButton.disabled, "repeated capture taps create one saved raw capture");
+
+  let oversizedPhotoRejected = false;
+  try {
+    await appEval('resizeProfilePhoto({ type: "image/jpeg", size: 21 * 1024 * 1024 })');
+  } catch (error) {
+    oversizedPhotoRejected = /smaller than 20 MB/.test(String(error?.message || error));
+  }
+  assert(oversizedPhotoRejected && html.includes('const maxSide = 360') && html.includes('toDataURL("image/jpeg", 0.78)'), "oversized photos fail before decoding while accepted photos retain bounded resize rules");
+
+  assert(html.includes("@media (max-width: 980px)") && html.includes("@media (max-width: 560px)") && html.includes("orientation: landscape") && html.includes("env(safe-area-inset-right)"), "390px, 430px, and landscape layout contracts retain responsive safe-area rules");
+}
+
+async function testUnavailableCaptureProcessing() {
+  resetApp("emptyData()");
+  const fallbackId = appEval(`(() => {
+    settings.quickGrabAiMode = "backendQuickGrab";
+    settings.aiMockMode = true;
+    const grab = makeQuickGrab("Offline fallback capture", [], "Whenever", null, { captureSource: "main" });
+    db.quickGrabs.push(grab);
+    return grab.id;
+  })()`);
+  sandbox.fetch = async () => { throw new Error("synthetic offline"); };
+  await appEval(`createQuickGrabBackendAiProposal("${fallbackId}")`);
+  assert(db().quickGrabs[0].rawContent === "Offline fallback capture" && db().quickGrabs[0].processingState === "review" && db().aiProposals.length === 1, "offline backend processing preserves capture and safely falls back to one local proposal");
+
+  resetApp("emptyData()");
+  const failedId = appEval(`(() => {
+    settings.quickGrabAiMode = "backendQuickGrab";
+    settings.aiMockMode = false;
+    const grab = makeQuickGrab("Offline retry capture", [], "Whenever", null, { captureSource: "main" });
+    db.quickGrabs.push(grab);
+    return grab.id;
+  })()`);
+  await appEval(`createQuickGrabBackendAiProposal("${failedId}")`);
+  assert(db().quickGrabs[0].rawContent === "Offline retry capture" && db().quickGrabs[0].processingState === "failed" && db().aiProposals.length === 0, "unavailable AI without local fallback leaves one retryable unprocessed capture and no partial proposal");
+  delete sandbox.fetch;
 }
 
 function testCalmProfileContract() {
@@ -1048,6 +1436,25 @@ function testContextualDatesAndLegacyProfileCompatibility() {
   assert(compatibility.createdHasPreferredContact === false, "new people no longer create preferred-contact data");
   assert(!compatibility.personMarkup.includes("Preferred contact") && !compatibility.peopleMarkup.includes("Preferred contact") && !compatibility.createMarkup.includes("Preferred contact"), "preferred contact remains dormant in normal profile, card, and creation UI");
   assert(!compatibility.personMarkup.includes("Created:") && !compatibility.peopleMarkup.includes("Updated:"), "normal profile and people UI hide administrative timestamps");
+
+  resetApp("emptyData()");
+  const unnamedCompatibility = appEval(`(() => {
+    const legacy = {
+      app: "RUF Ministry Hub",
+      version: 2,
+      data: {
+        people: [{ id: "person_missing_name" }],
+        quickGrabs: [], notes: [], meetingNotes: [], prayerRequests: [], tasks: []
+      }
+    };
+    const restored = applyRestoredPayload(legacy, { captureBefore: false });
+    const capture = makeQuickGrab("Met someone for coffee", [], "Whenever", db.people);
+    const card = renderPersonListCard(db.people[0]);
+    const exported = JSON.parse(JSON.stringify(currentPortablePayload()));
+    return { restored, name: db.people[0].name, captureText: capture.rawContent, card, exportedName: exported.data.people[0].name };
+  })()`);
+  assert(unnamedCompatibility.restored && unnamedCompatibility.name === "Unnamed person" && unnamedCompatibility.card.includes("Unnamed person"), "legacy person records without a name import and render with an explicit calm fallback");
+  assert(unnamedCompatibility.captureText === "Met someone for coffee" && unnamedCompatibility.exportedName === "Unnamed person", "missing-name legacy data remains capture-safe and re-exports through the compatible schema");
 }
 
 function testServiceWorkerShape() {
@@ -1101,11 +1508,14 @@ async function run() {
   testQuickGrabSharedUrlImport();
   testUnifiedCaptureAndProposalSafety();
   testProposalActionsDoNotHidePersonDateUpdates();
+  await testAdversarialApprovalAndPersistenceBoundaries();
   testCoreLocalActions();
   testAdhdModeAndTodaySectionVisibility();
   testAutopilotAndAttentionPresets();
   testTodayRecommendationPriorityAndActions();
   testPeopleCardCalmContract();
+  await testAdversarialCalmOsDataShapes();
+  await testUnavailableCaptureProcessing();
   testCalmProfileContract();
   testExportAndPrivacyHelpers();
   testAutoMemoryVault();

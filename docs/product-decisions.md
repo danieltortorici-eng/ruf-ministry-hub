@@ -165,3 +165,13 @@ This is the decision record for the Calm OS redesign. Decisions are constrained 
 - **Compatibility effect:** Storage keys, record collections, backup envelope, schema marker, encryption algorithm, and unknown legacy fields are unchanged. Corrupt bytes are retained, missing stores seed only after confirmation, and old draft/proposal data is ignored unless it matches a valid current record.
 - **Files affected:** Authoritative deploy HTML/CSS, service worker/cache and CSP identity, package scripts, recovery/accessibility regressions, accessibility/performance audits, manual QA, and implementation log.
 - **Tests used:** IDB-only plaintext/encrypted recovery; corrupt/missing/orphan state; serialized newest encrypted write and retry; lifecycle and locked-draft handling; proposal resume/no-final-approval; modal/label/group/error/focus/target/contrast/safe-area checks; existing product regression.
+
+### PD-017 — Bound discovery work and fail closed at ambiguous or sensitive boundaries
+
+- **Decision:** Render large People, Search, and expanded profile-history collections in recoverable batches; bound fuzzy duplicate-name work; leave ambiguous same-name captures unlinked; propagate source sensitivity into approved tasks and person updates; and stage destructive persistence transitions before confirmation.
+- **Alternatives considered:** Render every match/history row; keep quadratic fuzzy matching; preselect the first same-name result; rely on the proposal warning alone; allow partial restore/vault-disable writes.
+- **Reason:** Slow-device stalls, an incorrect person link, an unmasked derived record, or a mixed persistence state would directly violate Pastor Mode, privacy, and data-safety guarantees.
+- **Cognitive-load effect:** The first useful results remain immediate, Show more preserves complete access, and uncertain captures ask for one explicit person decision only at approval time.
+- **Compatibility effect:** No collection, storage key, or backup envelope changed. Missing legacy person names normalize additively to `Unnamed person`; dormant fields and all original records still round-trip.
+- **Files affected:** Authoritative deploy HTML/service worker, regression and service-worker lifecycle tests, testing/manual QA, performance and implementation records.
+- **Tests used:** 500-person and 600-result scale shapes; 300-record profile history; same-first-name ambiguity; sensitive Search/Today propagation; missing/corrupt dates; old missing-name backup import/render/capture/re-export; quota rollback; backend approval provenance; update-flush and offline-shell simulations.
