@@ -299,7 +299,7 @@ function resetApp(dataCode = "emptyData()") {
 
 function testCurrentScreensRender() {
   resetApp("demoData()");
-  ["today", "autopilot", "quick", "review", "search", "people", "person", "prayer", "minutes", "weekly", "settings", "coach", "duplicates", "readiness", "manual"].forEach(screen => {
+  ["today", "autopilot", "quick", "review", "search", "people", "person", "prayer", "minutes", "weekly", "settings", "advancedSettings", "coach", "duplicates", "readiness", "manual"].forEach(screen => {
     sandbox.__screen = screen;
     const markup = appEval(`
       view.screen = __screen;
@@ -308,6 +308,33 @@ function testCurrentScreensRender() {
     `);
     assert(typeof markup === "string" && markup.length > 20, `${screen} screen renders`);
   });
+}
+
+function testCalmPrimaryNavigation() {
+  resetApp("demoData()");
+  const primary = appEval("NAV.map(item => item.join(':')).join('|')");
+  assert(primary === "today:Today|quick:Capture|people:People|prayer:Prayer|settings:More", "primary navigation has exactly the five Calm OS destinations");
+
+  appEval('view.screen = "today"; render()');
+  const shell = makeElement("app").innerHTML;
+  const mobileMatch = shell.match(/<nav class="mobile-nav"[^>]*>([\s\S]*?)<\/nav>/);
+  assert(Boolean(mobileMatch) && (mobileMatch[1].match(/data-action="nav"/g) || []).length === 5, "mobile navigation exposes exactly five thumb-reachable destinations");
+  assert(shell.includes('aria-label="Primary"') && shell.includes('aria-current="page"'), "primary navigation is semantically named and announces the current page");
+  assert(!shell.includes("mobile-fab") && !html.includes("grid-template-columns: repeat(7"), "mobile navigation removes the duplicate capture control and empty tracks");
+
+  const topbar = appEval('renderTopbar("Synthetic", "One question")');
+  assert(!topbar.includes('data-screen="search"') && !topbar.includes('data-screen="quick"'), "screen headers do not compete with primary navigation");
+
+  const more = appEval("renderMore()");
+  assert(more.includes("Where are secondary tools and administration?") && more.includes('data-screen="search"'), "More keeps Search prominent without crowding primary navigation");
+  assert((more.match(/class="more-group"/g) || []).length === 3, "More progressively discloses secondary tools in three groups");
+  ["minutes", "weekly", "autopilot", "review", "aiReview", "coach", "advancedSettings", "duplicates", "readiness", "manual"].forEach(screen => {
+    assert(more.includes(`data-screen="${screen}"`), `More keeps ${screen} reachable`);
+  });
+
+  assert(appEval('calmLaunchScreen("search")') === "today" && appEval('calmLaunchScreen("settings")') === "settings", "legacy launch choices normalize to a primary destination");
+  const advanced = appEval("renderAdvancedSettings()");
+  assert(advanced.includes("Back to More") && advanced.includes("Launch Screen") && !advanced.includes("Workflow Shortcuts"), "settings and data stays reachable without duplicating the More directory");
 }
 
 function testQuickGrabSharedUrlImport() {
@@ -1031,6 +1058,7 @@ function testCurrentDocsDoNotClaimRemovedScreens() {
 
 async function run() {
   testCurrentScreensRender();
+  testCalmPrimaryNavigation();
   testQuickGrabSharedUrlImport();
   testUnifiedCaptureAndProposalSafety();
   testProposalActionsDoNotHidePersonDateUpdates();

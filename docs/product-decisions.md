@@ -135,3 +135,13 @@ This is the decision record for the Calm OS redesign. Decisions are constrained 
 - **Compatibility effect:** Existing notes, meetings, prayers, tasks, photos, person fields, pin settings, and record-editing primitives are preserved. Profile input still writes `quickGrabs` through the shared approval pipeline; person switching moves only the recoverable draft. Briefs and drafts are local/copy-only and create no proposals or records.
 - **Files affected:** Authoritative deploy HTML/CSS, service-worker/CSP/package identities, profile and regression suites, iPhone manual QA, implementation record.
 - **Tests used:** Essential header, four grounded/masked Right Now rows, one-primary-action, linked capture/person switching, local Brief Me/Follow Up no-write guarantees, collapsed details, empty-section hiding, three-record caps, View all/full content, corrupt dates, and low-information regressions; full maintained suite.
+
+### PD-014 — Keep five primary destinations and make everything else deliberate
+
+- **Decision:** Use exactly Today, Capture, People, Prayer, and More in desktop and mobile primary navigation. Search is the one prominent action on More; secondary ministry rhythms, review tools, and administration are grouped behind three native disclosures.
+- **Alternatives considered:** Keep seven mobile tabs; retain Search and AI Review as peers; keep a floating duplicate Capture button; place all settings directly on More.
+- **Reason:** Five destinations match the five Calm OS screen questions, fit one-handed iPhone use, and preserve every secondary capability without requiring routine users to parse it on every screen.
+- **Cognitive-load effect:** Removes five desktop entries, two mobile entries, the floating duplicate capture control, and recurring Search/Capture header buttons. More exposes one primary action and keeps secondary tools recognizable but collapsed.
+- **Compatibility effect:** Routes and secondary renderers remain available; old secondary launch-screen values normalize to Today, while primary launch choices remain configurable. No ministry data or storage schema changes.
+- **Files affected:** Authoritative deploy HTML/CSS, navigation regressions, iPhone manual QA, implementation record, release/cache/CSP identities.
+- **Tests used:** Exact five-item contract, semantic nav/current-page state, mobile count, More reachability, progressive-disclosure count, legacy launch normalization, screen render, syntax, deployment/CSP, and full maintained suite.

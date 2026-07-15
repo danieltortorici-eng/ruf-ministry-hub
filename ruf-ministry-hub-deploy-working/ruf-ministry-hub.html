@@ -117,7 +117,7 @@
     }
 
     .nav button {
-      min-height: 42px;
+      min-height: 44px;
       border-radius: var(--radius);
       color: #edf2f7;
       background: transparent;
@@ -1251,7 +1251,7 @@
       color: white;
       padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
       gap: 5px;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       overflow: hidden;
       border-top: 1px solid rgba(255,255,255,0.12);
       box-shadow: 0 -10px 28px rgba(23, 32, 42, 0.18);
@@ -1272,22 +1272,6 @@
 
     .mobile-nav button.active {
       background: var(--accent);
-    }
-
-    .mobile-fab {
-      display: none;
-      position: fixed;
-      right: 16px;
-      bottom: calc(74px + env(safe-area-inset-bottom));
-      z-index: 12;
-      min-height: 56px;
-      min-width: 142px;
-      border-radius: 999px;
-      padding: 14px 18px;
-      background: var(--accent);
-      color: #fff;
-      font-weight: 850;
-      box-shadow: 0 12px 30px rgba(35, 84, 75, 0.32);
     }
 
     :where(button, [role="button"], a, input, select, textarea, summary):focus-visible {
@@ -1437,6 +1421,87 @@
       padding: 0 0 var(--space-2);
     }
 
+    .more-search {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-4);
+    }
+
+    .more-search .button {
+      min-width: 132px;
+    }
+
+    .more-directory {
+      display: grid;
+      gap: 0;
+    }
+
+    .more-group {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .more-group:last-child {
+      border-bottom: 0;
+    }
+
+    .more-group > summary {
+      min-height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      cursor: pointer;
+      font-weight: 800;
+      list-style: none;
+    }
+
+    .more-group > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .more-group > summary::after {
+      content: "+";
+      color: var(--muted);
+      font-size: 1.15rem;
+      font-weight: 600;
+    }
+
+    .more-group[open] > summary::after {
+      content: "−";
+    }
+
+    .more-links {
+      display: grid;
+      gap: var(--space-1);
+      padding: 0 0 var(--space-3);
+    }
+
+    .more-link {
+      width: 100%;
+      min-height: 52px;
+      display: grid;
+      gap: 2px;
+      justify-items: start;
+      text-align: left;
+      padding: var(--space-2) var(--space-3);
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--ink);
+    }
+
+    .more-link:hover {
+      background: var(--surface-muted);
+    }
+
+    .more-link span {
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 500;
+      line-height: 1.35;
+    }
+
     .visually-hidden {
       position: absolute !important;
       width: 1px !important;
@@ -1475,21 +1540,11 @@
       }
 
       .content {
-        padding: calc(16px + env(safe-area-inset-top)) 14px calc(118px + env(safe-area-inset-bottom));
+        padding: calc(16px + env(safe-area-inset-top)) 14px calc(92px + env(safe-area-inset-bottom));
       }
 
       .app-frame.focus-mode .content {
         max-width: none;
-      }
-
-      .mobile-fab {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .mobile-fab.is-hidden {
-        display: none;
       }
 
       .grid.two,
@@ -1615,7 +1670,7 @@
 
     @media (max-width: 560px) {
       .content {
-        padding: calc(14px + env(safe-area-inset-top)) 12px calc(118px + env(safe-area-inset-bottom));
+        padding: calc(14px + env(safe-area-inset-top)) 12px calc(92px + env(safe-area-inset-bottom));
       }
 
       .section {
@@ -1638,13 +1693,16 @@
 
       .top-actions .button,
       .mobile-nav button,
-      .mobile-fab,
       .action-row .button {
         width: auto;
       }
 
       .mobile-nav {
         gap: 4px;
+      }
+
+      .more-search {
+        grid-template-columns: 1fr;
       }
 
       .item-title-row {
@@ -1663,7 +1721,7 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-profile-v1";
+    const APP_VERSION = "2026.07.15-calm-os-nav-v1";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CAPTURE_PROCESSOR_VERSION = "calm-os-capture-v1";
@@ -1763,16 +1821,15 @@
     const URGENCIES = ["Whenever", "Soon", "Today", "Important"];
     const NAV = [
       ["today", "Today"],
-      ["autopilot", "Autopilot"],
-      ["quick", "Quick Grab"],
-      ["search", "Search"],
-      ["aiReview", "AI Review"],
+      ["quick", "Capture"],
       ["people", "People"],
-      ["prayer", "Prayer Requests"],
-      ["minutes", "I Have 15 Minutes"],
-      ["weekly", "Weekly Reset"],
-      ["settings", "Settings / Data"]
+      ["prayer", "Prayer"],
+      ["settings", "More"]
     ];
+
+    function calmLaunchScreen(screen) {
+      return NAV.some(([key]) => key === screen) ? screen : "today";
+    }
     const ADHD_PRESETS = {
       "minimum-noise": {
         label: "Minimum Noise",
@@ -1899,7 +1956,7 @@
           calmMode: true,
           showAdvancedActions: false,
           showStartHere: true,
-          launchScreen: "weekly",
+          launchScreen: "settings",
           reviewBatchSize: "5",
           todayLimit: "10",
           todayShowBackupNotice: true,
@@ -1915,10 +1972,11 @@
     };
 
     let settings = loadSettings();
+    settings.launchScreen = calmLaunchScreen(settings.launchScreen);
     let customCopy = loadCustomCopy();
     let db = loadData();
     let view = {
-      screen: settings.launchScreen || "today",
+      screen: calmLaunchScreen(settings.launchScreen),
       personId: null,
       quickGrabId: null,
       processPreset: [],
@@ -3180,7 +3238,7 @@
 
     function resetViewAfterRestore() {
       view = {
-        screen: settings.launchScreen || "today",
+        screen: calmLaunchScreen(settings.launchScreen),
         personId: null,
         quickGrabId: null,
         processPreset: [],
@@ -4359,43 +4417,29 @@
         bindScreen();
         return;
       }
-      const active = view.screen === "aiConfirmActions" ? "aiReview" : ["process", "snooze", "review"].includes(view.screen) ? "quick" : ["duplicates", "manual", "readiness", "coach"].includes(view.screen) ? "settings" : view.screen;
+      const active = view.screen === "person"
+        ? "people"
+        : ["process", "snooze", "review", "aiReview", "aiConfirmActions"].includes(view.screen)
+          ? "quick"
+          : ["search", "autopilot", "minutes", "weekly", "coach", "duplicates", "readiness", "manual", "advancedSettings"].includes(view.screen)
+            ? "settings"
+            : view.screen;
       const navHtml = NAV.map(([key, label]) =>
-        `<button class="${active === key ? "active" : ""}" data-action="nav" data-screen="${key}">${escapeHtml(label)}</button>`
+        `<button class="${active === key ? "active" : ""}" data-action="nav" data-screen="${key}"${active === key ? ' aria-current="page"' : ""}>${escapeHtml(label)}</button>`
       ).join("");
-      const mobileLabels = {
-        today: "Today",
-        quick: "Grab",
-        search: "Find",
-        aiReview: "AI",
-        people: "People",
-        prayer: "Pray",
-        settings: "More"
-      };
-      const mobileNavItems = [
-        ["today", "Today"],
-        ["quick", "Quick Grab"],
-        ["search", "Search"],
-        ["aiReview", "AI Review"],
-        ["people", "People"],
-        ["prayer", "Prayer Requests"],
-        ["settings", "More"]
-      ];
-      const activeMobile = mobileNavItems.some(([key]) => key === active) ? active : "settings";
-      const mobileNavHtml = mobileNavItems.map(([key, label]) =>
-        `<button class="${activeMobile === key ? "active" : ""}" data-action="nav" data-screen="${key}" aria-label="${escapeHtml(label)}">${escapeHtml(mobileLabels[key] || label)}</button>`
+      const mobileNavHtml = NAV.map(([key, label]) =>
+        `<button class="${active === key ? "active" : ""}" data-action="nav" data-screen="${key}"${active === key ? ' aria-current="page"' : ""}>${escapeHtml(label)}</button>`
       ).join("");
-      const hideMobileFab = ["today", "quick", "process", "snooze", "review", "aiReview", "aiConfirmActions"].includes(view.screen);
       document.getElementById("app").innerHTML = `
         <div class="app-frame ${view.focusMode ? "focus-mode" : ""} ${settings.showAdvancedActions ? "advanced-actions" : ""}">
-          <div class="mobile-nav">${mobileNavHtml}</div>
+          <nav class="mobile-nav" aria-label="Primary">${mobileNavHtml}</nav>
           <div class="shell">
             <aside class="sidebar">
               <div class="brand">
-                <div class="brand-title">${editableCopy("brand.title", "RUF Ministry Hub")}</div>
-                <div class="brand-subtitle">${editableCopy("brand.subtitle", "Remember people clearly. Take the next faithful step.")}</div>
+                <div class="brand-title">${editableCopy("brand.title", "Calm OS")}</div>
+                <div class="brand-subtitle">${editableCopy("brand.subtitle", "RUF Ministry Hub · Remember people clearly.")}</div>
               </div>
-              <nav class="nav">${navHtml}</nav>
+              <nav class="nav" aria-label="Primary">${navHtml}</nav>
               <div class="sidebar-note">${editableCopy("sidebar.privacy", "Private ministry notes belong here carefully. Use enough detail to care well, not everything.")}</div>
             </aside>
 	            <main class="content">
@@ -4403,7 +4447,6 @@
 	              ${renderScreen()}
 	            </main>
           </div>
-          <button class="mobile-fab ${hideMobileFab ? "is-hidden" : ""}" data-action="nav" data-screen="quick">Quick Grab</button>
           ${renderSheet()}
         </div>
       `;
@@ -4431,7 +4474,7 @@
       if (changed) saveData();
     }
 
-    function renderTopbar(title, kicker = "", showQuick = true) {
+    function renderTopbar(title, kicker = "") {
       const titleKey = "topbar.title." + slugifyCopyKey(title);
       const kickerKey = "topbar.kicker." + slugifyCopyKey(title);
       return `
@@ -4444,8 +4487,6 @@
             ${settings.enableUndo && undoStack.length ? `<button class="button small" data-action="undo-last">Undo</button>` : ""}
             ${settings.appLockEnabled && settings.pinHash ? `<button class="button small" data-action="lock-app">Lock</button>` : ""}
             <button class="button small calm-toggle" data-action="toggle-focus">${view.focusMode ? "Calm Mode On" : "Calm Mode Off"}</button>
-            <button class="button small" data-action="nav" data-screen="search">Search</button>
-            ${showQuick ? `<button class="button primary quick-open" data-action="nav" data-screen="quick">Quick Grab</button>` : ""}
           </div>
         </div>
       `;
@@ -4469,7 +4510,8 @@
       if (view.screen === "duplicates") return renderDuplicateManager();
       if (view.screen === "readiness") return renderReadinessCheck();
       if (view.screen === "manual") return renderAppManual();
-      if (view.screen === "settings") return renderSettings();
+      if (view.screen === "settings") return renderMore();
+      if (view.screen === "advancedSettings") return renderAdvancedSettings();
       if (view.screen === "autopilot") return renderAutopilot();
       return renderToday();
     }
@@ -5149,7 +5191,7 @@
             <p class="page-kicker">It stays local to this device and chooses from loose Quick Grabs, due follow-ups, people needing care, prayer follow-ups, backups, duplicates, then capture.</p>
             <div class="action-row" style="margin-top:14px;">
               <button class="button primary" data-action="nav" data-screen="today">Back To Today</button>
-              <button class="button" data-action="nav" data-screen="settings">Tune Settings</button>
+              <button class="button" data-action="nav" data-screen="advancedSettings">Tune settings</button>
             </div>
           </div>
         </section>
@@ -5496,7 +5538,7 @@
         <section class="section">
           <div class="surface">
             <div class="action-row">
-              <button class="button" data-action="nav" data-screen="settings">Back to Settings</button>
+              <button class="button" data-action="nav" data-screen="settings">Back to More</button>
               <button class="button" data-action="coach-refresh">Refresh Audit</button>
               <button class="button" data-action="donor-update-builder">Donor Update Builder</button>
               <button class="button primary" data-action="weekly-reset-agent">Build Weekly Reset Plan</button>
@@ -9742,7 +9784,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const answeredReady = db.prayerRequests.filter(prayer => prayer.status === "Answered").length;
       const archivedCount = db.prayerRequests.filter(prayer => prayer.status === "Archived").length;
       return `
-        ${renderTopbar("Prayer Requests", "Prayer requests only, with meeting notes and tasks linked as context.")}
+        ${renderTopbar("Prayer", "Who or what should I pray for?")}
         <section class="section">
           <div class="surface">
             <div class="row wrap">
@@ -9893,22 +9935,57 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
-    function renderSettings() {
+    function renderMore() {
       return `
-        ${renderTopbar("Settings / Data", "Customize the app so it fits the way your attention and ministry rhythms actually work.", false)}
+        ${renderTopbar("More", "Where are secondary tools and administration?")}
+        <section class="section">
+          <div class="surface more-search">
+            <div>
+              <h2 class="section-title">Find anything</h2>
+              <p class="page-kicker">Search people and saved ministry records when you know what you need.</p>
+            </div>
+            <button class="button primary" data-action="nav" data-screen="search">Search</button>
+          </div>
+        </section>
         <section class="section">
           <div class="surface">
-            <h2 class="section-title">Workflow Shortcuts</h2>
-            <div class="action-row" style="margin-top:14px;">
-              <button class="button primary" data-action="nav" data-screen="autopilot">Autopilot</button>
-              <button class="button primary" data-action="nav" data-screen="minutes">I Have 15 Minutes</button>
-              <button class="button" data-action="nav" data-screen="aiReview">AI Review</button>
-              <button class="button" data-action="nav" data-screen="weekly">Weekly Reset</button>
-              <button class="button" data-action="nav" data-screen="readiness">iPhone Readiness</button>
-              <button class="button" data-action="nav" data-screen="manual">App Manual</button>
+            <h2 class="section-title">Other tools</h2>
+            <div class="more-directory" style="margin-top:var(--space-2);">
+              <details class="more-group">
+                <summary>Ministry rhythms</summary>
+                <div class="more-links">
+                  <button class="more-link" data-action="nav" data-screen="minutes"><strong>I Have 15 Minutes</strong><span>A short list for a small window.</span></button>
+                  <button class="more-link" data-action="nav" data-screen="weekly"><strong>Weekly Reset</strong><span>Review loose captures without crowding Today.</span></button>
+                  <button class="more-link" data-action="nav" data-screen="autopilot"><strong>Priority guide</strong><span>See how the next ministry action is chosen.</span></button>
+                </div>
+              </details>
+              <details class="more-group">
+                <summary>Review and care</summary>
+                <div class="more-links">
+                  <button class="more-link" data-action="nav" data-screen="review"><strong>Unprocessed captures</strong><span>Work through one saved thought at a time.</span></button>
+                  <button class="more-link" data-action="nav" data-screen="aiReview"><strong>Suggested updates</strong><span>Approve, edit, or reject proposals before saving.</span></button>
+                  <button class="more-link" data-action="nav" data-screen="coach"><strong>App Coach</strong><span>Review optional local improvement suggestions.</span></button>
+                </div>
+              </details>
+              <details class="more-group">
+                <summary>App and data</summary>
+                <div class="more-links">
+                  <button class="more-link" data-action="nav" data-screen="advancedSettings"><strong>Settings and data</strong><span>Privacy, backups, encryption, and preferences.</span></button>
+                  <button class="more-link" data-action="nav" data-screen="duplicates"><strong>Duplicate people</strong><span>Review possible matches before merging.</span></button>
+                  <button class="more-link" data-action="nav" data-screen="readiness"><strong>iPhone readiness</strong><span>Check offline and Home Screen setup.</span></button>
+                  <button class="more-link" data-action="nav" data-screen="manual"><strong>App manual</strong><span>Open the detailed workflow guide.</span></button>
+                </div>
+              </details>
             </div>
           </div>
         </section>
+      `;
+    }
+
+    function renderAdvancedSettings() {
+      return `
+        ${renderTopbar("Settings and data", "Privacy, backups, encryption, and deliberate app preferences.")}
+        <div class="profile-back-row"><button class="button quiet small" data-action="nav" data-screen="settings">Back to More</button></div>
         <div class="grid two">
           <section class="section">
             <div class="surface">
@@ -9944,7 +10021,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	                ${settingToggle("calmMode", "Calm Mode", "Simplify cards and keep the first view focused.")}
 	                ${settingToggle("showAdvancedActions", "Show Advanced Actions", "Show all action buttons without opening More.")}
 	                ${settingToggle("showStartHere", "Show Start Here", "Keep the one-good-next-step panel on Today.")}
-	                ${settingSelect("launchScreen", "Launch Screen", [["today", "Today"], ["quick", "Quick Grab"], ["review", "Quick Review"], ["search", "Search"], ["aiReview", "AI Review"], ["people", "People"], ["prayer", "Prayer"], ["minutes", "15 Minutes"], ["weekly", "Weekly Reset"]], "Choose what opens first on your phone.")}
+	                ${settingSelect("launchScreen", "Launch Screen", [["today", "Today"], ["quick", "Capture"], ["people", "People"], ["prayer", "Prayer"], ["settings", "More"]], "Choose one primary destination to open first on your phone.")}
 	                ${settingSelect("todayLimit", "Today List Size", [["3", "3 items"], ["5", "5 items"], ["10", "10 items"]], "How many items each Today section should show.")}
 	                ${settingSelect("reviewBatchSize", "Review Queue Size", [["1", "1 card"], ["3", "3 cards"], ["5", "5 cards"], ["10", "10 cards"]], "How many loose Quick Grabs to show in a one-card review batch.")}
 	                ${settingSelect("promptMeAfterHours", "Prompt Me Timing", [["0", "Right away"], ["12", "After 12 hours"], ["24", "After 24 hours"], ["48", "After 48 hours"]], "When unsorted Quick Grabs with no reminder should reappear.")}
@@ -10147,7 +10224,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         <section class="section">
           <div class="surface">
             <div class="action-row">
-              <button class="button" data-action="nav" data-screen="settings">Back to Settings</button>
+              <button class="button" data-action="nav" data-screen="settings">Back to More</button>
               <button class="button" data-action="check-update">Check for Update</button>
               <button class="button primary" data-action="export-json">Export Backup</button>
             </div>
@@ -10222,7 +10299,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         <section class="section">
           <div class="surface">
             <div class="action-row">
-              <button class="button" data-action="nav" data-screen="settings">Back to Settings</button>
+              <button class="button" data-action="nav" data-screen="settings">Back to More</button>
               <button class="button" data-action="nav" data-screen="people">Open People</button>
             </div>
           </div>
@@ -10278,7 +10355,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         <section class="section">
           <div class="surface">
             <div class="action-row">
-              <button class="button" data-action="nav" data-screen="settings">Back to Settings</button>
+              <button class="button" data-action="nav" data-screen="settings">Back to More</button>
               <button class="button primary" data-action="nav" data-screen="quick">Open Quick Grab</button>
             </div>
           </div>
@@ -10286,14 +10363,14 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         <section class="section">
           <div class="manual-list">
             ${manualSection("Start here each day", [
-              "Open Today from the bottom bar.",
+              "Open Today from the primary navigation.",
               "Read the Start Here card first. It chooses one next step from loose Quick Grabs, due follow-ups, or people needing care.",
               "Use Grab Something when a thought appears and you do not have time to organize it.",
               "Use Review One At A Time when you want a calmer, single-card processing flow.",
               "Use pinned and recent people shortcuts to jump back into the profiles you touch most."
             ])}
             ${manualSection("Capture a Quick Grab", [
-              "Tap Grab or the floating Quick Grab button.",
+              "Tap Capture in the primary navigation.",
               "Type the thought, prayer request, meeting note, task, or reminder in the large text box.",
               "Autosave keeps the draft on this device as you type, even before you tap Grab It.",
               "Tap a category chip only if one is obvious. It is fine to leave it unsorted.",
@@ -10334,7 +10411,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               "Tap Mark Followed Up after you contact someone."
             ])}
             ${manualSection("Manage prayer requests", [
-              "Open Prayer Requests from the bottom bar.",
+              "Open Prayer from the primary navigation.",
               "Use tabs for Active, Follow-Up Needed, Prayer Walk, Answered Prayer, Archived Prayer Requests, Sensitive Prayer Requests, Recently Added, or By Person.",
               "Use Prayer Steward when you want a mock local audit of prayer requests before deciding what to do next.",
               "Prayer Steward opens the privacy gate first, then creates an AI Review proposal with suggested actions only.",
@@ -10358,7 +10435,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               "Use Reset edited wording in Settings if you want the default language back."
             ])}
             ${manualSection("Use App Coach", [
-              "Open Settings, then App Coach.",
+              "Open More, then App Coach under Review and care.",
               "Review the suggested adjustments.",
               "Tap the main button on a suggestion only when you want the app to apply that setting or open that cleanup screen.",
               "Tap Dismiss for now to hide a suggestion for about a week.",
@@ -10375,7 +10452,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               "The coach checks local patterns and does not send ministry data anywhere."
             ])}
             ${manualSection("Use AI Review", [
-              "Open AI Review from the navigation or Settings shortcuts.",
+              "Open More, then Suggested updates under Review and care.",
               "Remember that AI suggestions are drafts. Most helpers stay local mock; only Quick Grab can optionally use the backend route.",
               "The privacy gate asks every time before AI review continues, and this cannot be turned off yet.",
               "Quick Grab AI Mode defaults to Local Mock Only. Backend Quick Grab is optional and does not store browser API keys.",
@@ -10415,7 +10492,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               "Keep exporting backups even when encrypted storage is on."
             ])}
             ${manualSection("Back up and restore", [
-              "Open Settings and find Export And Backup.",
+              "Open More, then Settings and data, and find Export And Backup.",
               "Leave Auto Memory Vault on so the app keeps local restore points after saved changes.",
               "Use Restore Points to roll back accidental edits, bad imports, or resets on this device.",
               "Use Save Now before a major cleanup if you want an extra manual restore point.",
@@ -10433,7 +10510,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               "Tap Share.",
               "Tap Add to Home Screen.",
               "Open it from the Home Screen for the most app-like experience.",
-              "Open Settings, then iPhone Readiness, to confirm HTTPS, Home Screen, offline cache, backup, vault, and autosave status."
+              "Open More, then iPhone Readiness, to confirm HTTPS, Home Screen, offline cache, backup, vault, and autosave status."
             ])}
             ${manualSection("Suggested weekly rhythm", [
               "Use Quick Grab all week without worrying about perfect sorting.",
@@ -13015,7 +13092,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       recordUndo("attention preset");
       settings.adhdPreset = id;
       Object.assign(settings, preset.patch);
-      view.screen = settings.launchScreen || "today";
+      settings.launchScreen = calmLaunchScreen(settings.launchScreen);
+      view.screen = settings.launchScreen;
       view.focusMode = Boolean(settings.calmMode);
       view.expandedQuickGrabIds = [];
       view.expandedPrayerIds = [];
@@ -13073,7 +13151,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         openSecuritySheet("vault-disable");
         return;
       }
-      settings[key] = value;
+      settings[key] = key === "launchScreen" ? calmLaunchScreen(value) : value;
       if (key === "adhdMode" && value) applyAdhdModeDefaults();
       if (key === "calmMode") {
         view.focusMode = Boolean(value);
@@ -13090,6 +13168,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function applyCoachSettings(patch, message) {
       recordUndo("App Coach adjustment");
       Object.assign(settings, patch);
+      settings.launchScreen = calmLaunchScreen(settings.launchScreen);
       if ("calmMode" in patch) view.focusMode = Boolean(settings.calmMode);
       saveSettings();
       showToast(message || "App Coach adjustment applied.");
@@ -13129,7 +13208,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return;
       }
       if (id === "gentle-review-flow") {
-        applyCoachSettings({ reviewBatchSize: "1", launchScreen: "review", showStartHere: true }, "Quick Review is now a one-card flow.");
+        applyCoachSettings({ reviewBatchSize: "1", launchScreen: "quick", showStartHere: true }, "Capture now opens as the one-card review starting point.");
         return;
       }
       if (id === "auto-archive-answered") {
@@ -14341,7 +14420,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	      clearAllAutosaveDrafts();
 	      saveData();
       view = {
-        screen: settings.launchScreen || "today",
+        screen: calmLaunchScreen(settings.launchScreen),
         personId: null,
         quickGrabId: null,
         processPreset: [],

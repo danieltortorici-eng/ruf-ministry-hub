@@ -163,3 +163,16 @@ Status: implemented locally on 2026-07-15; verification recorded with the phase 
 - Kept Notes, Meetings, Prayer Requests, Follow-Ups, and Timeline separate. Empty sections do not render; each starts with at most three compact story-oriented records, and View all expands full untruncated access on demand without administrative timestamp clutter.
 - Kept all existing record collections, editing/merge primitives, storage keys, version-2 backups, schema marker, encryption, IndexedDB, localStorage, offline shell, and human approval boundaries unchanged.
 - Verification: focused syntax, Calm profile regression, and maintained person-profile regression passed before the full maintained suite; final exact commands and exit results are recorded in the Phase 8 commit evidence.
+
+## Phase 9 — Primary navigation and secondary tools
+
+Status: implemented locally on 2026-07-15; verification recorded with the phase commit.
+
+- Replaced the ten-entry desktop and seven-entry mobile navigation with exactly Today, Capture, People, Prayer, and More. Desktop and mobile now share one source list, named navigation landmarks, current-page state, 48px mobile targets, and safe-area spacing.
+- Removed the floating duplicate Capture action and recurring Search/Capture buttons from screen headers. Person and proposal subflows correctly announce their parent destination.
+- Rebuilt More around one prominent Search action and three collapsed native groups: Ministry rhythms, Review and care, and App and data. I Have 15 Minutes, Weekly Reset, priority explanation, review queues, App Coach, duplicates, readiness, manual, and settings remain reachable.
+- Moved the dense preference, privacy, encryption, and backup controls to the deliberate Settings and data route and removed its duplicate workflow-shortcut cluster.
+- Restricted new launch-screen choices to the five primary destinations. Stored legacy secondary choices and old presets normalize conservatively to a primary destination without changing ministry records.
+- Renamed the Prayer destination and question for pastoral use, while retaining every prayer filter and record action.
+- Paired app/package version, service-worker cache, and CSP identity. No record, backup, storage, Function, production setting, or external state changed.
+- Verification: focused syntax and navigation regression passed before the full maintained suite; final exact commands and exit results are recorded in the Phase 9 commit evidence.

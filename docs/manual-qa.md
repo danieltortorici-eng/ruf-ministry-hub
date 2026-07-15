@@ -4,7 +4,7 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 
 ## Before Testing
 
-- Export a JSON backup from Settings / Data.
+- Open More, then Settings and data, and export a JSON backup.
 - Confirm the deployed URL is HTTPS.
 - Open the app once in Safari while online.
 - If testing Home Screen behavior, add the app to the Home Screen from Safari.
@@ -13,14 +13,15 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 
 - Open the app in iPhone Safari.
 - Confirm Today loads without a blank screen.
-- Tap each visible navigation item available in this phase; final Calm OS navigation is verified in the Navigation section after Phase 9.
+- Confirm the primary navigation is exactly Today, Capture, People, Prayer, and More.
 - From More, open I Have 15 Minutes, Weekly Reset, iPhone Readiness, and App Manual.
-- Confirm the bottom navigation and floating Quick Grab button do not cover important content.
+- Confirm the five-item bottom navigation respects the iPhone safe area and does not cover important content.
+- Confirm Search is available from More but does not occupy a sixth primary-navigation slot.
 - Rotate is not required; the app is portrait-first.
 
 ## ADHD Mode
 
-- Open More, then Settings / Data.
+- Open More, then Settings and data.
 - Turn on ADHD Mode.
 - Confirm Today still contains exactly Next thing to do, Quick Capture, and After that.
 - Confirm Quick Review uses a one-card review size.
@@ -28,10 +29,9 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 
 ## Autopilot And Attention Presets
 
-- Open More, then Settings / Data.
-- Tap Autopilot from Workflow Shortcuts.
+- Open More, expand Ministry rhythms, then open Priority guide.
 - Confirm Autopilot shows exactly one suggested next action and explains how it chooses.
-- Return to Settings / Data.
+- Return to More, then open Settings and data.
 - Choose the Overwhelmed attention preset and tap Apply Preset.
 - Confirm Today keeps the same three-section Calm OS hierarchy and never uses Autopilot as normal interface language.
 - Choose Admin Catch-Up and tap Apply Preset.
@@ -59,8 +59,8 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 - Create a test person.
 - Add a Quick Grab.
 - Add a prayer request.
-- Confirm Settings / Data shows a Backup Health card.
-- Confirm Settings / Data shows Auto Memory Vault.
+- Confirm Settings and data shows a Backup Health card.
+- Confirm Settings and data shows Auto Memory Vault.
 - Confirm Auto Memory Vault is on by default.
 - Tap Save Now and confirm a restore point is added.
 - Tap Restore Points and confirm the in-app sheet lists local restore points.
@@ -68,7 +68,7 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 - Confirm Delete and Clear All require in-app confirmation before removing restore points.
 - Turn Auto Memory Vault off and confirm the card shows a paused state.
 - Turn Auto Memory Vault back on before continuing.
-- Export JSON from Settings / Data.
+- Export JSON from Settings and data.
 - Confirm Backup Health changes after export.
 - Tap Export encrypted backup and confirm it opens an in-app sheet instead of browser prompts.
 - Cancel the encrypted backup sheet and confirm no file downloads.
@@ -80,7 +80,7 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 
 ## Security
 
-- Open Settings / Data.
+- Open More, then Settings and data.
 - Tap Set PIN and confirm it opens an in-app sheet.
 - Try a short PIN and confirm it is rejected without closing the sheet.
 - Save a valid matching PIN and confirm App Lock is enabled.
