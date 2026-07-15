@@ -2,6 +2,10 @@
 
 These checks require a real iPhone running Safari against the deployed PWA URL. The local regression harness is useful, but it is not a substitute for this checklist.
 
+## Independent RC audit note (2026-07-15)
+
+The second release-candidate audit verified the 390px and 430px layout contracts, large-text navigation/Right Now wrapping, offline cached-shell behavior, and no-overflow preview checks with local/DevTools evidence. Real iPhone Safari, VoiceOver, Dynamic Type, Home Screen suspension, and Safari storage-quota behavior remain `NOT VERIFIED` until this checklist is run on a physical device. Use fictional records only, and confirm linked Sensitive/Do Not Send captures remain masked and are blocked before any backend Quick Grab request.
+
 ## Before Testing
 
 - Open More, then Settings and data, and export a JSON backup.

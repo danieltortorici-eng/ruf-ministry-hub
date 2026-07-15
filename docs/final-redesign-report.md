@@ -169,3 +169,13 @@ No production, preview, or real-data screenshots were created. Exact before/afte
 ## Executive Product Lead sign-off
 
 **SIGNED OFF FOR REVIEW.** Calm OS satisfies the implemented local acceptance boundary with no known unresolved high-severity defect. The branch is ready for code/design review. Nothing was pushed, merged, deployed, bound, credentialed, or changed in production.
+
+## Independent release-candidate audit
+
+On 2026-07-15, a second audit treated the branch as untrusted and independently reviewed the actual deploy implementation. Product, cognitive-load, mobile, compatibility, privacy/AI approval, offline/service-worker, accessibility, performance, regression, adversarial QA, and source-of-truth workers reran relevant checks and inspected runtime/static behavior.
+
+Confirmed defects were fixed and covered by regression tests: linked sensitive Quick Grab Search exposure; backend transmission of raw text linked to `Do Not Send to AI` people; unmasked sensitive final-approval duplicate warnings; proposal privacy tier loss after source deletion; Today archived/malformed-snooze leaks; service-worker required-shell, cache-write, and non-OK navigation failures; and large-text Right Now layout. Canonical deploy syntax and asset checks were expanded to cover the deploy tree directly.
+
+Independent evidence includes `npm test`, `node tests/regression-harness.js`, UTC/Pacific-Kiritimati/America-Adak timezone runs, and `node tests/deployment-config-regression.js` all exiting 0 after the final CSP hash synchronization, plus focused recovery/accessibility/service-worker/AI/deployment checks, generated-output and secret audits, and DevTools verification at 390px/430px with offline reload, Lighthouse accessibility 100, and LCP approximately 582ms.
+
+Real iPhone Safari, VoiceOver, Dynamic Type, OS suspension/termination, provider AI credentials, and four candidate Calendar/Secretary/optimizer/steward paths that are absent from this branch remain `NOT VERIFIED`. Search and local persistence still scale with the full local store before bounded rendering; this is a documented performance risk, not a data-safety defect. No production deployment or merge was performed.

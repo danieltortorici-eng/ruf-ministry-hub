@@ -170,7 +170,7 @@ Status: implemented locally on 2026-07-15; verification recorded with the phase 
 
 - Replaced the ten-entry desktop and seven-entry mobile navigation with exactly Today, Capture, People, Prayer, and More. Desktop and mobile now share one source list, named navigation landmarks, current-page state, 48px mobile targets, and safe-area spacing.
 - Removed the floating duplicate Capture action and recurring Search/Capture buttons from screen headers. Person and proposal subflows correctly announce their parent destination.
-- Rebuilt More around one prominent Search action and three collapsed native groups: Ministry rhythms, Review and care, and App and data. I Have 15 Minutes, Weekly Reset, priority explanation, review queues, App Coach, duplicates, readiness, manual, and settings remain reachable.
+- Rebuilt More around one prominent Search action and four quiet native groups: Ministry rhythms, Review and care, App and data, and Prayer tools. I Have 15 Minutes, Weekly Reset, priority explanation, review queues, App Coach, duplicates, readiness, manual, settings, and prayer administration remain reachable.
 - Moved the dense preference, privacy, encryption, and backup controls to the deliberate Settings and data route and removed its duplicate workflow-shortcut cluster.
 - Restricted new launch-screen choices to the five primary destinations. Stored legacy secondary choices and old presets normalize conservatively to a primary destination without changing ministry records.
 - Renamed the Prayer destination and question for pastoral use, while retaining every prayer filter and record action.
@@ -213,12 +213,24 @@ Status: implemented locally on 2026-07-15; final command evidence recorded with 
 - Closed privacy propagation boundaries so sensitive capture approvals create sensitive tasks and mark sensitive person-detail updates; Today and Search keep the derived text masked.
 - Closed sensitive Search query leakage, missing/corrupt-date sort crashes, real-backend approval when local mock fallback is off, and false `mockOnly` provenance after real-backend approval.
 - Made app update activation await draft/vault recovery flush. Added offline cached-document navigation and `/api/*` pass-through execution coverage.
-- Requested an IndexedDB recovery write before surfacing a plaintext quota failure; made backup restore roll back in-memory/local state; staged all plaintext before Device Vault disable so failure leaves the prior encrypted envelope intact.
+- Kept the synchronous localStorage commit authoritative before mirroring plaintext to IndexedDB, so a quota failure never creates an uncommitted newer mirror; made backup restore roll back in-memory/local state; staged all plaintext before Device Vault disable so failure leaves the prior encrypted envelope intact.
 - Normalized legacy person records missing a name to the explicit `Unnamed person` fallback and hardened capture parsing. Import, render, capture, and re-export remain safe.
 - Adversarial fixtures cover empty data, long/no-photo people, 500 people, 600 Search matches, 300 profile records, multiple overdue items, sensitive prayer/task/profile text, same-name ambiguity, missing/corrupt dates, repeated taps, oversized photos, unavailable AI, backend provenance, quota failures, service-worker interruption, and old backup shapes.
 - Read-only adversarial re-audit reported no unresolved P0/P1 defects. Real Safari/iPhone, VoiceOver, OS suspension, storage quota, slow-device vitals, and live provider AI remain `NOT VERIFIED`, not synthetic passes.
 - `npm test`, both extreme-timezone regression runs, the five tracked mandatory regression commands, all six tracked JavaScript syntax commands, CSP/deploy validation, generated-output drift, secret audit, asset audit, and whitespace checks exited 0.
 - Newer control-center instructions name candidate Calendar/Secretary/optimizer/steward files and four related suites that are not present in this branch's tracked tree. Those absent paths are `NOT VERIFIED`; no substitute pass is claimed and no unapproved candidate Worker was created, deployed, bound, or credentialed.
+
+## Independent release-candidate audit — 2026-07-15
+
+This second pass treated the current branch as untrusted and rechecked the deploy source, rendered contracts, privacy boundaries, recovery paths, service-worker lifecycle, accessibility, performance evidence, and tracked regression suite. Review workers were independent of the implementation areas they audited wherever possible.
+
+- Confirmed and fixed privacy leaks in linked Quick Grab Search results, sensitive AI approval warnings, proposal result panels, source-tier persistence after source deletion, and backend Quick Grab payloads linked to a `Do Not Send to AI` person.
+- Confirmed and fixed Today exclusions for archived linked people, malformed snoozes, sensitive task/prayer previews, and sensitive linked identities.
+- Confirmed and fixed required-shell/service-worker install failures, cache-write failures, non-OK navigation fallback, update recovery ordering, large-text Right Now layout, and canonical deploy syntax/asset-audit coverage.
+- Added regression coverage for tier propagation, source deletion, linked sensitive Search, final approval masking, blocked backend payloads, encrypted/IndexedDB rollback, legacy Auto Memory restore, large-text labels, and service-worker failure modes.
+- Latest focused evidence: `node tests/regression-harness.js` exit 0; `node tests/deployment-config-regression.js` exit 0 after synchronizing the current CSP hash; syntax, generated-output, asset, secret, accessibility, recovery, service-worker, and full `npm test` checks pass. UTC, Pacific/Kiritimati, and America/Adak timezone runs also exit 0 after the final documentation checkpoint.
+- Browser evidence from the independent adversarial pass: DevTools verified 390px/430px Right Now layout, offline reload, Lighthouse accessibility 100, and LCP approximately 582ms. Real iPhone Safari, VoiceOver, Dynamic Type, OS suspension, provider AI, and unavailable candidate paths remain `NOT VERIFIED`.
+- No production deployment, merge, push, credential change, binding, external message, or real ministry-data access occurred.
 
 ## Phase 13 — Final documentation and view reproduction
 
