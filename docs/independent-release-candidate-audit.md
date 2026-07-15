@@ -12,6 +12,7 @@ Eleven independent review roles inspected the canonical HTML, service worker, Pa
 ## Findings fixed in this audit
 
 - Today could select archived-linked records, show completed/future-snoozed work, expose sensitive recommendation details, and duplicate the update notice. Recommendations now skip inactive links, completed/future-snoozed/malformed-snooze records, cap each priority tier, mask sensitive details, and show one compact critical alert.
+- Backup maintenance could appear in `After that` while meaningful person care or ministry work was still available. Maintenance is now gated behind the absence of tier-1–8 recommendations, with regression coverage for both maintenance-only and ministry-present states.
 - Sensitive privacy tiers were not consistently inherited by AI-created tasks, notes, meetings, people, or profile updates. Approved records now inherit source/action/person sensitivity, and the source tier is retained on the proposal if the source is later removed.
 - A linked or candidate person marked Sensitive/Highly Sensitive/Do Not Send could leak a name or raw linked capture text to backend Quick Grab. Candidate filtering, explicit linked-person checks, the review gate, Search, and Snooze now block or mask that path before network use.
 - AI review result panels, warnings, duplicate-person messages, and legacy confirmation surfaces could reveal raw sensitive generated text. Sensitive result panels and warnings now collapse to generic review language; approved-action selection remains independent and human-controlled.
@@ -20,6 +21,7 @@ Eleven independent review roles inspected the canonical HTML, service worker, Pa
 - Legacy nested Auto Memory payloads and structurally empty local data were not recovered safely. Normalization now accepts the legacy nested `db` shape and yields to a valid IndexedDB mirror instead of treating `{}` as ministry data.
 - Malformed snooze dates could be treated as due. Invalid non-empty snooze values are now withheld from Today, review, prompts, and Right Now until corrected.
 - Search, Today recommendations, and linked-record surfaces could reveal a sensitive person identity or raw text through an otherwise-normal prayer, note, meeting, task, or capture. Linked-person sensitivity now participates in filtering and masking across task/prayer/important-capture/oldest-capture recommendations and profile history.
+- A normal task linked to a Sensitive prayer could bypass profile, Brief Me, and Follow Up privacy checks. The central privacy-tier resolver now inherits linked prayer sensitivity for tasks and blocks or masks those contexts.
 - The root-only syntax and asset audits could pass while the canonical deploy HTML was unchecked. The maintained scripts now inspect both compatibility root and deploy authority; the CSP hash was recomputed and verified against the deploy HTML and index.
 - App Coach’s header actions were equal-weight. Refresh is now the single dominant action while navigation and reveal actions remain quiet.
 
