@@ -19,23 +19,20 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 - Confirm Search is available from More but does not occupy a sixth primary-navigation slot.
 - Rotate is not required; the app is portrait-first.
 
-## ADHD Mode
+## Fixed Calm OS Attention Contract
 
 - Open More, then Settings and data.
-- Turn on ADHD Mode.
 - Confirm Today still contains exactly Next thing to do, Quick Capture, and After that.
-- Confirm Quick Review uses a one-card review size.
+- Confirm there is no Calm/ADHD mode toggle or attention preset required before the calm hierarchy works.
+- Open Review one at a time from More and confirm each saved capture has one Process route with no record-type preset cluster.
 - Confirm older Today visibility settings cannot hide Quick Capture or reintroduce dashboard sections.
 
-## Autopilot And Attention Presets
+## Priority Guide
 
 - Open More, expand Ministry rhythms, then open Priority guide.
-- Confirm Autopilot shows exactly one suggested next action and explains how it chooses.
-- Return to More, then open Settings and data.
-- Choose the Overwhelmed attention preset and tap Apply Preset.
-- Confirm Today keeps the same three-section Calm OS hierarchy and never uses Autopilot as normal interface language.
-- Choose Admin Catch-Up and tap Apply Preset.
-- Confirm administrative content remains outside Today even when an older attention preset is applied.
+- Confirm the guide shows exactly one suggested next action and explains the local priority order.
+- Confirm Today keeps the same three-section hierarchy and does not use Autopilot as normal interface language.
+- Confirm administrative content remains outside Today.
 - Confirm no cloud sync, calendar, contacts, native widget, or external AI feature beyond the implemented Quick Grab proposal route appears as active unless it has been separately built.
 
 ## Unified Capture And Shortcut Flow
@@ -57,7 +54,7 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 ## Data Safety
 
 - Create a test person.
-- Add a Quick Grab.
+- Save an unprocessed capture.
 - Add a prayer request.
 - Confirm Settings and data shows a Backup Health card.
 - Confirm Settings and data shows Auto Memory Vault.
@@ -123,7 +120,7 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 
 ## Prayer
 
-- Open Pray from the bottom navigation.
+- Open Prayer from the bottom navigation.
 - Check Active, Follow-Up Needed, Prayer Walk, Answered Prayer, Archived Prayer Requests, Sensitive Prayer Requests, Recently Added, and By Person.
 - Mark a request answered.
 - Add an answered note and confirm it opens an in-app sheet instead of a browser popup.

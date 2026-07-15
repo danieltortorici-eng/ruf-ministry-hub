@@ -2,9 +2,9 @@
 
 Audit date: 2026-07-15
 
-## Static baseline
+## Accepted-base static baseline
 
-- Deploy HTML: 577,038 bytes raw; approximately 113,871 bytes with local gzip.
+- Deploy HTML: 577,038 bytes raw; 113,839 bytes with local gzip.
 - Inline JavaScript: 554,090 bytes / 11,305 lines.
 - Inline CSS: 22,058 bytes / 1,144 lines / 175 rule blocks.
 - 529 functions, 75 renderers, 44 localStorage call sites, 45 `saveData()` call sites, and 127 render call sites.
@@ -24,6 +24,43 @@ Audit date: 2026-07-15
 | P2 | Capture/proposal retries have no stable idempotency key or persisted in-flight state. | Upsert by capture revision and processor version; add per-action execution keys. |
 | Positive | Explicit service-worker activation, `/api/*` bypass, local-only data, and 360px photo resizing are sound foundations. | Preserve and regression-test them. |
 
+## Phase 10 measured cleanup
+
+The Phase 9 commit (`f580c42`) is the immediate pre-cleanup comparison point. Measurements use the same local Node script against the same authoritative HTML; they are source-size and static-complexity evidence, not browser timing.
+
+| Measure | Phase 9 | Phase 10 candidate | Change |
+| --- | ---: | ---: | ---: |
+| HTML bytes | 664,955 | 574,448 | -90,507 (-13.6%) |
+| Local gzip bytes | 131,054 | 116,277 | -14,777 (-11.3%) |
+| File lines | 14,484 | 12,502 | -1,982 (-13.7%) |
+| Inline JavaScript bytes | 630,067 | 542,094 | -87,973 (-14.0%) |
+| Inline CSS bytes | 33,935 | 31,401 | -2,534 (-7.5%) |
+| Named functions | 607 | 544 | -63 (-10.4%) |
+| Named renderers | 92 | 77 | -15 (-16.3%) |
+
+The candidate is also 2,590 raw bytes smaller than the accepted base despite the implemented Calm OS screens, design system, compatibility metadata, and recovery hooks added since that base.
+
+### Verified deletions
+
+- Removed the unreachable pre-Calm profile renderer and its duplicate card/timeline helpers.
+- Removed dashboard-era Today renderers, shortcuts, toggles, attention presets, and obsolete CSS.
+- Removed prompt-based profile create/edit/copy paths replaced by in-app sheets, unified capture, Brief Me, and Follow Up.
+- Removed the parallel manual Quick Grab processing screen and saver. Every visible saved-capture Process action now enters `beginCaptureProcessing`, so permanent structured records remain behind the shared proposal approval executor.
+- Removed the uninvoked test harness that exercised that deleted manual saver; maintained proposal selection, editing, partial approval, person resolution, rollback, and idempotency tests remain active.
+- Dormant legacy `process:<captureId>` autosave keys are not rendered or mutated, but remain unknown-compatible backup data rather than being destructively purged.
+
+### Static hot-path improvements
+
+- Person lookup now uses a first-ID-wins map that preserves old duplicate-ID behavior and rebuilds after array replacement or length changes.
+- Search builds one person map per query instead of scanning the People array for every linked result. With 500 people and 2,000 unmatched linked records, the former shape could perform up to 1,000,000 identifier comparisons; the new shape builds 500 entries and performs constant-time lookups.
+- Duplicate review normalizes each name once and stops after 12 candidates. At 500 people the former pairwise shape examined 124,750 pairs and could normalize 249,500 values; the new helper normalizes 500 values while retaining the same bounded result contract.
+- Pinned-person ranking uses a `Set`, and proactive recommendation deduplication uses a linear seen-ID set instead of repeated array scans.
+
+### Finding status at this checkpoint
+
+- Resolved before or during Phase 10: unselected proposal side effects, unbounded profile previews, repeated search person scans, capture/proposal idempotency, and the parallel capture saver.
+- Still a Phase 11 completion blocker: recovery-first IndexedDB bootstrap, IndexedDB draft hydration, and serialized encrypted lifecycle flushes.
+
 ## Evidence limits
 
-Source measurements are `OBSERVED`; baseline tests are `AUTOMATED`. LCP, INP, CLS, memory, battery, real Safari quota, slow-device behavior, and real offline startup are `NOT VERIFIED` until browser/device evidence is captured.
+Source measurements are `OBSERVED`; focused synthetic regressions are `AUTOMATED`. LCP, INP, CLS, memory, battery, real Safari quota, slow-device behavior, and real offline startup are `NOT VERIFIED` until browser/device evidence is captured.

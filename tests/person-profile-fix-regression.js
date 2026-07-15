@@ -164,15 +164,6 @@ function assert(condition, label) {
   console.log(`PASS ${label}`);
 }
 
-function setPrompts(values) {
-  let index = 0;
-  sandbox.window.prompt = () => {
-    const value = values[index];
-    index += 1;
-    return value ?? null;
-  };
-}
-
 function resetApp() {
   Object.keys(elements).forEach(key => delete elements[key]);
   makeElement("app");
@@ -183,7 +174,6 @@ function resetApp() {
       enableAutoSave: false,
       enableUndo: true,
       appCoachEnabled: false,
-      appCoachShowOnToday: false,
       backupReminderDays: "0",
       localEncryptionEnabled: false
     });
@@ -198,12 +188,11 @@ function resetApp() {
       screen: "person",
       personId: person.id,
       quickGrabId: null,
-      processPreset: [],
       prayerFilter: "Active",
       search: "",
       quickGrabDraftText: "",
       globalSearch: "",
-      focusMode: settings.calmMode,
+      focusMode: true,
       locked: false,
       encryptionLocked: false,
       reviewIndex: 0,
@@ -225,10 +214,6 @@ function run() {
   assert(!profileHtml.includes("Quick Actions"), "profile removes the parallel direct-create action cluster");
   assert(profileHtml.includes("Profile Details") && !profileHtml.includes("Preferred contact"), "profile keeps administration collapsed without dormant contact preference");
 
-  setPrompts(["555-2222"]);
-  appEval(`editPersonField("${personId}", "phone", "Phone number")`);
-  assert(db().people[0].phone === "555-2222", "editing phone updates person profile");
-
   appEval(`openEditFieldSheet("person", "${personId}", "phone", "Phone number")`);
   assert(appEval("view.sheet && view.sheet.type") === "edit-field", "profile edit sheet opens");
   makeElement("sheet-edit-value").value = "555-3333";
@@ -236,9 +221,34 @@ function run() {
   assert(db().people[0].phone === "555-3333", "profile edit sheet updates person profile");
   assert(appEval("view.sheet") === null, "profile edit sheet closes after save");
 
-  setPrompts(["Remember that Profile Test prefers Tuesday mornings."]);
-  appEval(`quickAddNote("${personId}")`);
-  assert(db().notes.length === 1 && db().notes[0].relatedPersonId === personId, "quick add note creates linked note");
+  const createdRecords = appEval(`(() => {
+    const note = createProfileNoteRecord("${personId}", { content: "Remember that Profile Test prefers Tuesday mornings." });
+    const meeting = createProfileMeetingRecord("${personId}", {
+      summary: "Talked about Bible study and exams.",
+      whatToRemember: "Remember this grounded detail",
+      meetingDate: "2026-07-06",
+      meetingType: "Pastoral",
+      sensitiveFlag: true
+    });
+    const prayer = createProfilePrayerRecord("${personId}", {
+      request: "Pray for wisdom this week.",
+      followUpDate: "2026-07-08",
+      shareableStatus: "Private",
+      sensitiveFlag: true
+    });
+    const task = createProfileFollowUpRecord("${personId}", {
+      title: "Text after exam",
+      dueDate: "2026-07-05"
+    });
+    return { note: note.id, meeting: meeting.id, prayer: prayer.id, task: task.id };
+  })()`);
+  assert(db().notes.length === 1 && db().notes[0].relatedPersonId === personId, "profile note record creates a linked note");
+  assert(db().meetingNotes.length === 1 && db().meetingNotes[0].meetingType === "Pastoral", "profile meeting record creates a linked meeting");
+  assert(db().people[0].lastMeaningfulInteraction === "2026-07-06", "profile meeting record updates last interaction when explicitly requested");
+  assert(db().prayerRequests.length === 1 && db().prayerRequests[0].status === "Follow-Up Needed", "profile prayer record creates a linked follow-up prayer");
+  assert(db().prayerRequests[0].sensitivityLevel === "Sensitive", "profile prayer record preserves sensitivity");
+  assert(db().tasks.length === 1 && db().tasks[0].dueDate === "2026-07-05", "profile follow-up record creates a dated task");
+  assert(db().people[0].nextFollowUpDate === "2026-07-05", "profile follow-up record updates the planned follow-up");
 
   const firstNoteId = db().notes[0].id;
   appEval(`openEditFieldSheet("record", "${firstNoteId}", "content", "Note", "notes")`);
@@ -246,57 +256,11 @@ function run() {
   appEval("submitEditFieldSheet()");
   assert(db().notes[0].content === "Edited note through sheet", "record edit sheet updates note");
 
-  setPrompts(["Talked about Bible study and exams."]);
-  appEval(`quickAddMeeting("${personId}")`);
-  assert(db().meetingNotes.length === 1 && db().meetingNotes[0].relatedPersonId === personId, "quick add meeting creates linked meeting note");
-
-  setPrompts(["Pray for wisdom this week."]);
-  appEval(`quickAddPrayer("${personId}")`);
-  assert(db().prayerRequests.length === 1 && db().prayerRequests[0].relatedPersonId === personId, "quick add prayer creates linked prayer request");
-
-  setPrompts(["Text after exam", "2026-07-05"]);
-  appEval(`quickAddFollowUp("${personId}")`);
-  assert(db().tasks.length === 1 && db().tasks[0].dueDate === "2026-07-05", "quick add follow-up creates dated task");
-  assert(db().people[0].nextFollowUpDate === "2026-07-05", "follow-up task updates profile next follow-up");
-
   appEval(`markFollowedUp("${personId}")`);
   assert(db().people[0].lastMeaningfulInteraction === appEval("todayISO()"), "mark followed up records today");
   assert(db().people[0].nextFollowUpDate === "", "mark followed up clears profile follow-up");
 
-  appEval(`copyTextDraft("${personId}")`);
-  assert(sandbox.__copiedText.includes("Hey Profile,"), "copy text draft uses first name");
-
-  appEval(`openProfileActionSheet("note", "${personId}")`);
-  assert(appEval("view.sheet && view.sheet.kind") === "note", "profile note sheet opens");
-  makeElement("sheet-note-content").value = "Sheet-created note";
-  makeElement("sheet-sensitive").checked = true;
-  const noteCountBeforeSheet = db().notes.length;
-  appEval(`submitProfileActionSheet("note", "${personId}")`);
-  assert(db().notes.length === noteCountBeforeSheet + 1 && db().notes[0].sensitiveFlag === true, "profile note sheet saves linked note");
-  assert(appEval("view.sheet") === null, "profile note sheet closes after save");
-
-  appEval(`openProfileActionSheet("meeting", "${personId}")`);
-  makeElement("sheet-meeting-summary").value = "Sheet meeting summary";
-  makeElement("sheet-meeting-remember").value = "Remember this from the sheet";
-  makeElement("sheet-meeting-date").value = "2026-07-06";
-  makeElement("sheet-meeting-type").value = "Pastoral";
-  makeElement("sheet-sensitive").checked = true;
-  const meetingCountBeforeSheet = db().meetingNotes.length;
-  appEval(`submitProfileActionSheet("meeting", "${personId}")`);
-  assert(db().meetingNotes.length === meetingCountBeforeSheet + 1 && db().meetingNotes[0].meetingType === "Pastoral", "profile meeting sheet saves linked meeting");
-  assert(db().people[0].lastMeaningfulInteraction === "2026-07-06", "profile meeting sheet updates last interaction");
-
-  appEval(`openProfileActionSheet("prayer", "${personId}")`);
-  makeElement("sheet-prayer-request").value = "Sheet prayer request";
-  makeElement("sheet-prayer-follow-date").value = "2026-07-08";
-  makeElement("sheet-prayer-shareable").value = "Private";
-  makeElement("sheet-sensitive").checked = true;
-  const prayerCountBeforeSheet = db().prayerRequests.length;
-  appEval(`submitProfileActionSheet("prayer", "${personId}")`);
-  assert(db().prayerRequests.length === prayerCountBeforeSheet + 1 && db().prayerRequests[0].status === "Follow-Up Needed", "profile prayer sheet saves follow-up prayer");
-  assert(db().prayerRequests[0].sensitivityLevel === "Sensitive", "profile prayer sheet saves sensitivity");
-
-  const prayerSheetId = db().prayerRequests[0].id;
+  const prayerSheetId = createdRecords.prayer;
   appEval(`openPrayerActionSheet("answered-note", "${prayerSheetId}")`);
   assert(appEval("view.sheet && view.sheet.type") === "prayer-action", "prayer action sheet opens");
   assert(appEval("view.sheet && view.sheet.kind") === "answered-note", "answered prayer note sheet opens");
@@ -324,14 +288,10 @@ function run() {
   assert(db().prayerRequests[0].createdFollowUpTaskIds.includes(db().tasks[0].id), "prayer task sheet records created task on prayer");
   assert(db().people[0].nextFollowUpDate === "2026-07-11", "prayer task sheet updates profile follow-up");
 
-  appEval(`openProfileActionSheet("followup", "${personId}")`);
-  makeElement("sheet-followup-title").value = "Sheet follow-up task";
-  makeElement("sheet-followup-due").value = "2026-07-09";
-  makeElement("sheet-followup-status").value = "Waiting";
-  const taskCountBeforeSheet = db().tasks.length;
-  appEval(`submitProfileActionSheet("followup", "${personId}")`);
-  assert(db().tasks.length === taskCountBeforeSheet + 1 && db().tasks[0].status === "Waiting", "profile follow-up sheet saves dated task");
-  assert(db().people[0].nextFollowUpDate === "2026-07-09", "profile follow-up sheet updates next follow-up");
+  const followUpCount = db().tasks.length;
+  appEval(`createProfileFollowUpRecord("${personId}", { title: "Waiting follow-up", dueDate: "2026-07-09", status: "Waiting" })`);
+  assert(db().tasks.length === followUpCount + 1 && db().tasks[0].status === "Waiting", "profile follow-up primitive preserves a waiting status");
+  assert(db().people[0].nextFollowUpDate === "2026-07-09", "profile follow-up primitive updates next follow-up");
 
   appEval("openCreatePersonSheet()");
   assert(appEval("view.sheet && view.sheet.type") === "create-person", "create person sheet opens");

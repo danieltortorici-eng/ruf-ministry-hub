@@ -77,34 +77,6 @@ function makeElement(idOrTag) {
   return el;
 }
 
-function makeChip(kind, value) {
-  const classes = new Set(["chip"]);
-  return {
-    textContent: value,
-    innerText: value,
-    dataset: kind === "tag" ? { tag: value } : { urgency: value },
-    addEventListener() {},
-    classList: {
-      add(name) { classes.add(name); },
-      remove(name) { classes.delete(name); },
-      toggle(name, force) {
-        if (force === undefined ? !classes.has(name) : force) classes.add(name);
-        else classes.delete(name);
-      },
-      contains(name) { return classes.has(name); }
-    }
-  };
-}
-
-const quickTagChips = ["People", "Prayer", "Donors", "Teaching", "Events", "Admin", "Personal"]
-  .map(tag => makeChip("tag", tag));
-const urgencyChips = ["Today", "Soon", "Important"].map(urgency => makeChip("urgency", urgency));
-
-function resetChips() {
-  quickTagChips.forEach(chip => chip.classList.remove("active"));
-  urgencyChips.forEach(chip => chip.classList.remove("active"));
-}
-
 const location = {
   protocol: "https:",
   hostname: "example.test",
@@ -170,10 +142,6 @@ const sandbox = {
       return this.querySelectorAll(selector)[0] || null;
     },
     querySelectorAll(selector) {
-      if (selector === "#quick-tags .chip") return quickTagChips;
-      if (selector === "#quick-tags .chip.active") return quickTagChips.filter(chip => chip.classList.contains("active"));
-      if (selector === "#urgency-tags .chip") return urgencyChips;
-      if (selector === "#urgency-tags .chip.active") return urgencyChips.filter(chip => chip.classList.contains("active"));
       if (selector === "input, textarea, select") return Object.values(elements);
       return [];
     }
@@ -247,7 +215,6 @@ function resetDom() {
   Object.keys(elements).forEach(key => delete elements[key]);
   makeElement("app");
   makeElement("toast");
-  resetChips();
   toastMessages.length = 0;
   downloadEvents.length = 0;
   setUrl("");
@@ -263,7 +230,6 @@ function resetApp(dataCode = "emptyData()") {
       enableAutoSave: false,
       enableUndo: true,
       appCoachEnabled: false,
-      appCoachShowOnToday: false,
       backupReminderDays: "0",
       localEncryptionEnabled: false,
       notificationsEnabled: false
@@ -274,12 +240,11 @@ function resetApp(dataCode = "emptyData()") {
       screen: settings.launchScreen || "today",
       personId: db.people[0]?.id || null,
       quickGrabId: null,
-      processPreset: [],
       prayerFilter: "Active",
       search: "",
       quickGrabDraftText: "",
       globalSearch: "",
-      focusMode: settings.calmMode,
+      focusMode: true,
       locked: false,
       encryptionLocked: false,
       reviewIndex: 0,
@@ -291,8 +256,6 @@ function resetApp(dataCode = "emptyData()") {
     memoryVaultCache = null;
     localStorage.removeItem(AUTO_MEMORY_KEY);
     pendingUrlQuickGrabText = "";
-    pendingUrlQuickGrabTags = [];
-    pendingUrlQuickGrabUrgency = "";
     pendingUrlQuickGrabParams = null;
   `);
 }
@@ -337,6 +300,49 @@ function testCalmPrimaryNavigation() {
   assert(advanced.includes("Back to More") && advanced.includes("Launch Screen") && !advanced.includes("Workflow Shortcuts"), "settings and data stays reachable without duplicating the More directory");
 }
 
+function testCleanupAndLargeDataPaths() {
+  resetApp("emptyData()");
+  const lookup = appEval(`(() => {
+    db.people = Array.from({ length: 600 }, (_, index) => ({ id: "person_" + index, name: "Synthetic Person " + index }));
+    const middle = personById("person_333")?.name;
+    db.people.push({ id: "person_new", name: "New Synthetic Person" });
+    const pushed = personById("person_new")?.name;
+    db.people = db.people.filter(person => person.id !== "person_333");
+    const removed = personById("person_333");
+    db.people.push({ id: "duplicate_id", name: "First Duplicate" }, { id: "duplicate_id", name: "Second Duplicate" });
+    const firstDuplicate = personById("duplicate_id")?.name;
+    return { middle, pushed, removed: Boolean(removed), firstDuplicate };
+  })()`);
+  assert(lookup.middle === "Synthetic Person 333" && lookup.pushed === "New Synthetic Person" && lookup.removed === false, "person lookup index rebuilds safely after append and replacement");
+  assert(lookup.firstDuplicate === "First Duplicate", "person lookup keeps first-match behavior for corrupt duplicate identifiers");
+
+  const duplicateCost = appEval(`(() => {
+    const source = Array.from({ length: 400 }, (_, index) => ({ id: "duplicate_" + index, name: "Synthetic Unique " + String(index).padStart(4, "0") }));
+    const original = normalizedName;
+    let calls = 0;
+    normalizedName = value => { calls += 1; return original(value); };
+    try {
+      const pairs = duplicatePersonPairs(source);
+      return { calls, pairs: pairs.length };
+    } finally {
+      normalizedName = original;
+    }
+  })()`);
+  assert(duplicateCost.calls === 400 && duplicateCost.pairs <= 12, "duplicate review normalizes each person once and returns a bounded result");
+  assert(appEval("dataJanitorDuplicatePeople === undefined ? false : dataJanitorDuplicatePeople(db.people).length <= 12"), "duplicate manager and Data Janitor share the bounded matcher");
+
+  const searchSource = html.slice(html.indexOf("function buildSearchResults"), html.indexOf("function renderSearchResultCard"));
+  assert(searchSource.includes("const personMap = personMapFrom") && !searchSource.includes("personById("), "cross-record search builds one person map instead of rescanning people for every record");
+  assert(!html.includes("list.indexOf(id) === index"), "proactive recommendation deduplication uses a linear Set path");
+  ["legacyRenderPersonProfile", "legacyAutopilotNextAction", "renderTodayWorkSections", "renderStartHere", "renderPeopleShortcuts", "renderProcessQuickGrab", "saveProcessedQuickGrab", "openProcessing", "qg-preset", "qg-mock-ai", "quick-tags", "urgency-tags", ".quick-open"].forEach(marker => {
+    assert(!html.includes(marker), `verified legacy path ${marker} is removed`);
+  });
+  const actionSource = html.slice(html.indexOf("function handleAction"), html.indexOf("function updateSetting"));
+  assert(actionSource.includes('if (action === "qg-process") beginCaptureProcessing(id);'), "every visible saved-capture Process action enters the shared approval pipeline");
+  const proposalSource = html.slice(html.indexOf("function openAiProposalSource"), html.indexOf("function handleAction"));
+  assert(proposalSource.includes("beginCaptureProcessing(proposal.sourceId)"), "proposal source retries reuse the shared capture pipeline");
+}
+
 function testQuickGrabSharedUrlImport() {
   resetApp();
   makeElement("quick-text").value = "";
@@ -345,8 +351,9 @@ function testQuickGrabSharedUrlImport() {
 
   assert(view().screen === "quick", "shared URL opens Quick Grab");
   assert(view().quickGrabDraftText === "Prayer capture", "shared URL populates Quick Grab draft");
-  assert(!quickTagChips.some(chip => chip.classList.contains("active")), "shared URL does not preselect a visible category");
-  assert(!urgencyChips.some(chip => chip.classList.contains("active")), "shared URL does not preselect visible urgency");
+  const captureMarkup = appEval("renderQuickGrab()");
+  assert(!captureMarkup.includes('id="quick-tags"'), "shared URL does not expose or preselect a visible category");
+  assert(!captureMarkup.includes('id="urgency-tags"'), "shared URL does not expose or preselect visible urgency");
   assert(location.search === "", "shared URL params are removed after import");
 
   appEval("importQuickGrabFromCurrentUrl(); applyPendingUrlQuickGrabText();");
@@ -358,7 +365,7 @@ function testQuickGrabSharedUrlImport() {
   appEval("importQuickGrabFromCurrentUrl(); applyPendingUrlQuickGrabText();");
   assert(view().quickGrabDraftText === "Prayer capture", "shared URL import does not duplicate an existing identical draft");
 
-  appEval("createQuickGrab();");
+  appEval('submitUnifiedCapture("main", "", "later");');
   const grab = db().quickGrabs[0];
   assert(grab.rawContent === "Prayer capture", "shared draft saves through unified capture");
   assert(grab.captureSource === "shared", "shared draft keeps its capture source");
@@ -386,6 +393,13 @@ function testUnifiedCaptureAndProposalSafety() {
   assert(savedLater.relatedPersonId === personId && savedLater.personLocked === true && savedLater.captureSource === "profile", "profile Save for later creates one locked person-linked capture");
   assert(db().notes.length === 0 && db().meetingNotes.length === 0 && db().prayerRequests.length === 0 && db().tasks.length === 0, "profile Save for later creates no structured records");
   assert(db().people[0].lastMeaningfulInteraction === beforeProfile.lastMeaningfulInteraction && db().people[0].nextFollowUpDate === beforeProfile.nextFollowUpDate && db().people[0].followUpReason === beforeProfile.followUpReason, "profile Save for later does not change person dates or permanent details");
+  const savedCardMarkup = appEval(`renderQuickGrabCard(db.quickGrabs.find(item => item.id === "${savedLater.id}"))`);
+  assert((savedCardMarkup.match(/data-action="qg-process"/g) || []).length === 1 && !savedCardMarkup.includes("Turn into"), "saved capture cards expose one Process route without manual record-type presets");
+  sandbox.__processRouteButton = { dataset: { action: "qg-process", id: savedLater.id }, classList: { contains() { return false; } } };
+  appEval("handleAction({ currentTarget: __processRouteButton, target: __processRouteButton })");
+  assert(db().quickGrabs.find(item => item.id === savedLater.id).processingState === "awaitingApproval" && view().sheet?.type === "ai-gate", "saved capture Process uses the same privacy review as new capture Process");
+  assert(db().notes.length === 0 && db().meetingNotes.length === 0 && db().prayerRequests.length === 0 && db().tasks.length === 0, "saved capture Process cannot bypass approval to write structured records");
+  appEval("view.sheet = null");
 
   makeElement("quick-text").value = "Met with Capture Test Person. Pray for wisdom and check in tomorrow.";
   appEval('view.screen = "quick"; submitUnifiedCapture("main", "", "process")');
@@ -486,15 +500,13 @@ function testCoreLocalActions() {
 
 function testAdhdModeAndTodaySectionVisibility() {
   resetApp("demoData()");
-  appEval('updateSetting("adhdMode", true)');
-  assert(appEval("settings.adhdMode") === true, "ADHD Mode can be enabled");
-  assert(appEval("settings.calmMode") === true, "ADHD Mode keeps Calm Mode on");
-  assert(appEval("settings.reviewBatchSize") === "1", "ADHD Mode switches review to one card");
-  assert(appEval("settings.launchScreen") === "today", "ADHD Mode opens to Today");
+  const advanced = appEval("renderAdvancedSettings()");
+  assert(!advanced.includes("ADHD Mode") && !advanced.includes("Attention Preset"), "Calm OS removes the redundant ADHD mode decision");
+  assert(!advanced.includes("Show Autopilot On Today") && !advanced.includes("Today List Size"), "settings cannot reintroduce dashboard controls on Today");
 
   const adhdToday = appEval('view.screen = "today"; renderToday();');
-  assert((adhdToday.match(/data-today-section=/g) || []).length === 3, "ADHD Today keeps exactly three primary sections");
-  assert(adhdToday.includes("Next thing to do") && adhdToday.includes("Quick Capture") && adhdToday.includes("After that"), "ADHD Today uses the shared low-choice hierarchy");
+  assert((adhdToday.match(/data-today-section=/g) || []).length === 3, "Calm Today keeps exactly three primary sections");
+  assert(adhdToday.includes("Next thing to do") && adhdToday.includes("Quick Capture") && adhdToday.includes("After that"), "Calm Today uses the shared low-choice hierarchy");
   assert((adhdToday.match(/class="button primary"/g) || []).length === 1, "Today has one visually dominant action");
 
   appEval(`
@@ -507,6 +519,9 @@ function testAdhdModeAndTodaySectionVisibility() {
   const hiddenToday = appEval('renderToday();');
   assert((hiddenToday.match(/data-today-section=/g) || []).length === 3, "legacy dashboard visibility toggles cannot fragment Calm OS Today");
   assert(hiddenToday.includes("Quick Capture") && !hiddenToday.includes("People Shortcuts") && !hiddenToday.includes("App Coach suggestion"), "Today keeps capture while legacy dashboard sections stay relocated");
+
+  appEval('settings.calmMode = false; view.focusMode = true; render()');
+  assert(makeElement("app").innerHTML.includes("focus-mode") && !makeElement("app").innerHTML.includes("Calm Mode Off"), "legacy Calm Mode preference cannot turn Calm OS off");
 }
 
 function testAutopilotAndAttentionPresets() {
@@ -523,15 +538,7 @@ function testAutopilotAndAttentionPresets() {
   assert(autopilotMarkup.includes("How Autopilot Chooses"), "Autopilot screen explains its local priority order");
   assert(autopilotMarkup.includes("Next-Level Build Guardrails"), "Autopilot screen keeps future integrations labeled as guardrails");
 
-  appEval('settings.adhdPreset = "overwhelmed"; applyAdhdPreset();');
-  assert(appEval("settings.adhdMode") === true, "Overwhelmed preset enables ADHD Mode");
-  assert(appEval("settings.autopilotMode") === true, "Overwhelmed preset keeps Autopilot on");
-  assert(appEval("settings.todayShowQuickReview") === false, "Overwhelmed preset hides loose reminders");
-  assert(appEval("settings.todayShowCarePeople") === false, "Overwhelmed preset hides people section");
-  assert(appEval("settings.todayShowFollowUps") === false, "Overwhelmed preset hides follow-ups");
-  const overwhelmedToday = appEval('view.screen = "today"; renderToday();');
-  assert(overwhelmedToday.includes("Next thing to do"), "Overwhelmed Today keeps one recommendation");
-  assert((overwhelmedToday.match(/data-today-section=/g) || []).length === 3, "attention presets retain the Calm OS Today contract");
+  assert(!html.includes("ADHD_PRESETS") && !html.includes("applyAdhdPreset"), "obsolete attention presets cannot mutate the fixed Today contract");
 }
 
 function testTodayRecommendationPriorityAndActions() {
@@ -1059,6 +1066,7 @@ function testCurrentDocsDoNotClaimRemovedScreens() {
 async function run() {
   testCurrentScreensRender();
   testCalmPrimaryNavigation();
+  testCleanupAndLargeDataPaths();
   testQuickGrabSharedUrlImport();
   testUnifiedCaptureAndProposalSafety();
   testProposalActionsDoNotHidePersonDateUpdates();

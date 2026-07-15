@@ -145,3 +145,13 @@ This is the decision record for the Calm OS redesign. Decisions are constrained 
 - **Compatibility effect:** Routes and secondary renderers remain available; old secondary launch-screen values normalize to Today, while primary launch choices remain configurable. No ministry data or storage schema changes.
 - **Files affected:** Authoritative deploy HTML/CSS, navigation regressions, iPhone manual QA, implementation record, release/cache/CSP identities.
 - **Tests used:** Exact five-item contract, semantic nav/current-page state, mobile count, More reachability, progressive-disclosure count, legacy launch normalization, screen render, syntax, deployment/CSP, and full maintained suite.
+
+### PD-015 — Delete the parallel capture saver and index repeated lookup work
+
+- **Decision:** Route every visible Process action for a saved capture through `beginCaptureProcessing` and the existing proposal executor; delete the manual processing form/saver and verified unreachable render paths. Use first-ID-wins maps and sets for repeated People, Search, duplicate, pin, and recommendation lookups.
+- **Alternatives considered:** Keep the old form as an “advanced” bypass; maintain two proposal/manual save architectures; broadly rewrite the single-file app into a framework; leave the linear scans until a live benchmark existed.
+- **Reason:** The old form could write permanent records without the shared suggestion/approval sequence, directly violating the product contract. The focused indexes remove evidenced asymptotic work without changing storage or adding a framework.
+- **Cognitive-load effect:** Saved captures now expose one Process choice, no record-type preset cluster, and the same review language as every other capture source. Removing dashboard/profile branches reduces future maintenance decisions.
+- **Compatibility effect:** Existing records, collections, storage keys, proposals, and backup envelopes are unchanged. First duplicate ID still wins as it did with `Array.find`; unknown legacy settings and dormant `process:*` drafts continue to round-trip without being displayed or deleted.
+- **Files affected:** Authoritative deploy HTML, regression/person/AI tests, performance audit, manual QA, implementation log, and release/cache/CSP identities.
+- **Tests used:** Shared saved-capture routing/no-write regression; duplicate-ID semantics; large synthetic People/duplicate/search checks; syntax, profile, AI action approval/idempotency, deployment, and full maintained suite.

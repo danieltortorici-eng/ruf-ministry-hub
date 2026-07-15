@@ -176,3 +176,16 @@ Status: implemented locally on 2026-07-15; verification recorded with the phase 
 - Renamed the Prayer destination and question for pastoral use, while retaining every prayer filter and record action.
 - Paired app/package version, service-worker cache, and CSP identity. No record, backup, storage, Function, production setting, or external state changed.
 - Verification: focused syntax and navigation regression passed before the full maintained suite; final exact commands and exit results are recorded in the Phase 9 commit evidence.
+
+## Phase 10 — Verified cleanup and performance
+
+Status: implemented locally on 2026-07-15; verification recorded with the phase commit.
+
+- Deleted verified unreachable dashboard-era Today, legacy profile, prompt-based profile-action, old attention-preset, and no-op Calm-mode paths. Updated the in-app manual to describe the implemented Calm OS flows.
+- Found and removed a higher-severity duplicate architecture: saved Quick Grab cards could still open a manual structured-record form that bypassed the shared proposal system. All visible Process routes now enter `beginCaptureProcessing`, preserve the raw capture, show the privacy gate, and require selected-action approval before permanent records.
+- Preserved unknown legacy settings, old record fields, and dormant `process:<captureId>` autosave entries for backup round-trip and rollback tolerance; no destructive cleanup or data migration was performed.
+- Added first-ID-wins People indexes, one-map Search linking, a shared bounded duplicate matcher, Set-based pin checks, and linear proactive-suggestion deduplication.
+- Relative to Phase 9, reduced authoritative HTML by 90,507 bytes (13.6%), local gzip by 14,777 bytes (11.3%), inline JavaScript by 87,973 bytes (14.0%), named functions by 63, and renderers by 15.
+- Removed 236 lines of uninvoked legacy AI test scaffolding tied to the deleted manual saver. The maintained AI proposal selection/edit/partial-approval/person-resolution/idempotency tests continue to run.
+- No storage identifier, record collection, backup envelope, Function, Worker, external system, secret, production setting, or original checkout was changed.
+- Verification: focused syntax, Calm regression, maintained person-profile, AI function, and whitespace checks passed before final Phase 10 versioning; full `npm test` is the commit gate.

@@ -179,11 +179,6 @@
       line-height: 1.45;
     }
 
-    .quick-open {
-      flex: 0 0 auto;
-      min-width: 160px;
-    }
-
     .grid {
       display: grid;
       gap: 16px;
@@ -292,7 +287,6 @@
 
     .pill.green { background: #e8f4ef; color: #24594b; border-color: #c9e6db; }
     .pill.gold { background: #fff4d8; color: #7a5600; border-color: #f0d18a; }
-    .pill.terra { background: #faece6; color: #8a4127; border-color: #efc7b8; }
     .pill.violet { background: #eeeafd; color: #4d3e97; border-color: #d9d0fa; }
     .pill.rose { background: #f8e9ef; color: #873552; border-color: #ecc2d1; }
     .pill.gray { background: #f1f3f6; color: #4c5665; border-color: #dfe4ec; }
@@ -324,12 +318,6 @@
 
     .button.primary:hover {
       background: var(--accent-strong);
-    }
-
-    .button.terra {
-      background: var(--terra);
-      color: white;
-      border-color: var(--terra);
     }
 
     .button.danger {
@@ -443,12 +431,6 @@
 
     .app-frame.advanced-actions .extra-actions {
       display: flex;
-    }
-
-    .calm-toggle {
-      background: #eef7f3;
-      color: var(--accent-strong);
-      border-color: #cbe7dc;
     }
 
     .editable-copy {
@@ -568,34 +550,6 @@
       font-size: 1.05rem;
     }
 
-    .chip-row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .chip {
-      min-height: 44px;
-      padding: 7px 10px;
-      border-radius: 999px;
-      background: white;
-      color: var(--soft-ink);
-      border: 1px solid var(--line);
-      font-weight: 720;
-    }
-
-    .chip.active {
-      background: #e8f4ef;
-      border-color: #9ccdbd;
-      color: #24594b;
-    }
-
-    .chip.urgent.active {
-      background: #fff4d8;
-      border-color: #e7c477;
-      color: #7a5600;
-    }
-
     .empty {
       border: 1px dashed #cbd4df;
       border-radius: var(--radius);
@@ -708,22 +662,6 @@
       font-size: 0.9rem;
     }
 
-    .people-shortcuts {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .shortcut-button {
-      min-height: 38px;
-      border-radius: 999px;
-      padding: 8px 11px;
-      background: #ffffff;
-      color: var(--accent-strong);
-      border: 1px solid #cbe7dc;
-      font-weight: 760;
-    }
-
     .form-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -732,12 +670,6 @@
 
     .form-grid .wide {
       grid-column: 1 / -1;
-    }
-
-    .check-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
     }
 
     .check {
@@ -756,21 +688,6 @@
     .check input {
       margin-top: 3px;
       accent-color: var(--accent);
-    }
-
-    .profile-head {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 18px;
-      align-items: start;
-      margin-bottom: 20px;
-    }
-
-    .profile-identity {
-      display: grid;
-      grid-template-columns: 92px minmax(0, 1fr);
-      gap: 14px;
-      align-items: center;
     }
 
     .profile-photo {
@@ -1098,12 +1015,6 @@
       line-height: 1.5;
     }
 
-    .stat-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-    }
-
     .stat {
       background: white;
       border: 1px solid var(--line);
@@ -1127,23 +1038,6 @@
       color: var(--ink);
       font-weight: 760;
       line-height: 1.25;
-    }
-
-    .timeline {
-      display: grid;
-      gap: 10px;
-      position: relative;
-    }
-
-    .timeline-item {
-      display: grid;
-      grid-template-columns: 105px minmax(0, 1fr);
-      gap: 12px;
-      align-items: start;
-      background: white;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 12px;
     }
 
     .tabs {
@@ -1291,13 +1185,6 @@
       border-color: transparent;
       color: var(--accent-strong);
       box-shadow: none;
-    }
-
-    .screen-question {
-      max-width: 680px;
-      color: var(--muted);
-      font-size: 0.98rem;
-      line-height: 1.5;
     }
 
     .eyebrow {
@@ -1549,20 +1436,12 @@
 
       .grid.two,
       .grid.three,
-      .form-grid,
-      .check-grid,
-      .stat-grid {
+      .form-grid {
         grid-template-columns: 1fr;
       }
 
-      .topbar,
-      .profile-head {
+      .topbar {
         display: grid;
-        gap: 12px;
-      }
-
-      .profile-identity {
-        grid-template-columns: 72px minmax(0, 1fr);
         gap: 12px;
       }
 
@@ -1603,10 +1482,6 @@
         -webkit-overflow-scrolling: touch;
       }
 
-      .quick-open {
-        display: none;
-      }
-
       .page-title,
       .profile-name {
         font-size: 1.7rem;
@@ -1616,17 +1491,12 @@
         font-size: 0.94rem;
       }
 
-      .timeline-item {
-        grid-template-columns: 1fr;
-      }
-
       .surface,
       .item {
         box-shadow: none;
       }
 
       .button,
-      .chip,
       .tab,
       .select,
       .input {
@@ -1712,6 +1582,7 @@
       .stat {
         min-height: auto;
       }
+
     }
   </style>
 </head>
@@ -1721,7 +1592,7 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-nav-v1";
+    const APP_VERSION = "2026.07.15-calm-os-cleanup-v1";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CAPTURE_PROCESSOR_VERSION = "calm-os-capture-v1";
@@ -1754,21 +1625,8 @@
     const AI_CONTEXT_SCOPES = ["minimal"];
     const DEFAULT_SETTINGS = {
       calmMode: true,
-      adhdMode: false,
       autopilotMode: true,
-      showAutopilotOnToday: true,
       showAdvancedActions: false,
-      showStartHere: true,
-      todayLimit: "5",
-      adhdTodayLimit: "1",
-      adhdPreset: "minimum-noise",
-      todayShowBackupNotice: true,
-      todayShowCoachNudge: true,
-      todayShowQuickCapture: true,
-      todayShowPeopleShortcuts: true,
-      todayShowQuickReview: true,
-      todayShowCarePeople: true,
-      todayShowFollowUps: true,
       promptMeAfterHours: "24",
       autoOpenQuickGrabReview: true,
       maskSensitivePreviews: true,
@@ -1798,7 +1656,6 @@
       autoMemoryVaultEnabled: true,
       autoMemorySnapshotLimit: "20",
       appCoachEnabled: true,
-      appCoachShowOnToday: true,
       appCoachSensitivity: "balanced",
       appCoachDismissed: {},
       aiEnabled: false,
@@ -1818,7 +1675,6 @@
       recentPersonIds: []
     };
     const CATEGORIES = ["People", "Prayer", "Donors", "Teaching", "Events", "Admin", "Personal", "Unsure"];
-    const URGENCIES = ["Whenever", "Soon", "Today", "Important"];
     const NAV = [
       ["today", "Today"],
       ["quick", "Capture"],
@@ -1830,147 +1686,6 @@
     function calmLaunchScreen(screen) {
       return NAV.some(([key]) => key === screen) ? screen : "today";
     }
-    const ADHD_PRESETS = {
-      "minimum-noise": {
-        label: "Minimum Noise",
-        description: "Today stays one-step-at-a-time with Autopilot, Quick Capture, one loose item, one person, and one follow-up.",
-        patch: {
-          adhdMode: true,
-          autopilotMode: true,
-          showAutopilotOnToday: true,
-          calmMode: true,
-          showAdvancedActions: false,
-          showStartHere: true,
-          launchScreen: "today",
-          reviewBatchSize: "1",
-          adhdTodayLimit: "1",
-          todayShowBackupNotice: false,
-          todayShowCoachNudge: false,
-          todayShowQuickCapture: true,
-          todayShowPeopleShortcuts: false,
-          todayShowQuickReview: true,
-          todayShowCarePeople: true,
-          todayShowFollowUps: true,
-          appCoachSensitivity: "gentle"
-        }
-      },
-      "people-only": {
-        label: "People Only",
-        description: "Today focuses on people and follow-ups, with loose reminders and reminders hidden until you ask for them.",
-        patch: {
-          adhdMode: true,
-          autopilotMode: true,
-          showAutopilotOnToday: true,
-          calmMode: true,
-          showAdvancedActions: false,
-          showStartHere: true,
-          launchScreen: "today",
-          reviewBatchSize: "1",
-          adhdTodayLimit: "2",
-          todayShowBackupNotice: false,
-          todayShowCoachNudge: false,
-          todayShowQuickCapture: true,
-          todayShowPeopleShortcuts: true,
-          todayShowQuickReview: false,
-          todayShowCarePeople: true,
-          todayShowFollowUps: true,
-          appCoachSensitivity: "gentle"
-        }
-      },
-      "prayer-only": {
-        label: "Prayer Only",
-        description: "The app opens to Prayer and keeps Today quiet for capture and the next suggested action.",
-        patch: {
-          adhdMode: true,
-          autopilotMode: true,
-          showAutopilotOnToday: true,
-          calmMode: true,
-          showAdvancedActions: false,
-          showStartHere: true,
-          launchScreen: "prayer",
-          reviewBatchSize: "1",
-          adhdTodayLimit: "1",
-          todayShowBackupNotice: false,
-          todayShowCoachNudge: false,
-          todayShowQuickCapture: true,
-          todayShowPeopleShortcuts: false,
-          todayShowQuickReview: false,
-          todayShowCarePeople: false,
-          todayShowFollowUps: false,
-          appCoachSensitivity: "gentle"
-        }
-      },
-      "admin-catch-up": {
-        label: "Admin Catch-Up",
-        description: "Turns reminders, backups, loose Quick Grabs, and follow-up tasks back into view for an admin block.",
-        patch: {
-          adhdMode: false,
-          autopilotMode: true,
-          showAutopilotOnToday: true,
-          calmMode: true,
-          showAdvancedActions: false,
-          showStartHere: true,
-          launchScreen: "today",
-          reviewBatchSize: "3",
-          todayLimit: "5",
-          todayShowBackupNotice: true,
-          todayShowCoachNudge: true,
-          todayShowQuickCapture: true,
-          todayShowPeopleShortcuts: true,
-          todayShowQuickReview: true,
-          todayShowCarePeople: true,
-          todayShowFollowUps: true,
-          appCoachSensitivity: "balanced"
-        }
-      },
-      "overwhelmed": {
-        label: "Overwhelmed",
-        description: "Today becomes Autopilot plus Quick Capture only, so there is almost nothing to visually parse.",
-        patch: {
-          adhdMode: true,
-          autopilotMode: true,
-          showAutopilotOnToday: true,
-          calmMode: true,
-          showAdvancedActions: false,
-          showStartHere: true,
-          launchScreen: "today",
-          reviewBatchSize: "1",
-          adhdTodayLimit: "1",
-          todayShowBackupNotice: false,
-          todayShowCoachNudge: false,
-          todayShowQuickCapture: true,
-          todayShowPeopleShortcuts: false,
-          todayShowQuickReview: false,
-          todayShowCarePeople: false,
-          todayShowFollowUps: false,
-          appCoachSensitivity: "gentle"
-        }
-      },
-      "weekly-planning": {
-        label: "Weekly Planning",
-        description: "Opens to Weekly Reset and brings planning, backup, and cleanup sections back into view.",
-        patch: {
-          adhdMode: false,
-          autopilotMode: true,
-          showAutopilotOnToday: true,
-          calmMode: true,
-          showAdvancedActions: false,
-          showStartHere: true,
-          launchScreen: "settings",
-          reviewBatchSize: "5",
-          todayLimit: "10",
-          todayShowBackupNotice: true,
-          todayShowCoachNudge: true,
-          todayShowQuickCapture: true,
-          todayShowPeopleShortcuts: true,
-          todayShowQuickReview: true,
-          todayShowCarePeople: true,
-          todayShowFollowUps: true,
-          appCoachSensitivity: "balanced"
-        }
-      }
-    };
-
     let settings = loadSettings();
     settings.launchScreen = calmLaunchScreen(settings.launchScreen);
     let customCopy = loadCustomCopy();
@@ -1979,7 +1694,6 @@
       screen: calmLaunchScreen(settings.launchScreen),
       personId: null,
       quickGrabId: null,
-      processPreset: [],
       prayerFilter: "Active",
       aiReviewFilter: "Pending",
       aiReviewFocusId: "",
@@ -1997,7 +1711,7 @@
 	      profileCaptureDraftTargetId: "",
 	      profileHistoryExpanded: [],
 	      globalSearch: "",
-	      focusMode: settings.calmMode,
+	      focusMode: true,
 	      locked: Boolean(settings.appLockEnabled && settings.pinHash),
 	      encryptionLocked: Boolean(settings.localEncryptionEnabled && encryptedVaultExists()),
       reviewIndex: 0,
@@ -2015,8 +1729,6 @@
     let updateAvailable = false;
     let reloadingForUpdate = false;
     let pendingUrlQuickGrabText = "";
-    let pendingUrlQuickGrabTags = [];
-    let pendingUrlQuickGrabUrgency = "";
     let pendingUrlQuickGrabParams = null;
 
     function uid(prefix) {
@@ -2670,7 +2382,7 @@
           const storedSettings = await idbTransaction("readonly", SETTINGS_KEY);
           if (storedSettings) {
             settings = normalizeSettings(storedSettings);
-            view.focusMode = settings.calmMode;
+            view.focusMode = true;
             view.locked = Boolean(settings.appLockEnabled && settings.pinHash);
             view.encryptionLocked = Boolean(settings.localEncryptionEnabled && encryptedVaultExists());
             localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -2722,7 +2434,7 @@
       db = cloneJson(snapshot.db);
       settings = normalizeSettings(snapshot.settings);
       customCopy = cloneJson(snapshot.customCopy);
-      view.focusMode = settings.calmMode;
+      view.focusMode = true;
       view.locked = false;
       saveData();
       saveSettings();
@@ -2834,15 +2546,6 @@
       `;
     }
 
-    function renderBackupNotice() {
-      if (!backupReminderDue()) return "";
-      return `
-        <section class="section">
-          ${renderBackupHealthCard("today")}
-        </section>
-      `;
-    }
-
     function renderUpdateNotice() {
       if (!updateAvailable) return "";
       return `
@@ -2868,17 +2571,6 @@
     function isLocalOrHttps() {
       if (typeof window === "undefined") return false;
       return window.location.protocol === "https:" || ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-    }
-
-    function localStorageAvailable() {
-      try {
-        const key = "ruf_ministry_hub_storage_test";
-        localStorage.setItem(key, "1");
-        localStorage.removeItem(key);
-        return true;
-      } catch (error) {
-        return false;
-      }
     }
 
     function readinessStatus(ok, label, detail, action = "") {
@@ -3241,7 +2933,6 @@
         screen: calmLaunchScreen(settings.launchScreen),
         personId: null,
         quickGrabId: null,
-        processPreset: [],
         prayerFilter: "Active",
         aiReviewFilter: "Pending",
         aiReviewFocusId: "",
@@ -3259,7 +2950,7 @@
         profileCaptureDraftTargetId: "",
         profileHistoryExpanded: [],
         globalSearch: "",
-        focusMode: settings.calmMode,
+        focusMode: true,
         locked: Boolean(settings.appLockEnabled && settings.pinHash),
         encryptionLocked: false,
         reviewIndex: 0,
@@ -3320,7 +3011,6 @@
       if (view.screen === "quick") return "capture:main";
       if (view.screen === "today") return "capture:today";
       if (view.screen === "person" && (view.profileCapturePersonId || view.personId)) return `capture:profile:${view.profileCapturePersonId || view.personId}`;
-      if (view.screen === "process" && view.quickGrabId) return "process:" + view.quickGrabId;
       if (view.screen === "snooze" && view.quickGrabId) return "snooze:" + view.quickGrabId;
       if (view.screen === "search") return "screen:search";
       if (view.screen === "people") return "screen:people";
@@ -3344,10 +3034,6 @@
         if (!isAutosaveField(el)) return;
         fields[el.id] = el.type === "checkbox" ? Boolean(el.checked) : el.value;
       });
-      const quickTags = Array.from(document.querySelectorAll("#quick-tags .chip.active")).map(el => el.dataset.tag).filter(Boolean);
-      const urgency = document.querySelector("#urgency-tags .chip.active")?.dataset.urgency || "";
-      if (quickTags.length) fields["quick-tags"] = quickTags;
-      if (urgency) fields["urgency-tags"] = urgency;
       return { key, fields, updatedAt: nowISO(), screen: view.screen };
     }
 
@@ -3387,24 +3073,11 @@
       const draft = drafts[key] || (key === "capture:main" ? drafts["screen:quick"] : null);
       if (!draft || !draft.fields) return;
       Object.entries(draft.fields).forEach(([id, value]) => {
-        if (id === "quick-tags") {
-          document.querySelectorAll("#quick-tags .chip").forEach(button => {
-            button.classList.toggle("active", Array.isArray(value) && value.includes(button.dataset.tag));
-          });
-          return;
-        }
-        if (id === "urgency-tags") {
-          document.querySelectorAll("#urgency-tags .chip").forEach(button => {
-            button.classList.toggle("active", value === button.dataset.urgency);
-          });
-          return;
-                }
         const el = document.getElementById(id);
         if (!isAutosaveField(el)) return;
         if (el.type === "checkbox") el.checked = Boolean(value);
         else el.value = value;
       });
-      updateNewPersonFields();
       const quickText = document.getElementById("quick-text");
       if (quickText) view.quickGrabDraftText = quickText.value;
     }
@@ -3415,18 +3088,6 @@
       if (!drafts[key]) return;
       delete drafts[key];
       saveAutosaveDrafts(drafts);
-    }
-
-    function clearAutosaveDraftPrefix(prefix) {
-      const drafts = loadAutosaveDrafts();
-      let changed = false;
-      Object.keys(drafts).forEach(key => {
-        if (key.startsWith(prefix)) {
-          delete drafts[key];
-          changed = true;
-        }
-      });
-      if (changed) saveAutosaveDrafts(drafts);
     }
 
     function clearAllAutosaveDrafts() {
@@ -3827,8 +3488,26 @@
         .replace(/'/g, "&#039;");
     }
 
+    let personLookupSource = null;
+    let personLookupSize = -1;
+    let personLookupById = new Map();
+
+    function personMapFrom(people = []) {
+      const index = new Map();
+      people.forEach(person => {
+        if (!index.has(person.id)) index.set(person.id, person);
+      });
+      return index;
+    }
+
     function personById(id) {
-      return db.people.find(person => person.id === id);
+      const people = Array.isArray(db.people) ? db.people : [];
+      if (personLookupSource !== people || personLookupSize !== people.length) {
+        personLookupSource = people;
+        personLookupSize = people.length;
+        personLookupById = personMapFrom(people);
+      }
+      return personLookupById.get(id);
     }
 
     function personFirstName(person) {
@@ -4040,16 +3719,6 @@
       return true;
     }
 
-    async function disableLocalEncryption() {
-      if (!window.confirm("Turn off encrypted local storage and save plain local data on this device?")) {
-        render();
-        return;
-      }
-      disableLocalEncryptionRecord();
-      showToast("Encrypted local storage turned off.");
-      render();
-    }
-
     function setAppPinRecord(pin) {
       const trimmed = String(pin || "").trim();
       if (!/^\d{4,}$/.test(trimmed)) {
@@ -4059,20 +3728,6 @@
       settings.pinHash = hashPin(trimmed);
       settings.appLockEnabled = true;
       saveSettings();
-      return true;
-    }
-
-    function setAppPin() {
-      const pin = window.prompt("Choose a PIN with at least 4 numbers:");
-      if (!pin) return false;
-      const trimmed = pin.trim();
-      const confirmPin = window.prompt("Confirm the PIN:");
-      if (confirmPin === null || confirmPin.trim() !== trimmed) {
-        showToast("PIN was not changed.");
-        return false;
-      }
-      if (!setAppPinRecord(trimmed)) return false;
-      showToast("App lock enabled.");
       return true;
     }
 
@@ -4087,17 +3742,6 @@
       view.locked = false;
       saveSettings();
       return true;
-    }
-
-    function clearAppPin() {
-      if (!settings.pinHash) return;
-      const pin = window.prompt("Enter your current PIN to turn off App Lock:");
-      if (!clearAppPinRecord(pin)) {
-        render();
-        return;
-      }
-      showToast("App lock turned off.");
-      render();
     }
 
     function lockApp() {
@@ -4163,44 +3807,6 @@
       }
     }
 
-    function normalizeCategoryParam(value) {
-      const raw = String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
-      const aliases = {
-        person: "People",
-        people: "People",
-        student: "People",
-        students: "People",
-        prayer: "Prayer",
-        prayers: "Prayer",
-        donor: "Donors",
-        donors: "Donors",
-        supporter: "Donors",
-        supporters: "Donors",
-        teaching: "Teaching",
-        lesson: "Teaching",
-        event: "Events",
-        events: "Events",
-        admin: "Admin",
-        personal: "Personal",
-        unsure: "Unsure"
-      };
-      return aliases[raw] || CATEGORIES.find(category => category.toLowerCase() === raw) || "";
-    }
-
-    function normalizeUrgencyParam(value) {
-      const raw = String(value || "").trim().toLowerCase();
-      return URGENCIES.find(urgency => urgency.toLowerCase() === raw) || "";
-    }
-
-    function quickGrabTagsFromParams(params) {
-      const raw = params.get("quickgrabCategory") || params.get("category") || params.get("tag") || params.get("tags") || "";
-      return String(raw)
-        .split(/[,|]/)
-        .map(normalizeCategoryParam)
-        .filter(Boolean)
-        .filter((tag, index, list) => list.indexOf(tag) === index);
-    }
-
     function decodeSharedUrlText(value) {
       const text = String(value || "");
       if (!/%[0-9a-f]{2}/i.test(text)) return text;
@@ -4218,13 +3824,10 @@
       const sharedText = decodeSharedUrlText(imported).trim();
       if (!sharedText) return false;
       pendingUrlQuickGrabText = sharedText;
-      pendingUrlQuickGrabTags = [];
-      pendingUrlQuickGrabUrgency = "";
       pendingUrlQuickGrabParams = params;
       view.quickGrabDraftSource = "shared";
       view.screen = "quick";
       view.quickGrabId = null;
-      view.processPreset = [];
       return true;
     }
 
@@ -4266,8 +3869,6 @@
       pendingUrlQuickGrabText = "";
       view.quickGrabDraftText = nextText;
       textarea.value = nextText;
-      pendingUrlQuickGrabTags = [];
-      pendingUrlQuickGrabUrgency = "";
       scheduleAutosave();
       focusQuickGrabTextareaAtEnd(textarea);
       if (pendingUrlQuickGrabParams) {
@@ -4324,50 +3925,33 @@
       return ids.map(id => personById(id)).filter(Boolean);
     }
 
-    function renderPeopleShortcuts() {
-      const pinned = peopleFromIds(settings.pinnedPersonIds).slice(0, 6);
-      const recent = peopleFromIds(settings.recentPersonIds).filter(person => !settings.pinnedPersonIds.includes(person.id)).slice(0, 6);
-      if (!pinned.length && !recent.length) return "";
-      const group = (label, people) => people.length ? `
-        <div class="field">
-          <label>${escapeHtml(label)}</label>
-          <div class="people-shortcuts">
-            ${people.map(person => `<button class="shortcut-button" data-action="person-open" data-id="${escapeHtml(person.id)}">${escapeHtml(person.name)}</button>`).join("")}
-          </div>
-        </div>
-      ` : "";
-      return `
-        <section class="section">
-          <div class="surface quick-box">
-            <div class="section-header">
-              <h2 class="section-title">People Shortcuts</h2>
-              <button class="button small" data-action="nav" data-screen="people">Open People</button>
-            </div>
-            ${group("Pinned", pinned)}
-            ${group("Recent", recent)}
-          </div>
-        </section>
-      `;
-    }
-
     function normalizedName(name) {
       return String(name || "").toLowerCase().replace(/[^a-z0-9 ]+/g, "").replace(/\s+/g, " ").trim();
     }
 
-    function findDuplicatePeople() {
+    function duplicatePersonPairs(sourcePeople, limit = 12) {
+      const people = sourcePeople.map(person => {
+        const name = normalizedName(person.name);
+        return { person, name, first: name.split(" ")[0] || "" };
+      });
       const pairs = [];
-      for (let i = 0; i < db.people.length; i += 1) {
-        for (let j = i + 1; j < db.people.length; j += 1) {
-          const a = db.people[i];
-          const b = db.people[j];
-          const an = normalizedName(a.name);
-          const bn = normalizedName(b.name);
-          const sameFirst = an.split(" ")[0] && an.split(" ")[0] === bn.split(" ")[0];
-          const close = levenshtein(an, bn) <= 3 || an.includes(bn) || bn.includes(an);
-          if (sameFirst || close) pairs.push([a, b]);
+      for (let i = 0; i < people.length; i += 1) {
+        for (let j = i + 1; j < people.length; j += 1) {
+          const a = people[i];
+          const b = people[j];
+          if (!a.name || !b.name) continue;
+          const sameFirst = a.first && a.first === b.first;
+          const contained = a.name.includes(b.name) || b.name.includes(a.name);
+          const close = contained || (Math.abs(a.name.length - b.name.length) <= 3 && levenshtein(a.name, b.name) <= 3);
+          if (sameFirst || close) pairs.push([a.person, b.person]);
+          if (pairs.length === limit) return pairs;
         }
       }
-      return pairs.slice(0, 12);
+      return pairs;
+    }
+
+    function findDuplicatePeople() {
+      return duplicatePersonPairs(db.people);
     }
 
     function mergePeopleRecord(fromId, toId) {
@@ -4391,18 +3975,6 @@
       saveData();
       saveSettings();
       return to;
-    }
-
-    function mergePeople(fromId, toId) {
-      const from = personById(fromId);
-      const to = personById(toId);
-      if (!from || !to) return;
-      if (!window.confirm(`Merge ${from.name} into ${to.name}? Linked notes, meetings, prayers, tasks, and Quick Grabs will move to ${to.name}.`)) return;
-      if (!mergePeopleRecord(fromId, toId)) return;
-      view.screen = "person";
-      view.personId = toId;
-      showToast("People merged.");
-      render();
     }
 
     function render() {
@@ -4486,7 +4058,6 @@
           <div class="top-actions">
             ${settings.enableUndo && undoStack.length ? `<button class="button small" data-action="undo-last">Undo</button>` : ""}
             ${settings.appLockEnabled && settings.pinHash ? `<button class="button small" data-action="lock-app">Lock</button>` : ""}
-            <button class="button small calm-toggle" data-action="toggle-focus">${view.focusMode ? "Calm Mode On" : "Calm Mode Off"}</button>
           </div>
         </div>
       `;
@@ -4499,7 +4070,6 @@
       if (view.screen === "search") return renderSearch();
       if (view.screen === "aiReview") return renderAiReview();
       if (view.screen === "aiConfirmActions") return renderConfirmAiActions();
-      if (view.screen === "process") return renderProcessQuickGrab();
       if (view.screen === "snooze") return renderSnooze();
       if (view.screen === "people") return renderPeople();
       if (view.screen === "person") return renderPersonProfile();
@@ -4514,30 +4084,6 @@
       if (view.screen === "advancedSettings") return renderAdvancedSettings();
       if (view.screen === "autopilot") return renderAutopilot();
       return renderToday();
-    }
-
-    function todaySectionVisible(key) {
-      return settings[key] !== false;
-    }
-
-    function todayItemLimit() {
-      return Number(settings.adhdMode ? settings.adhdTodayLimit || 1 : settings.todayLimit || 5);
-    }
-
-    function renderQuickCapturePanel(buttonLabel = "Grab Something") {
-      return `
-        <div class="section">
-          <div class="surface quick-box">
-            <div class="row wrap">
-              <div>
-                <div class="item-title">${editableCopy("today.quickGrab.title", "Quick Grab")}</div>
-                <div class="meta">${editableCopy("today.quickGrab.helper", "Dump it here. You do not have to sort it now.")}</div>
-              </div>
-              <button class="button primary" data-action="nav" data-screen="quick">${escapeHtml(buttonLabel)}</button>
-            </div>
-          </div>
-        </div>
-      `;
     }
 
     function todayCareWindowDays(person = {}) {
@@ -4563,7 +4109,7 @@
       const tasks = Array.isArray(data.tasks) ? data.tasks : [];
       const captures = Array.isArray(data.quickGrabs) ? data.quickGrabs : [];
       const prayers = Array.isArray(data.prayerRequests) ? data.prayerRequests : [];
-      const personMap = new Map(people.map(person => [person.id, person]));
+      const personMap = personMapFrom(people);
       const prayerMap = new Map(prayers.map(prayer => [prayer.id, prayer]));
       const candidates = [];
       const prioritizedCaptureIds = new Set();
@@ -4714,7 +4260,15 @@
         ...(appSettings.recentPersonIds || []),
         ...people.map(person => person.id)
       ];
-      const proactiveId = proactivePeople.find((id, index, list) => id && list.indexOf(id) === index && personMap.has(id));
+      const proactiveSeen = new Set();
+      let proactiveId = "";
+      for (const id of proactivePeople) {
+        if (!id || proactiveSeen.has(id)) continue;
+        proactiveSeen.add(id);
+        if (!personMap.has(id)) continue;
+        proactiveId = id;
+        break;
+      }
       if (proactiveId) {
         const person = personMap.get(proactiveId);
         add({
@@ -4836,10 +4390,6 @@
           ${after.length ? `<div class="calm-list">${after.map(renderTodayAfterItem).join("")}</div>` : `<div class="meta">Nothing else is pressing.</div>`}
         </section>
       `;
-    }
-
-    function renderAdhdToday() {
-      return renderToday();
     }
 
     function todayRecommendationById(id) {
@@ -5011,116 +4561,6 @@
       render();
     }
 
-    function legacyAutopilotNextAction() {
-      const promptItem = promptQuickGrabs()[0];
-      if (promptItem) {
-        return {
-          kind: "Quick Grab",
-          title: "Process one loose thing",
-          detail: promptItem.sensitiveFlag ? "Sensitive grabbed item" : promptItem.rawContent,
-          reason: "Loose captures are easiest to trust when they keep moving into a person, prayer, task, note, or archive.",
-          primaryLabel: "Process This",
-          primaryAction: "qg-process",
-          id: promptItem.id,
-          secondaryLabel: "Open Review",
-          secondaryAction: "nav",
-          secondaryScreen: "review"
-        };
-      }
-
-      const task = taskDueSoon()[0];
-      if (task) {
-        const person = task.relatedPersonId ? personById(task.relatedPersonId) : null;
-        return {
-          kind: "Follow-Up",
-          title: "Finish one follow-up",
-          detail: `${task.title}${person ? ` - ${person.name}` : ""}`,
-          reason: "Completing one concrete follow-up lowers the pressure without making you scan the whole task list.",
-          primaryLabel: "Mark Done",
-          primaryAction: "task-done",
-          id: task.id,
-          secondaryLabel: person ? "Open Person" : "Open Today",
-          secondaryAction: person ? "person-open" : "nav",
-          secondaryScreen: "today",
-          secondaryId: person ? person.id : ""
-        };
-      }
-
-      const person = peopleToCareFor()[0];
-      if (person) {
-        return {
-          kind: "Person",
-          title: "Care for one person",
-          detail: `${person.name}${person.followUpReason ? ` - ${person.followUpReason}` : ""}`,
-          reason: "One relationship is enough for the next step. Open the profile, then mark followed up when you have acted.",
-          primaryLabel: "Open Profile",
-          primaryAction: "person-open",
-          id: person.id,
-          secondaryLabel: "Mark Followed Up",
-          secondaryAction: "person-followed-up",
-          secondaryId: person.id
-        };
-      }
-
-      const prayer = db.prayerRequests.find(item => item.status === "Follow-Up Needed") || db.prayerRequests.find(item => item.status === "Active");
-      if (prayer) {
-        return {
-          kind: "Prayer",
-          title: "Check one prayer request",
-          detail: maskedText(prayer.sensitivityLevel === "Sensitive", "Sensitive prayer request", prayer.request),
-          reason: "Prayer follow-up stays humane when the app brings one request forward instead of asking you to browse every request.",
-          primaryLabel: "Open Prayer",
-          primaryAction: "open-prayer-filter",
-          primaryFilter: prayer.status === "Follow-Up Needed" ? "Follow-Up Needed" : "Active",
-          secondaryLabel: prayer.status === "Answered" ? "Archive" : "Mark Answered",
-          secondaryAction: prayer.status === "Answered" ? "prayer-archive" : "prayer-answered",
-          secondaryId: prayer.id
-        };
-      }
-
-      if (backupReminderDue()) {
-        return {
-          kind: "Backup",
-          title: "Export a fresh backup",
-          detail: backupStatusText(),
-          reason: "A current backup is the safety net for a local-first app.",
-          primaryLabel: "Export Backup",
-          primaryAction: "export-json",
-          secondaryLabel: "Open Readiness",
-          secondaryAction: "nav",
-          secondaryScreen: "readiness"
-        };
-      }
-
-      if (findDuplicatePeople().length) {
-        return {
-          kind: "Cleanup",
-          title: "Review possible duplicate people",
-          detail: "A possible duplicate profile is waiting.",
-          reason: "Merging duplicate people keeps ministry history attached to one clear profile.",
-          primaryLabel: "Review Duplicates",
-          primaryAction: "nav",
-          primaryScreen: "duplicates",
-          secondaryLabel: "Later",
-          secondaryAction: "nav",
-          secondaryScreen: "today"
-        };
-      }
-
-      return {
-        kind: "Capture",
-        title: "Capture what is in your head",
-        detail: "Nothing urgent is asking for attention right now.",
-        reason: "When the app is quiet, the most useful action is making capture effortless.",
-        primaryLabel: "Open Quick Grab",
-        primaryAction: "nav",
-        primaryScreen: "quick",
-        secondaryLabel: "Weekly Reset",
-        secondaryAction: "nav",
-        secondaryScreen: "weekly"
-      };
-    }
-
     function autopilotNextAction() {
       const recommendation = buildTodayRecommendations()[0];
       return {
@@ -5199,83 +4639,6 @@
           <div class="surface">
             <h2 class="section-title">Next-Level Build Guardrails</h2>
             <p class="item-preview">Cloud sync, calendar/contact import, native widgets, and external AI can take this app further, but they need explicit services, permissions, and privacy choices. Until those are wired, the app should label them as roadmap work instead of active features.</p>
-          </div>
-        </section>
-      `;
-    }
-
-    function renderTodayWorkSections(promptItems, carePeople, tasks) {
-      const quickReview = todaySectionVisible("todayShowQuickReview") ? `
-        <section class="section">
-          <div class="section-header">
-            <h2 class="section-title">${editableCopy("today.remember.title", settings.adhdMode ? "Next Loose Thing" : "Things You Wanted to Remember")}</h2>
-            <button class="button small" data-action="nav" data-screen="review">${settings.adhdMode ? "Review One" : "Review One At A Time"}</button>
-          </div>
-          ${promptItems.length ? promptItems.map(renderQuickGrabCard).join("") : emptyState("You're clear for now. Grab something when it pops into your head.")}
-        </section>
-      ` : "";
-      const people = todaySectionVisible("todayShowCarePeople") ? `
-        <section class="section">
-          <div class="section-header">
-            <h2 class="section-title">${editableCopy("today.people.title", settings.adhdMode ? "Next Person" : "People To Care For")}</h2>
-            <button class="button small" data-action="nav" data-screen="people">Open People</button>
-          </div>
-          ${carePeople.length ? carePeople.map(renderPersonCareCard).join("") : emptyState("No one is pressing today. You can still pray, encourage someone, or check your Weekly Reset.")}
-        </section>
-      ` : "";
-      const followUps = todaySectionVisible("todayShowFollowUps") ? `
-        <section class="section">
-          <div class="section-header">
-            <h2 class="section-title">${editableCopy("today.followUp.title", settings.adhdMode ? "Next Follow-Up" : "Follow Up When You Can")}</h2>
-          </div>
-          ${tasks.length ? tasks.map(renderTaskCard).join("") : emptyState("No follow-up tasks are asking for attention right now.")}
-        </section>
-      ` : "";
-      if (settings.adhdMode) return quickReview + people + followUps;
-      return `
-        <div class="grid two">
-          ${quickReview}
-          ${people}
-        </div>
-        ${followUps}
-      `;
-    }
-
-    function renderStartHere(promptItems, carePeople, tasks) {
-      const firstGrab = promptItems[0];
-      const firstPerson = carePeople[0];
-      const firstTask = tasks[0];
-      let stepText = "Grab the thing in your head before it floats away.";
-      let primaryButton = `<button class="button primary" data-action="nav" data-screen="quick">Open Quick Grab</button>`;
-      if (firstGrab) {
-        stepText = `Process this loose reminder: ${firstGrab.sensitiveFlag ? "Sensitive grabbed item" : firstGrab.rawContent}`;
-        primaryButton = `<button class="button primary" data-action="nav" data-screen="review">Review One Quick Grab</button>`;
-      } else if (firstTask) {
-        stepText = `Take this follow-up: ${firstTask.title}`;
-        primaryButton = firstTask.relatedPersonId
-          ? `<button class="button primary" data-action="person-open" data-id="${escapeHtml(firstTask.relatedPersonId)}">Open Related Profile</button>`
-          : `<button class="button primary" data-action="nav" data-screen="minutes">Open Short List</button>`;
-      } else if (firstPerson) {
-        stepText = `Care for ${firstPerson.name}: ${firstPerson.followUpReason || "check in when you can."}`;
-        primaryButton = `<button class="button primary" data-action="person-open" data-id="${escapeHtml(firstPerson.id)}">Open That Profile</button>`;
-      }
-      return `
-        <section class="section">
-          <div class="focus-hero">
-            <div>
-              <h2>${editableCopy("startHere.title", settings.adhdMode ? "Now" : "Start Here")}</h2>
-              <p class="page-kicker">${editableCopy("startHere.kicker", settings.adhdMode ? "Do this, snooze it, or capture what is in your head." : "One clear next step, then you can keep moving.")}</p>
-            </div>
-            <div class="focus-step">
-              <span class="focus-step-label">${editableCopy("startHere.stepLabel", "One good next step")}</span>
-              <strong>${escapeHtml(stepText)}</strong>
-            </div>
-            <div class="action-row">
-              ${primaryButton}
-              <button class="button" data-action="nav" data-screen="quick">Dump a New Thought</button>
-              <button class="button" data-action="nav" data-screen="review">Open Review Queue</button>
-              ${settings.adhdMode ? "" : `<button class="button" data-action="nav" data-screen="minutes">I Have 15 Minutes</button>`}
-            </div>
           </div>
         </section>
       `;
@@ -5491,26 +4854,6 @@
       return suggestions.slice(0, 10);
     }
 
-    function renderAppCoachNudge() {
-      if (!settings.appCoachEnabled || !settings.appCoachShowOnToday) return "";
-      const suggestion = appCoachSuggestions()[0];
-      if (!suggestion) return "";
-      return `
-        <section class="section">
-          <div class="notice secure">
-            <div class="row wrap">
-              <div>
-                <strong>App Coach suggestion</strong>
-                <div class="meta">${escapeHtml(suggestion.title)} - ${escapeHtml(suggestion.reason)}</div>
-              </div>
-              <button class="button small primary" data-action="nav" data-screen="coach">Review</button>
-              <button class="button small" data-action="coach-dismiss" data-suggestion="${escapeHtml(suggestion.id)}">Hide</button>
-            </div>
-          </div>
-        </section>
-      `;
-    }
-
     function renderCoachSuggestionCard(suggestion) {
       return `
         <article class="item">
@@ -5556,7 +4899,6 @@
             <div class="notice secure">Data Janitor suggests cleanup only. Review before changing ministry records.</div>
             <div class="settings-list">
               ${settingToggle("appCoachEnabled", "App Coach Suggestions", "Let the app look for helpful local improvements.")}
-              ${settingToggle("appCoachShowOnToday", "Show One Suggestion On Today", "Show the highest-value coach suggestion on the Today screen.")}
               ${settingSelect("appCoachSensitivity", "Suggestion Style", [["gentle", "Gentle"], ["balanced", "Balanced"], ["proactive", "Proactive"]], "Choose how quickly the coach points out optimization ideas.")}
             </div>
             <div class="action-row" style="margin-top:14px;">
@@ -5632,7 +4974,7 @@
             <div class="meta">${person ? `${escapeHtml(person.name)} · ` : ""}${escapeHtml(formatHistoryDate(grab.createdAt, "Captured") || "Captured")}</div>
             ${grab.processingState === "failed" ? `<div class="meta" role="status">Not processed yet. ${escapeHtml(grab.processingError || "Retry when ready.")}</div>` : ""}
           </div>
-          <button class="button quiet small" data-action="qg-mock-ai" data-id="${escapeHtml(grab.id)}">${grab.processingState === "failed" ? "Retry" : "Process"}</button>
+          <button class="button quiet small" data-action="qg-process" data-id="${escapeHtml(grab.id)}">${grab.processingState === "failed" ? "Retry" : "Process"}</button>
         </article>
       `;
     }
@@ -5684,7 +5026,6 @@
               <button class="button" data-action="review-prev" ${index === 0 ? "disabled" : ""}>Previous</button>
               <button class="button" data-action="review-next" ${index >= items.length - 1 ? "disabled" : ""}>Next</button>
               <button class="button primary" data-action="qg-process" data-id="${escapeHtml(grab.id)}">Process This</button>
-              <button class="button" data-action="qg-mock-ai" data-id="${escapeHtml(grab.id)}">${quickGrabAiButtonLabel()}</button>
               <button class="button" data-action="snooze-screen" data-id="${escapeHtml(grab.id)}">Snooze</button>
               <button class="button" data-action="qg-done" data-id="${escapeHtml(grab.id)}">Done</button>
               <button class="button danger" data-action="qg-archive" data-id="${escapeHtml(grab.id)}">Archive</button>
@@ -5700,17 +5041,15 @@
       const expanded = view.expandedQuickGrabIds.includes(grab.id);
       const showActions = mode !== "summary";
       return `
-        <article class="item compact focus-card ${grab.urgency === "Important" ? "important" : grab.urgency === "Today" ? "today" : ""}">
+        <article class="item compact focus-card">
           <div class="item-title-row">
-            <div class="item-title">${escapeHtml(grab.category)} Quick Grab</div>
-            <span class="pill ${grab.urgency === "Important" ? "gold" : grab.urgency === "Today" ? "terra" : "gray"}">${escapeHtml(grab.urgency)}</span>
+            <div class="item-title">Unprocessed capture</div>
           </div>
           <p class="item-preview">${escapeHtml(sensitivePreview)}</p>
           <div class="row wrap">
             <span class="meta">${escapeHtml(grab.status)}${person ? " - " + escapeHtml(person.name) : ""}</span>
             ${grab.remindAt ? `<span class="meta">Prompt: ${dateLabel(grab.remindAt)}</span>` : ""}
           </div>
-          ${timestampLine(grab, "Captured", grab.createdAt)}
           <div class="next-step-line">
             <span class="pill green">Next</span>
             <strong>${escapeHtml(quickGrabNextStep(grab))}</strong>
@@ -5718,19 +5057,11 @@
           ${showActions ? `
             <div class="action-row focus-actions">
               <button class="button small primary" data-action="qg-process" data-id="${escapeHtml(grab.id)}">Process</button>
-              <button class="button small" data-action="qg-mock-ai" data-id="${escapeHtml(grab.id)}">${quickGrabAiButtonLabel()}</button>
               <button class="button small" data-action="snooze-screen" data-id="${escapeHtml(grab.id)}">Snooze</button>
               <button class="button small" data-action="qg-done" data-id="${escapeHtml(grab.id)}">Done</button>
               ${settings.showAdvancedActions ? "" : `<button class="button small" data-action="qg-toggle-more" data-id="${escapeHtml(grab.id)}">${expanded ? "Less" : "More"}</button>`}
             </div>
             <div class="action-row extra-actions ${expanded ? "is-open" : ""}">
-              <button class="button small" data-action="qg-preset" data-type="note" data-id="${escapeHtml(grab.id)}">Turn into Note</button>
-              <button class="button small" data-action="qg-preset" data-type="followup" data-id="${escapeHtml(grab.id)}">Turn into Task</button>
-              <button class="button small" data-action="qg-preset" data-type="followup" data-id="${escapeHtml(grab.id)}">Turn into Follow-Up</button>
-              <button class="button small" data-action="qg-preset" data-type="prayer" data-id="${escapeHtml(grab.id)}">Turn into Prayer Request</button>
-              <button class="button small" data-action="qg-preset" data-type="meeting" data-id="${escapeHtml(grab.id)}">Turn into Meeting Note</button>
-              <button class="button small" data-action="qg-preset" data-type="teaching" data-id="${escapeHtml(grab.id)}">Turn into Teaching Idea</button>
-              <button class="button small" data-action="qg-preset" data-type="donor" data-id="${escapeHtml(grab.id)}">Turn into Donor Update Idea</button>
               ${settings.inlineEditing ? `<button class="button small" data-action="edit-record-field" data-collection="quickGrabs" data-field="rawContent" data-label="Quick Grab" data-id="${escapeHtml(grab.id)}">Edit Grab</button>` : ""}
               <button class="button small" data-action="qg-archive" data-id="${escapeHtml(grab.id)}">Archive</button>
             </div>
@@ -5800,6 +5131,7 @@
     function buildSearchResults(query) {
       const q = query.toLowerCase();
       const matches = fields => fields.filter(Boolean).join(" ").toLowerCase().includes(q);
+      const personMap = personMapFrom(db.people);
       const people = db.people
         .filter(person => matches([person.name, person.personType, person.status, person.careLevel, person.phone, person.email, person.classYear, person.fraternitySorority, person.major, person.hometown, person.rufInvolvement, person.donorStatus, person.followUpReason]))
         .map(person => ({
@@ -5826,11 +5158,11 @@
         .filter(prayer => {
           if (!settings.includeArchivedInSearch && prayer.status === "Archived") return false;
           if (!settings.includeSensitiveInSearch && prayer.sensitivityLevel === "Sensitive") return false;
-          const person = personById(prayer.relatedPersonId);
+          const person = personMap.get(prayer.relatedPersonId);
           return matches([person?.name, prayer.request, prayer.status, prayer.sensitivityLevel, prayer.shareableStatus, prayer.answeredNote]);
         })
         .map(prayer => {
-          const person = personById(prayer.relatedPersonId);
+          const person = personMap.get(prayer.relatedPersonId);
           return {
             kind: "Prayer Request",
             title: person ? person.name : "Unlinked person",
@@ -5847,11 +5179,11 @@
       const meetings = db.meetingNotes
         .filter(meeting => {
           if (!settings.includeSensitiveInSearch && meeting.sensitiveFlag) return false;
-          const person = personById(meeting.relatedPersonId);
+          const person = personMap.get(meeting.relatedPersonId);
           return matches([person?.name, meeting.meetingType, meeting.location, meeting.whatWeTalkedAbout, meeting.whatToRemember, meeting.prayerRequestText, meeting.nextFaithfulStep]);
         })
         .map(meeting => {
-          const person = personById(meeting.relatedPersonId);
+          const person = personMap.get(meeting.relatedPersonId);
           return {
             kind: "Meeting Note",
             title: `${meeting.meetingType} meeting${person ? " with " + person.name : ""}`,
@@ -5867,11 +5199,11 @@
       const notes = db.notes
         .filter(note => {
           if (!settings.includeSensitiveInSearch && note.sensitiveFlag) return false;
-          const person = personById(note.relatedPersonId);
+          const person = personMap.get(note.relatedPersonId);
           return matches([person?.name, note.noteType, note.content]);
         })
         .map(note => {
-          const person = personById(note.relatedPersonId);
+          const person = personMap.get(note.relatedPersonId);
           return {
             kind: "Note",
             title: `${note.noteType}${person ? " - " + person.name : ""}`,
@@ -5886,11 +5218,11 @@
         });
       const tasks = db.tasks
         .filter(task => {
-          const person = personById(task.relatedPersonId);
+          const person = personMap.get(task.relatedPersonId);
           return matches([person?.name, task.title, task.status, task.sourceType]);
         })
         .map(task => {
-          const person = personById(task.relatedPersonId);
+          const person = personMap.get(task.relatedPersonId);
           return {
             kind: "Follow-Up Task",
             title: task.title,
@@ -6406,19 +5738,7 @@
     }
 
     function dataJanitorDuplicatePeople(people) {
-      const pairs = [];
-      for (let i = 0; i < people.length; i += 1) {
-        for (let j = i + 1; j < people.length; j += 1) {
-          const a = people[i];
-          const b = people[j];
-          const an = normalizedName(a.name);
-          const bn = normalizedName(b.name);
-          const sameFirst = an.split(" ")[0] && an.split(" ")[0] === bn.split(" ")[0];
-          const close = levenshtein(an, bn) <= 3 || an.includes(bn) || bn.includes(an);
-          if (sameFirst || close) pairs.push([a, b]);
-        }
-      }
-      return pairs.slice(0, 12);
+      return duplicatePersonPairs(people);
     }
 
     function dataJanitorPersonLabel(person) {
@@ -7033,11 +6353,6 @@
       return aiRecordPreview(record, collection);
     }
 
-    function donorUpdateRecordLabel(record, collection) {
-      const text = donorUpdateSanitizeText(donorUpdateRecordText(record, collection));
-      return text || dataJanitorCollectionLabel(collection);
-    }
-
     function donorUpdateRecordAllowedInContext(record, collection) {
       const tier = dataJanitorPrivacyTierForRecord(record, collection);
       if (tier === "Do Not Send to AI" || tier === "Highly Sensitive" || tier === "Sensitive" || tier === "Private") return false;
@@ -7440,7 +6755,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (sheet.nextAction === "weeklyReset") return buildWeeklyResetContextReview();
       if (sheet.nextAction === "dataJanitor") return buildDataJanitorContextReview();
       if (sheet.nextAction === "prayerSteward") return buildPrayerStewardContextReview();
-      if (sheet.nextAction === "personBriefing") return buildPersonBriefingContextReview(sheet.sourceId);
       if (sheet.nextAction === "followUpDraft") return buildFollowUpDraftContextReview(sheet.sourceType, sheet.sourceId);
       if (sheet.proposalId) return buildAiContextReview(aiProposalById(sheet.proposalId));
       if (sheet.sourceType && sheet.sourceId) return buildAiSourceContextReview(sheet.sourceType, sheet.sourceId, sheet.intentLabel || "Mock AI processing");
@@ -8006,131 +7320,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return "Active";
     }
 
-    function renderProcessQuickGrab() {
-      const grab = db.quickGrabs.find(item => item.id === view.quickGrabId);
-      if (!grab) return `${renderTopbar("Quick Grab", "That item could not be found.")}${emptyState("Choose another grabbed item to process.")}`;
-      const presets = view.processPreset.length ? view.processPreset : inferActions(grab);
-      const personOptions = db.people
-        .slice()
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map(person => `<option value="${person.id}" ${person.id === grab.relatedPersonId ? "selected" : ""}>${escapeHtml(person.name)} - ${escapeHtml(person.personType)}</option>`)
-        .join("");
-      return `
-        ${renderTopbar("What should this become?", "Review before anything gets attached to a person. This keeps the app careful and useful.", false)}
-        <div class="grid two">
-          <section class="section">
-            <div class="item">
-              <div class="item-title">Original Quick Grab</div>
-              <p class="item-preview">${escapeHtml(grab.rawContent)}</p>
-              <div class="row wrap">
-                <span class="pill green">${escapeHtml(grab.category)}</span>
-                <span class="pill gold">${escapeHtml(grab.urgency)}</span>
-                ${grab.detectedPersonName ? `<span class="pill violet">Possible person: ${escapeHtml(grab.detectedPersonName)}</span>` : ""}
-              </div>
-              ${timestampLine(grab, "Captured", grab.createdAt)}
-            </div>
-            <div class="notice sensitive">Keep sensitive details minimal. Record enough to care faithfully, not everything.</div>
-            <div class="surface">
-              <div class="field">
-                <label>What should this become?</label>
-                <div class="check-grid">
-                  ${checkbox("action-note", "Add to person profile as note", presets.includes("note"))}
-                  ${checkbox("action-meeting", "Add as meeting note", presets.includes("meeting"))}
-                  ${checkbox("action-prayer", "Add prayer request", presets.includes("prayer"))}
-                  ${checkbox("action-followup", "Create follow-up task", presets.includes("followup"))}
-                  ${checkbox("action-person", "Create new person", false)}
-                  ${checkbox("action-donor", "Add donor update idea", presets.includes("donor"))}
-                  ${checkbox("action-teaching", "Add teaching idea", presets.includes("teaching"))}
-                  ${checkbox("action-keep", "Keep as Quick Grab", false)}
-                  ${checkbox("action-sensitive", "Mark sensitive/private", grab.sensitiveFlag)}
-                </div>
-              </div>
-            </div>
-          </section>
-          <section class="section">
-            <div class="surface">
-              <div class="form-grid">
-                <div class="field wide">
-                  <label for="person-select">Related person</label>
-                  <select class="select" id="person-select">
-                    <option value="">Choose a person</option>
-                    ${personOptions}
-                    <option value="new">Create new person after checking matches</option>
-                  </select>
-                </div>
-                <div class="field wide" id="new-person-fields" style="display:none;">
-                  <label for="new-person-name">New person name</label>
-                  <input class="input" id="new-person-name" value="${escapeHtml(grab.detectedPersonName)}" placeholder="First and last name">
-                  <label for="new-person-phone">Phone number</label>
-                  <input class="input" id="new-person-phone" inputmode="tel" autocomplete="tel" placeholder="Optional phone number">
-                  <div class="meta" id="duplicate-warning"></div>
-                  <label class="check"><input type="checkbox" id="duplicate-confirm"> Create a new person even if a similar person exists.</label>
-                </div>
-                <div class="field">
-                  <label for="meeting-date">Meeting date</label>
-                  <input class="input" id="meeting-date" type="date" value="${grab.detectedDate || todayISO()}">
-                </div>
-                <div class="field">
-                  <label for="meeting-type">Meeting type</label>
-                  <select class="select" id="meeting-type">
-                    ${["Student", "Donor", "Staff", "Pastoral", "Event Planning", "Admin", "Other"].map(type => `<option>${type}</option>`).join("")}
-                  </select>
-                </div>
-                <div class="field wide">
-                  <label for="meeting-summary">Meeting note summary</label>
-                  <textarea class="textarea small" id="meeting-summary">${escapeHtml(grab.detectedMeetingSummary || grab.rawContent)}</textarea>
-                </div>
-                <div class="field wide">
-                  <label for="what-to-remember">What to remember</label>
-                  <textarea class="textarea small" id="what-to-remember">${escapeHtml(grab.rawContent)}</textarea>
-                </div>
-                <div class="field wide">
-                  <label for="prayer-text">Prayer request text</label>
-                  <textarea class="textarea small" id="prayer-text">${escapeHtml(grab.detectedPrayerRequest || "")}</textarea>
-                </div>
-                <div class="field wide">
-                  <label for="followup-task">Follow-up task</label>
-                  <input class="input" id="followup-task" value="${escapeHtml(grab.detectedFollowUp || "")}" placeholder="Ask about...">
-                </div>
-                <div class="field">
-                  <label for="followup-date">Follow-up date</label>
-                  <input class="input" id="followup-date" type="date" value="${grab.detectedFollowUpDate || ""}">
-                </div>
-                <div class="field">
-                  <label for="shareable-status">Shareable status</label>
-                  <select class="select" id="shareable-status">
-                    ${["Private", "Anonymous Only", "Ask Permission", "Okay to Share"].map(status => `<option ${status === settings.defaultShareableStatus ? "selected" : ""}>${status}</option>`).join("")}
-                  </select>
-                </div>
-                <div class="field wide">
-                  <label class="check"><input type="checkbox" id="update-last" checked> Update the person's last meaningful interaction.</label>
-                  <label class="check"><input type="checkbox" id="update-next" checked> Update the person's next follow-up date.</label>
-                </div>
-              </div>
-              <div class="action-row" style="margin-top:14px;">
-                <button class="button" data-action="qg-mock-ai" data-id="${escapeHtml(grab.id)}">${quickGrabAiButtonLabel()}</button>
-                <button class="button primary" data-action="process-save" data-id="${escapeHtml(grab.id)}">Save Structured Records</button>
-                <button class="button" data-action="nav" data-screen="quick">Back to Quick Grab</button>
-              </div>
-            </div>
-          </section>
-        </div>
-      `;
-    }
-
     function checkbox(id, label, checked) {
       return `<label class="check"><input type="checkbox" id="${id}" ${checked ? "checked" : ""}> ${escapeHtml(label)}</label>`;
-    }
-
-    function inferActions(grab) {
-      const actions = [];
-      if (grab.detectedMeetingSummary) actions.push("meeting");
-      if (grab.detectedPrayerRequest) actions.push("prayer");
-      if (grab.detectedFollowUp || grab.detectedFollowUpDate) actions.push("followup");
-      if (grab.category === "Teaching") actions.push("teaching");
-      if (grab.category === "Donors") actions.push("donor");
-      if (!actions.length && grab.category === "People") actions.push("note");
-      return actions;
     }
 
     function quickGrabMockSensitivityWarnings(grab) {
@@ -8262,10 +7453,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function quickGrabAiModeLabel() {
       return quickGrabBackendModeEnabled() ? "Backend Quick Grab" : "Local Mock Only";
-    }
-
-    function quickGrabAiButtonLabel() {
-      return quickGrabBackendModeEnabled() ? "Process with Backend Quick Grab" : "Process with Mock AI";
     }
 
     function quickGrabAiGateTitle(sheet = {}) {
@@ -8545,104 +7732,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         }
       });
       return saveQuickGrabAiProposal(proposal, "mock AI capture proposal", "Suggested updates created. Review before saving anything.");
-    }
-
-    function buildPersonBriefingMockResult(context, warnings = []) {
-      const person = context.person;
-      const latestNote = context.notes[0];
-      const latestMeeting = context.meetings[0];
-      const nextTask = context.tasks[0];
-      const rememberBeforeMeeting = [
-        `Care level: ${person.careLevel || "Not set"}.`,
-        person.lastMeaningfulInteraction ? `Last meaningful interaction was ${dateLabel(person.lastMeaningfulInteraction)}.` : "No last meaningful interaction is recorded yet.",
-        person.nextFollowUpDate ? `Next follow-up is ${dateLabel(person.nextFollowUpDate)}${person.followUpReason ? ` for ${person.followUpReason}` : ""}.` : "No next follow-up date is recorded.",
-        latestMeeting ? `Recent meeting note: ${latestMeeting.whatToRemember || latestMeeting.whatWeTalkedAbout || latestMeeting.meetingType}.` : "",
-        latestNote ? `Recent note: ${latestNote.content}.` : ""
-      ].filter(Boolean);
-      const goodQuestionsToAsk = [
-        person.followUpReason ? `How has ${person.followUpReason.toLowerCase()} been since we last talked?` : "What has been most on your mind this week?",
-        context.prayers.length ? "How would you like me to keep praying for you right now?" : "Where have you seen encouragement or strain lately?",
-        "What would be a helpful next step after today?"
-      ];
-      const prayerReminders = context.prayers.length
-        ? context.prayers.map(prayer => prayer.request)
-        : ["Ask if there is anything current to pray for, and keep the record minimal."];
-      const followUpSuggestions = [
-        nextTask ? `${nextTask.title}${nextTask.dueDate ? ` by ${dateLabel(nextTask.dueDate)}` : ""}.` : "",
-        person.nextFollowUpDate ? `Follow up by ${dateLabel(person.nextFollowUpDate)}.` : "",
-        latestMeeting?.nextFaithfulStep ? latestMeeting.nextFaithfulStep : ""
-      ].filter(Boolean);
-      const sensitivityCautions = warnings.length
-        ? warnings
-        : ["Keep pastoral details minimal and review before saving anything to ministry records."];
-      const oneFaithfulNextStep = nextTask
-        ? nextTask.title
-        : person.nextFollowUpDate
-          ? `Check in by ${dateLabel(person.nextFollowUpDate)}.`
-          : context.prayers.length
-            ? "Ask for a fresh prayer update and record only what is needed."
-            : "Listen well, pray, and choose one concrete follow-up after the conversation.";
-      return {
-        rememberBeforeMeeting,
-        goodQuestionsToAsk,
-        prayerReminders,
-        followUpSuggestions: followUpSuggestions.length ? followUpSuggestions : ["Choose one simple follow-up after the conversation."],
-        sensitivityCautions,
-        oneFaithfulNextStep
-      };
-    }
-
-    function createPersonBriefingMockAiProposal(personId) {
-      const contextReview = buildPersonBriefingContextReview(personId);
-      const context = personBriefingAllowedContext(personId);
-      const person = context.person;
-      if (!person || contextReview.blocked) {
-        showToast("This person cannot be used for AI context.");
-        return;
-      }
-      const briefing = buildPersonBriefingMockResult(context, contextReview.warnings);
-      const usedSensitive = contextReview.used.some(item => ["Sensitive", "Highly Sensitive"].includes(item.tier));
-      const usedPrivate = contextReview.used.some(item => item.tier === "Private");
-      const sensitivityRisk = usedSensitive ? "high" : usedPrivate || contextReview.warnings.length ? "medium" : "low";
-      const contextPreview = [
-        personBriefingPersonSummary(person),
-        `${context.notes.length} recent note(s)`,
-        `${context.meetings.length} recent meeting(s)`,
-        `${context.prayers.length} active prayer request(s)`,
-        `${context.tasks.length} open follow-up task(s)`
-      ].join(" | ");
-      const proposal = emptyAiProposal({
-        sourceType: "person",
-        sourceId: person.id,
-        proposalType: "personBriefing",
-        status: "pending",
-        title: `Briefing for ${person.name}`,
-        summary: `Mock local briefing for ${person.name}. Review before saving anything to ministry records.`,
-        confidence: context.notes.length || context.meetings.length || context.prayers.length || context.tasks.length ? "medium" : "low",
-        sensitivityRisk,
-        contextPreview,
-        proposedActions: [
-          { actionType: "noAction", label: "Use this as a review-only briefing before the next conversation" }
-        ],
-        warnings: Array.from(new Set(contextReview.warnings)),
-        rawInputPreview: contextReview.used.map(item => `${item.label}: ${item.summary}`).join("\n").slice(0, 600),
-        result: {
-          briefing,
-          mockOnly: true,
-          contextScope: "person-only",
-          includedContextLabels: contextReview.used.map(item => item.label),
-          excludedContextLabels: contextReview.notUsed.map(item => item.label)
-        }
-      });
-      recordUndo("mock AI person briefing proposal");
-      db.aiProposals.unshift(proposal);
-      saveData();
-      view.sheet = null;
-      view.screen = "aiReview";
-      view.aiReviewFilter = "Pending";
-      view.aiReviewFocusId = proposal.id;
-      showToast("Mock person briefing created. Review before saving anything.");
-      render();
     }
 
     function followUpDraftPromptFromContext(context, contextReview) {
@@ -9094,22 +8183,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       render();
     }
 
-    function openPersonBriefingMockAiGate(personId) {
-      const person = personById(personId);
-      if (!person) {
-        showToast("That person is no longer available.");
-        return;
-      }
-      view.sheet = {
-        type: "ai-gate",
-        sourceType: "person",
-        sourceId: personId,
-        nextAction: "personBriefing",
-        intentLabel: "Person briefing context"
-      };
-      render();
-    }
-
     function renderSnooze() {
       const grab = db.quickGrabs.find(item => item.id === view.quickGrabId);
       if (!grab) return `${renderTopbar("Snooze", "That grabbed item could not be found.")}${emptyState("Choose another item.")}`;
@@ -9196,9 +8269,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function renderPeople() {
       const q = view.search.toLowerCase();
+      const pinnedIds = new Set(settings.pinnedPersonIds);
       const people = db.people
         .filter(person => !q || [person.name, person.personType, person.careLevel, person.rufInvolvement, person.phone, person.email].join(" ").toLowerCase().includes(q))
-        .sort((a, b) => Number(isPinnedPerson(b.id)) - Number(isPinnedPerson(a.id)) || a.name.localeCompare(b.name));
+        .sort((a, b) => Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id)) || a.name.localeCompare(b.name));
       return `
         ${renderTopbar("People", "Who are you looking for or caring for?")}
         <section class="section" aria-label="Find a person">
@@ -9530,107 +8604,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return renderCalmPersonProfile(person);
     }
 
-    function legacyRenderPersonProfile() {
-      const person = personById(view.personId);
-      if (!person) return `${renderTopbar("Person Profile", "That profile could not be found.")}${emptyState("Open a person from the People screen.")}`;
-      const notes = db.notes.filter(note => note.relatedPersonId === person.id).sort((a, b) => b.noteDate.localeCompare(a.noteDate));
-      const meetings = db.meetingNotes.filter(meeting => meeting.relatedPersonId === person.id).sort((a, b) => b.meetingDate.localeCompare(a.meetingDate));
-      const prayers = db.prayerRequests
-        .filter(prayer => prayer.relatedPersonId === person.id)
-        .filter(prayer => settings.showArchivedOnProfiles || prayer.status !== "Archived")
-        .sort((a, b) => b.dateAdded.localeCompare(a.dateAdded));
-      const tasks = db.tasks.filter(task => task.relatedPersonId === person.id).sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
-      const timeline = buildTimeline(person.id);
-      const pinned = isPinnedPerson(person.id);
-      return `
-        <div class="profile-head">
-          <div class="profile-identity">
-            ${renderPersonPhoto(person)}
-            <div>
-              <h1 class="profile-name">${escapeHtml(person.name)}</h1>
-              <p class="page-kicker">${escapeHtml(person.personType)} - ${escapeHtml(person.status)} - ${escapeHtml(person.rufInvolvement || "RUF contact")}</p>
-            </div>
-          </div>
-          <button class="button" data-action="nav" data-screen="people">Back to People</button>
-        </div>
-        <section class="section">
-          <div class="stat-grid">
-            ${miniStat("Care level", person.careLevel)}
-            ${miniStat("Last meaningful interaction", formatInteractionDate(person.lastMeaningfulInteraction))}
-            ${miniStat("Next follow-up", formatFollowUpDate(person.nextFollowUpDate))}
-            ${miniStat("Phone number", person.phone || "Not set")}
-          </div>
-          ${timestampLine(person)}
-          <div class="surface">
-            <div class="form-grid">
-              ${profileField("Person type", person.personType)}
-              ${profileField("Phone number", person.phone || "Not set")}
-              ${profileField("Email", person.email || "Not set")}
-              ${profileField("Class year", person.classYear || "Not applicable")}
-              ${profileField("Fraternity/sorority", person.fraternitySorority || "Not applicable")}
-              ${profileField("Major", person.major || "Not set")}
-              ${profileField("Hometown", person.hometown || "Not set")}
-              ${profileField("RUF involvement", person.rufInvolvement || "Not set")}
-              ${profileField("Donor status", person.donorStatus || "Not applicable")}
-              ${profileField("Follow-up reason", person.followUpReason || "Not set")}
-              <div class="field wide">
-                <label for="profile-photo-input">Profile picture</label>
-                <input class="input" id="profile-photo-input" type="file" accept="image/*" data-person-id="${escapeHtml(person.id)}">
-                <div class="meta">Choose a photo from your phone. The app shrinks it before saving it locally.</div>
-                <div class="action-row" style="margin-top:8px;">
-                  ${person.photoDataUrl ? `<button class="button small danger" data-action="person-remove-photo" data-id="${escapeHtml(person.id)}">Remove Photo</button>` : ""}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-        <section class="section">
-          <div class="section-header">
-            <h2 class="section-title">Quick Actions</h2>
-          </div>
-          <div class="action-row">
-            <button class="button primary" data-action="person-add-note" data-id="${escapeHtml(person.id)}">Add Note</button>
-            <button class="button" data-action="person-add-meeting" data-id="${escapeHtml(person.id)}">Add Meeting Note</button>
-	            <button class="button" data-action="person-add-prayer" data-id="${escapeHtml(person.id)}">Add Prayer Request</button>
-            <button class="button" data-action="person-add-followup" data-id="${escapeHtml(person.id)}">Add Follow-Up Task</button>
-            <button class="button" data-action="person-brief" data-id="${escapeHtml(person.id)}">Brief Me</button>
-            <button class="button" data-action="followup-draft" data-source-type="person" data-id="${escapeHtml(person.id)}">Draft Follow-Up</button>
-            <button class="button" data-action="person-copy-briefing" data-id="${escapeHtml(person.id)}">Copy Local Briefing</button>
-            <button class="button terra" data-action="person-copy-drafts" data-id="${escapeHtml(person.id)}">Copy Text Drafts</button>
-	            <button class="button" data-action="person-pin" data-id="${escapeHtml(person.id)}">${pinned ? "Unpin Person" : "Pin Person"}</button>
-	            <button class="button" data-action="person-followed-up" data-id="${escapeHtml(person.id)}">Mark Followed Up</button>
-            ${settings.inlineEditing ? `<button class="button" data-action="person-edit-field" data-id="${escapeHtml(person.id)}" data-field="name" data-label="Name">Edit Name</button>` : ""}
-          </div>
-        </section>
-        <div class="grid two">
-          <section class="section">
-            <div class="section-header"><h2 class="section-title">Notes</h2></div>
-            ${notes.length ? notes.map(renderNoteCard).join("") : emptyState("No notes yet for this person.")}
-          </section>
-          <section class="section">
-            <div class="section-header"><h2 class="section-title">Meeting Notes</h2></div>
-            ${meetings.length ? meetings.map(renderMeetingCard).join("") : emptyState("No meeting notes yet for this person.")}
-          </section>
-        </div>
-        <div class="grid two">
-          <section class="section">
-            <div class="section-header"><h2 class="section-title">Prayer Requests</h2></div>
-            ${renderPrayerGroups(prayers)}
-          </section>
-          <section class="section">
-            <div class="section-header"><h2 class="section-title">Follow-Up Tasks</h2></div>
-            ${renderTaskGroups(tasks)}
-          </section>
-        </div>
-        <section class="section">
-          <div class="section-header"><h2 class="section-title">Person Timeline</h2></div>
-          <div class="timeline">
-            ${timeline.length ? timeline.map(renderTimelineItem).join("") : emptyState("This timeline will fill in as you add notes, meetings, prayer requests, and follow-ups.")}
-          </div>
-        </section>
-      `;
-    }
-
     function personInitials(person) {
       return String(person?.name || "?")
         .split(/\s+/)
@@ -9667,115 +8640,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         ? `<button class="button small" data-action="person-edit-field" data-id="${escapeHtml(view.personId)}" data-field="${field}" data-label="${escapeHtml(label)}">Edit</button>`
         : "";
       return `<div class="field"><label>${escapeHtml(label)}</label><div class="row wrap"><div class="meta">${escapeHtml(value)}</div>${edit}</div></div>`;
-    }
-
-    function miniStat(label, value) {
-      return `<div class="stat"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${escapeHtml(value || "Not set")}</div></div>`;
-    }
-
-    function renderNoteCard(note) {
-      return `
-        <article class="item compact">
-          <div class="item-title-row">
-            <div class="item-title">${escapeHtml(note.noteType)}</div>
-            <span class="meta">${dateLabel(note.noteDate)}</span>
-          </div>
-          <p class="item-preview">${escapeHtml(maskedText(note.sensitiveFlag, "Sensitive note - tap to view.", note.content))}</p>
-          ${timestampLine(note, "Note date", note.noteDate)}
-          ${note.sensitiveFlag ? `<span class="pill rose">Sensitive</span>` : ""}
-          ${settings.inlineEditing ? `<div class="action-row"><button class="button small" data-action="edit-record-field" data-collection="notes" data-field="content" data-label="Note" data-id="${escapeHtml(note.id)}">Edit Note</button></div>` : ""}
-        </article>
-      `;
-    }
-
-    function renderMeetingCard(meeting) {
-      return `
-        <article class="item compact">
-          <div class="item-title-row">
-            <div class="item-title">${escapeHtml(meeting.meetingType)} meeting</div>
-            <span class="meta">${dateLabel(meeting.meetingDate)}</span>
-          </div>
-          <p class="item-preview"><strong>Talked about:</strong> ${escapeHtml(maskedText(meeting.sensitiveFlag, "Sensitive meeting note - tap to view.", meeting.whatWeTalkedAbout))}</p>
-          <p class="item-preview"><strong>Remember:</strong> ${escapeHtml(maskedText(meeting.sensitiveFlag, "Sensitive details hidden.", meeting.whatToRemember))}</p>
-          <p class="item-preview"><strong>Next faithful step:</strong> ${escapeHtml(meeting.nextFaithfulStep || "Not set")}</p>
-          ${timestampLine(meeting, "Meeting date", meeting.meetingDate)}
-          <div class="row wrap">
-            <span class="meta">${escapeHtml(meeting.location || "No location")}</span>
-            ${meeting.followUpDate ? `<span class="pill gold">Follow up ${dateLabel(meeting.followUpDate)}</span>` : ""}
-            ${meeting.sensitiveFlag ? `<span class="pill rose">Sensitive</span>` : ""}
-          </div>
-          <div class="action-row">
-            <button class="button small" data-action="meeting-add-prayer" data-id="${escapeHtml(meeting.id)}">Add Prayer Request from this Meeting</button>
-            <button class="button small" data-action="followup-draft" data-source-type="meetingNote" data-id="${escapeHtml(meeting.id)}">Draft Follow-Up</button>
-            ${settings.inlineEditing ? `<button class="button small" data-action="edit-record-field" data-collection="meetingNotes" data-field="whatWeTalkedAbout" data-label="Meeting summary" data-id="${escapeHtml(meeting.id)}">Edit Summary</button>` : ""}
-          </div>
-        </article>
-      `;
-    }
-
-    function renderPrayerGroups(prayers) {
-      if (!prayers.length) return emptyState("No active prayer requests yet. Add one from Quick Grab, a meeting note, or this profile.");
-      const groups = ["Active", "Follow-Up Needed", "Answered", "Archived"];
-      return groups.map(group => {
-        const items = prayers.filter(prayer => prayer.status === group);
-        if (!items.length) return "";
-        return `
-          <div class="section">
-            <div class="section-header"><h3 class="section-title">${escapeHtml(group)}</h3></div>
-            ${items.map(renderPrayerCard).join("")}
-          </div>
-        `;
-      }).join("");
-    }
-
-    function renderTaskGroups(tasks) {
-      if (!tasks.length) return emptyState("No follow-up tasks yet for this person.");
-      const groups = ["Today / Soon", "Waiting", "Done / Archived"];
-      return groups.map(group => {
-        const items = tasks.filter(task => task.status === group);
-        if (!items.length) return "";
-        return `
-          <div class="section">
-            <div class="section-header"><h3 class="section-title">${escapeHtml(group)}</h3></div>
-            ${items.map(renderTaskCard).join("")}
-          </div>
-        `;
-      }).join("");
-    }
-
-    function buildTimeline(personId) {
-      const items = [];
-      db.meetingNotes.filter(item => item.relatedPersonId === personId).forEach(item => {
-        items.push({ date: item.meetingDate, type: "Meeting Note", title: item.meetingType + " meeting", preview: item.whatWeTalkedAbout, status: item.followUpNeeded ? "Follow-up planned" : "", sensitive: item.sensitiveFlag, createdAt: item.createdAt, updatedAt: item.updatedAt });
-      });
-      db.notes.filter(item => item.relatedPersonId === personId).forEach(item => {
-        items.push({ date: item.noteDate, type: "Note", title: item.noteType, preview: item.content, status: "", sensitive: item.sensitiveFlag, createdAt: item.createdAt, updatedAt: item.updatedAt });
-      });
-      db.prayerRequests.filter(item => item.relatedPersonId === personId).filter(item => settings.showArchivedOnProfiles || item.status !== "Archived").forEach(item => {
-        items.push({ date: item.dateAdded, type: item.status === "Answered" ? "Answered Prayer" : "Prayer Request", title: item.status, preview: item.request, status: item.shareableStatus, sensitive: item.sensitivityLevel === "Sensitive", createdAt: item.createdAt, updatedAt: item.updatedAt });
-      });
-      db.tasks.filter(item => item.relatedPersonId === personId).forEach(item => {
-        items.push({ date: item.dueDate || item.createdAt.slice(0, 10), type: "Follow-Up Task", title: item.title, preview: item.sourceType, status: item.status, sensitive: false, createdAt: item.createdAt, updatedAt: item.updatedAt });
-      });
-      return items.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-    }
-
-    function renderTimelineItem(item) {
-      return `
-        <article class="timeline-item">
-          <div class="meta">${dateLabel(item.date)}</div>
-          <div>
-            <div class="row wrap">
-              <span class="pill violet">${escapeHtml(item.type)}</span>
-              ${item.status ? `<span class="pill gray">${escapeHtml(item.status)}</span>` : ""}
-              ${item.sensitive ? `<span class="pill rose">Sensitive</span>` : ""}
-            </div>
-            <div class="item-title" style="margin-top:8px;">${escapeHtml(item.title)}</div>
-            <p class="item-preview">${escapeHtml(maskedText(item.sensitive, "Sensitive item - tap its section to view.", item.preview))}</p>
-            ${timestampLine(item, "Timeline date", item.date)}
-          </div>
-        </article>
-      `;
     }
 
     function renderPrayerRequests() {
@@ -9989,40 +8853,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         <div class="grid two">
           <section class="section">
             <div class="surface">
-              <h2 class="section-title">ADHD Mode</h2>
-              <div class="settings-list" style="margin-top:12px;">
-                ${settingToggle("adhdMode", "ADHD Mode", "Use a lower-choice Today screen and one-card review defaults.")}
-                ${settingToggle("autopilotMode", "Autopilot", "Let the app choose one next best action from local data.")}
-                ${settingToggle("showAutopilotOnToday", "Show Autopilot On Today", "Show or hide the one-action Autopilot card on Today.")}
-                ${settingSelect("adhdPreset", "Attention Preset", Object.entries(ADHD_PRESETS).map(([id, preset]) => [id, preset.label]), "Pick a saved attention profile, then apply it when you want the app to reshape Today.")}
-                <div class="notice secure">
-                  <strong>${escapeHtml((ADHD_PRESETS[settings.adhdPreset] || ADHD_PRESETS["minimum-noise"]).label)}</strong>
-                  <div class="meta">${escapeHtml((ADHD_PRESETS[settings.adhdPreset] || ADHD_PRESETS["minimum-noise"]).description)}</div>
-                  <div class="action-row" style="margin-top:10px;">
-                    <button class="button small primary" data-action="apply-adhd-preset">Apply Preset</button>
-                    <button class="button small" data-action="nav" data-screen="autopilot">Open Autopilot</button>
-                  </div>
-                </div>
-                ${settingSelect("adhdTodayLimit", "ADHD List Size", [["1", "1 item"], ["2", "2 items"], ["3", "3 items"]], "How many items to show in each Today section while ADHD Mode is on.")}
-                ${settingToggle("todayShowBackupNotice", "Show Backup Reminder On Today", "Show or hide backup reminders on the Today screen.")}
-                ${settingToggle("todayShowCoachNudge", "Show App Coach On Today", "Show or hide the App Coach suggestion on the Today screen.")}
-                ${settingToggle("todayShowQuickCapture", "Show Quick Capture On Today", "Show or hide the Quick Grab capture panel on Today.")}
-                ${settingToggle("todayShowPeopleShortcuts", "Show People Shortcuts On Today", "Show or hide pinned and recent people shortcuts on Today.")}
-                ${settingToggle("todayShowQuickReview", "Show Loose Things On Today", "Show or hide Quick Grabs that need review on Today.")}
-                ${settingToggle("todayShowCarePeople", "Show People To Care For On Today", "Show or hide people follow-ups on Today.")}
-                ${settingToggle("todayShowFollowUps", "Show Follow-Ups On Today", "Show or hide task follow-ups on Today.")}
-              </div>
-            </div>
-          </section>
-          <section class="section">
-            <div class="surface">
               <h2 class="section-title">Interface</h2>
               <div class="settings-list" style="margin-top:12px;">
-	                ${settingToggle("calmMode", "Calm Mode", "Simplify cards and keep the first view focused.")}
 	                ${settingToggle("showAdvancedActions", "Show Advanced Actions", "Show all action buttons without opening More.")}
-	                ${settingToggle("showStartHere", "Show Start Here", "Keep the one-good-next-step panel on Today.")}
 	                ${settingSelect("launchScreen", "Launch Screen", [["today", "Today"], ["quick", "Capture"], ["people", "People"], ["prayer", "Prayer"], ["settings", "More"]], "Choose one primary destination to open first on your phone.")}
-	                ${settingSelect("todayLimit", "Today List Size", [["3", "3 items"], ["5", "5 items"], ["10", "10 items"]], "How many items each Today section should show.")}
 	                ${settingSelect("reviewBatchSize", "Review Queue Size", [["1", "1 card"], ["3", "3 cards"], ["5", "5 cards"], ["10", "10 cards"]], "How many loose Quick Grabs to show in a one-card review batch.")}
 	                ${settingSelect("promptMeAfterHours", "Prompt Me Timing", [["0", "Right away"], ["12", "After 12 hours"], ["24", "After 24 hours"], ["48", "After 48 hours"]], "When unsorted Quick Grabs with no reminder should reappear.")}
 	                ${settingToggle("autoOpenQuickGrabReview", "Open Review After Grab", "Go straight to the processing screen after saving a Quick Grab.")}
@@ -10059,7 +8893,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	              <p class="page-kicker">Local improvement suggestions that ask before changing settings, cleanup flows, or privacy options.</p>
 	              <div class="settings-list" style="margin-top:12px;">
 	                ${settingToggle("appCoachEnabled", "App Coach Suggestions", "Let the app look for helpful local improvements.")}
-	                ${settingToggle("appCoachShowOnToday", "Show One Suggestion On Today", "Show the highest-value coach suggestion on the Today screen.")}
 	                ${settingSelect("appCoachSensitivity", "Suggestion Style", [["gentle", "Gentle"], ["balanced", "Balanced"], ["proactive", "Proactive"]], "Choose how quickly the coach points out optimization ideas.")}
 	              </div>
 	              <div class="action-row" style="margin-top:14px;">
@@ -10356,7 +9189,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           <div class="surface">
             <div class="action-row">
               <button class="button" data-action="nav" data-screen="settings">Back to More</button>
-              <button class="button primary" data-action="nav" data-screen="quick">Open Quick Grab</button>
+              <button class="button primary" data-action="nav" data-screen="quick">Open Capture</button>
             </div>
           </div>
         </section>
@@ -10364,51 +9197,44 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           <div class="manual-list">
             ${manualSection("Start here each day", [
               "Open Today from the primary navigation.",
-              "Read the Start Here card first. It chooses one next step from loose Quick Grabs, due follow-ups, or people needing care.",
-              "Use Grab Something when a thought appears and you do not have time to organize it.",
-              "Use Review One At A Time when you want a calmer, single-card processing flow.",
-              "Use pinned and recent people shortcuts to jump back into the profiles you touch most."
+              "Read Next thing to do first. It chooses one grounded ministry action using the app's local priority order.",
+              "Use the one primary action to open it, then choose Done or Later when those controls apply.",
+              "Use Quick Capture when a thought appears and you do not have time to organize it.",
+              "After that shows at most two quieter actions so the page never becomes another task dashboard."
             ])}
-            ${manualSection("Capture a Quick Grab", [
+            ${manualSection("Capture something", [
               "Tap Capture in the primary navigation.",
-              "Type the thought, prayer request, meeting note, task, or reminder in the large text box.",
-              "Autosave keeps the draft on this device as you type, even before you tap Grab It.",
-              "Tap a category chip only if one is obvious. It is fine to leave it unsorted.",
-              "Tap Today, Soon, or Important if it should come back quickly.",
-              "Tap Grab It. If Open Review After Grab is on, the app opens the processing screen immediately."
+              "Type the thought, prayer request, meeting note, task, or reminder without choosing a category first.",
+              "Autosave keeps the draft on this device as you type.",
+              "Tap Process when you are ready for suggested updates, or leave the draft and return later.",
+              "The raw capture is preserved before any processing begins."
             ])}
             ${manualSection("Use dictation", [
-              "Open Quick Grab.",
+              "Open Capture or a person's capture box.",
               "Tap Dictate.",
               "Speak the note naturally.",
               "When dictation finishes, review the inserted text.",
-              "Tap Grab It to save it."
+              "Tap Process when the text says what you need to remember."
             ])}
-            ${manualSection("Process Quick Grabs", [
-              "Open Quick Review for a single-card flow, or Quick Grab for the full queue.",
-              "Tap Process on the card.",
-              "Choose what the note should become: profile note, meeting note, prayer request, follow-up task, donor idea, or teaching idea.",
-              "Choose an existing person or create a new person after checking duplicate warnings.",
-              "Processing fields autosave while you work and are cleared after Save Structured Records succeeds.",
-              "Review the filled-in fields, then tap Save Structured Records.",
-              "Use Process with Mock AI in Local Mock Only mode when you want a local draft proposal instead of saving records.",
-              "If Settings uses Backend Quick Grab, the same button becomes Process with Backend Quick Grab and still opens the privacy gate first.",
-              "Backend Quick Grab sends only the current Quick Grab text, today's date, privacy flags, selected tags or urgency, and candidate people names and ids to the app server route after approval.",
-              "Quick Grab AI creates an AI Review proposal after confirmation. Records are saved only later from AI Review after selected-action confirmation."
+            ${manualSection("Review suggested updates", [
+              "Process a saved capture to open the privacy review before any AI-assisted request.",
+              "Confirm the minimum context that may be used; captures marked Do Not Send to AI remain blocked.",
+              "Review each suggested update independently and edit, reject, change the person, or mark the capture sensitive as needed.",
+              "Tap Save approved updates only after the selected checkboxes are correct.",
+              "If processing fails, the unprocessed capture stays available for a safe retry.",
+              "Repeated processing and saving reuse idempotency links so approved structured records are not duplicated."
             ])}
             ${manualSection("Use people profiles", [
-              "Open People and search by name, phone number, group, care level, major, hometown, or involvement.",
+              "Open People and search by name or a useful saved identity detail.",
               "Use Create New Person to open a sheet with duplicate checking before the profile is created.",
-              "Open a profile to see notes, meetings, prayer requests, follow-up tasks, and timeline.",
-              "Use the Profile picture field to choose a photo from your phone. The app shrinks the image before saving it locally.",
-              "Use the Phone number field when you want a number available in the profile and search.",
-              "Use Edit buttons to open in-app sheets for profile and record edits.",
-              "Use Add Note, Add Meeting Note, Add Prayer Request, or Add Follow-Up Task for quick updates.",
-              "Use Brief Me when you want a mock local preparation card before meeting with a person.",
-              "Brief Me opens the privacy gate first and creates an AI Review proposal only after you confirm the person-only context.",
-              "Use Draft Follow-Up when you want three copyable mock text options. The app never sends the text for you.",
-              "Tap Pin Person for people you want on your Today shortcut list.",
-              "Tap Mark Followed Up after you contact someone."
+              "Tap anywhere on a person card to open the profile.",
+              "Read Right Now for grounded prayer, action, memory, and reminder context.",
+              "Use the profile capture box to add something about that person without choosing a record type first.",
+              "Use Save for later to keep an unprocessed person-linked capture without changing any permanent record or dates.",
+              "Brief Me opens a grounded local preparation card immediately and creates no proposal or permanent record.",
+              "Follow Up opens a useful draft immediately. The app never sends it or marks follow-up complete for you.",
+              "Open Profile Details or More only when you need editing, photo, contact, or administrative controls.",
+              "Each nonempty history section starts with three records and keeps full history behind View all."
             ])}
             ${manualSection("Manage prayer requests", [
               "Open Prayer from the primary navigation.",
@@ -10567,25 +9393,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
-    function renderPersonCareCard(person) {
-      return `
-        <article class="item compact">
-          <div class="item-title-row">
-            <div>
-              <div class="item-title">${escapeHtml(person.name)}</div>
-              <div class="meta">${escapeHtml(person.followUpReason || "Take the next faithful step.")}</div>
-            </div>
-            <span class="pill gold">${dateLabel(person.nextFollowUpDate)}</span>
-          </div>
-          <div class="action-row">
-            <button class="button small primary" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Profile</button>
-            <button class="button small" data-action="person-followed-up" data-id="${escapeHtml(person.id)}">Mark Followed Up</button>
-          </div>
-          ${timestampLine(person)}
-        </article>
-      `;
-    }
-
     function renderTaskCard(task) {
       const person = personById(task.relatedPersonId);
       return `
@@ -10690,78 +9497,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         `${(data.prayerRequests || []).length} prayer requests`,
         `${(data.tasks || []).length} tasks`
       ].join(", ");
-    }
-
-    function renderProfileActionSheet(sheet) {
-      const person = personById(sheet.personId);
-      if (!person) return "";
-      const kind = sheet.kind;
-      const titles = {
-        note: "Add Note",
-        meeting: "Add Meeting Note",
-        prayer: "Add Prayer Request",
-        followup: "Add Follow-Up Task"
-      };
-      const helpers = {
-        note: "Write the quick thing you want to remember. You can sort more later.",
-        meeting: "Capture the meeting while it is fresh. Only the summary is required.",
-        prayer: "Add the request with enough detail to pray and follow up carefully.",
-        followup: "Create one clear next action and an optional due date."
-      };
-      const meetingTypeOptions = ["Student", "Donor", "Staff", "Pastoral", "Event Planning", "Admin", "Other"]
-        .map(option => `<option ${option === "Student" ? "selected" : ""}>${option}</option>`).join("");
-      const shareableStatusOptions = ["Private", "Anonymous Only", "Ask Permission", "Okay to Share"]
-        .map(option => `<option ${option === settings.defaultShareableStatus ? "selected" : ""}>${option}</option>`).join("");
-      const fields = {
-        note: `
-          ${sheetField("Note", `<textarea class="textarea small" id="sheet-note-content" placeholder="What do you want to remember?"></textarea>`)}
-          ${checkbox("sheet-sensitive", "Mark sensitive/private", false)}
-        `,
-        meeting: `
-          <div class="form-grid">
-            ${sheetField("Meeting date", `<input class="input" id="sheet-meeting-date" type="date" value="${todayISO()}">`)}
-            ${sheetField("Meeting type", `<select class="select" id="sheet-meeting-type">${meetingTypeOptions}</select>`)}
-          </div>
-          ${sheetField("What did you talk about?", `<textarea class="textarea small" id="sheet-meeting-summary" placeholder="Short summary"></textarea>`)}
-          ${sheetField("What should you remember?", `<textarea class="textarea small" id="sheet-meeting-remember" placeholder="Optional detail"></textarea>`)}
-          ${checkbox("sheet-sensitive", "Mark sensitive/private", false)}
-        `,
-        prayer: `
-          ${sheetField("Prayer request", `<textarea class="textarea small" id="sheet-prayer-request" placeholder="What should you pray for?"></textarea>`)}
-          <div class="form-grid">
-            ${sheetField("Follow-up date", `<input class="input" id="sheet-prayer-follow-date" type="date">`)}
-            ${sheetField("Shareable status", `<select class="select" id="sheet-prayer-shareable">${shareableStatusOptions}</select>`)}
-          </div>
-          ${checkbox("sheet-sensitive", "Mark sensitive/private", false)}
-        `,
-        followup: `
-          ${sheetField("Follow-up task", `<textarea class="textarea small" id="sheet-followup-title" placeholder="What is the next action?"></textarea>`)}
-          <div class="form-grid">
-            ${sheetField("Due date", `<input class="input" id="sheet-followup-due" type="date" value="${daysFromNow(3)}">`)}
-            ${sheetField("Status", `<select class="select" id="sheet-followup-status"><option>Today / Soon</option><option>Waiting</option><option>Someday</option></select>`)}
-          </div>
-        `
-      };
-      return `
-        <div class="sheet-backdrop" data-action="sheet-close">
-          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="profile-sheet-title" data-sheet-panel>
-            <div class="sheet-head">
-              <div>
-                <h2 id="profile-sheet-title">${escapeHtml(titles[kind] || "Quick Action")}</h2>
-                <p class="page-kicker">${escapeHtml(person.name)} - ${escapeHtml(helpers[kind] || "Add the detail and save when ready.")}</p>
-              </div>
-              <button class="button small" data-action="sheet-close" aria-label="Close">Close</button>
-            </div>
-            <div class="sheet-form">
-              ${fields[kind] || ""}
-            </div>
-            <div class="sheet-actions">
-              <button class="button" data-action="sheet-close">Cancel</button>
-              <button class="button primary" data-action="profile-sheet-save" data-kind="${escapeHtml(kind)}" data-id="${escapeHtml(person.id)}">Save</button>
-            </div>
-          </section>
-        </div>
-      `;
     }
 
     function renderPrayerActionSheet(sheet) {
@@ -11496,7 +10231,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function renderSheet() {
       if (!view.sheet) return "";
-      if (view.sheet.type === "profile-action") return renderProfileActionSheet(view.sheet);
       if (view.sheet.type === "prayer-action") return renderPrayerActionSheet(view.sheet);
       if (view.sheet.type === "data-safety") return renderDataSafetySheet(view.sheet);
       if (view.sheet.type === "auto-memory") return renderAutoMemorySheet(view.sheet);
@@ -11551,21 +10285,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         el.addEventListener("input", scheduleAutosave);
         el.addEventListener("change", scheduleAutosave);
       });
-      document.querySelectorAll("#quick-tags .chip").forEach(button => {
-        button.addEventListener("click", event => {
-          event.preventDefault();
-          button.classList.toggle("active");
-          scheduleAutosave();
-        });
-      });
-      document.querySelectorAll("#urgency-tags .chip").forEach(button => {
-        button.addEventListener("click", event => {
-          event.preventDefault();
-          document.querySelectorAll("#urgency-tags .chip").forEach(item => item.classList.remove("active"));
-          button.classList.add("active");
-          scheduleAutosave();
-        });
-      });
       const peopleSearch = document.getElementById("people-search");
       if (peopleSearch) {
         peopleSearch.addEventListener("input", event => {
@@ -11588,16 +10307,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           render();
         });
         if (document.activeElement !== globalSearch) globalSearch.focus();
-      }
-      const personSelect = document.getElementById("person-select");
-      if (personSelect) {
-        personSelect.addEventListener("change", updateNewPersonFields);
-        updateNewPersonFields();
-      }
-      const newPerson = document.getElementById("new-person-name");
-      if (newPerson) {
-        newPerson.addEventListener("input", updateDuplicateWarning);
-        updateDuplicateWarning();
       }
       const quickText = document.getElementById("quick-text");
       if (quickText) {
@@ -11635,12 +10344,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
     }
 
-    function openProfileActionSheet(kind, personId) {
-      if (!personById(personId)) return;
-      view.sheet = { type: "profile-action", kind, personId };
-      render();
-    }
-
     function openPrayerActionSheet(kind, prayerId) {
       if (!["answered-note", "follow-date", "task"].includes(kind)) return;
       if (!db.prayerRequests.some(item => item.id === prayerId)) return;
@@ -11675,81 +10378,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function closeSheet() {
       view.sheet = null;
-      render();
-    }
-
-    function submitProfileActionSheet(kind, personId) {
-      const person = personById(personId);
-      if (!person) {
-        closeSheet();
-        return;
-      }
-      let message = "";
-      if (kind === "note") {
-        const content = document.getElementById("sheet-note-content")?.value.trim() || "";
-        if (!content) {
-          showToast("Add a note first.");
-          return;
-        }
-        recordUndo("note");
-        createProfileNoteRecord(personId, {
-          content,
-          sensitiveFlag: Boolean(document.getElementById("sheet-sensitive")?.checked)
-        });
-        message = "Note added.";
-      }
-      if (kind === "meeting") {
-        const summary = document.getElementById("sheet-meeting-summary")?.value.trim() || "";
-        const remember = document.getElementById("sheet-meeting-remember")?.value.trim() || "";
-        if (!summary && !remember) {
-          showToast("Add a meeting note first.");
-          return;
-        }
-        recordUndo("meeting note");
-        createProfileMeetingRecord(personId, {
-          summary: summary || remember,
-          whatToRemember: remember || summary,
-          meetingDate: document.getElementById("sheet-meeting-date")?.value || todayISO(),
-          meetingType: document.getElementById("sheet-meeting-type")?.value || (person.personType === "Donor" ? "Donor" : "Student"),
-          sensitiveFlag: Boolean(document.getElementById("sheet-sensitive")?.checked)
-        });
-        message = "Meeting note added.";
-      }
-      if (kind === "prayer") {
-        const request = document.getElementById("sheet-prayer-request")?.value.trim() || "";
-        if (!request) {
-          showToast("Add a prayer request first.");
-          return;
-        }
-        const followUpDate = document.getElementById("sheet-prayer-follow-date")?.value || "";
-        recordUndo("prayer request");
-        createProfilePrayerRecord(personId, {
-          request,
-          followUpDate,
-          shareableStatus: document.getElementById("sheet-prayer-shareable")?.value || settings.defaultShareableStatus,
-          sensitiveFlag: Boolean(document.getElementById("sheet-sensitive")?.checked)
-        });
-        message = "Prayer request added.";
-      }
-      if (kind === "followup") {
-        const title = document.getElementById("sheet-followup-title")?.value.trim() || "";
-        if (!title) {
-          showToast("Add a follow-up task first.");
-          return;
-        }
-        recordUndo("follow-up task");
-        createProfileFollowUpRecord(personId, {
-          title,
-          dueDate: document.getElementById("sheet-followup-due")?.value || daysFromNow(3),
-          status: document.getElementById("sheet-followup-status")?.value || "Today / Soon"
-        });
-        message = "Follow-up added.";
-      }
-      saveData();
-      view.sheet = null;
-      view.screen = "person";
-      view.personId = personId;
-      showToast(message || "Saved.");
       render();
     }
 
@@ -12140,10 +10768,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       if (sheet.nextAction === "quickGrabParse") {
         createQuickGrabAiProposal(sheet.sourceId);
-        return;
-      }
-      if (sheet.nextAction === "personBriefing") {
-        createPersonBriefingMockAiProposal(sheet.sourceId);
         return;
       }
       if (sheet.nextAction === "followUpDraft") {
@@ -12819,7 +11443,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return;
       }
       if (proposal.sourceType === "quickGrab") {
-        openProcessing(proposal.sourceId, []);
+        beginCaptureProcessing(proposal.sourceId);
         return;
       }
       if (proposal.sourceType === "person") {
@@ -12859,10 +11483,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "sheet-close") {
         if (button.classList.contains("sheet-backdrop") && event.target !== button) return;
         closeSheet();
-        return;
-      }
-      if (action === "profile-sheet-save") {
-        submitProfileActionSheet(button.dataset.kind, id);
         return;
       }
       if (action === "edit-field-sheet-save") {
@@ -12939,7 +11559,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "nav") {
         view.screen = button.dataset.screen;
         view.quickGrabId = null;
-        view.processPreset = [];
         view.sheet = null;
         if (view.screen === "review") view.reviewIndex = 0;
         render();
@@ -12965,14 +11584,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "copy-shortcut-url") copyShortcutUrl();
       if (action === "undo-last") undoLast();
       if (action === "lock-app") lockApp();
-      if (action === "toggle-focus") toggleFocusMode();
-      if (action === "grab-create") createQuickGrab();
       if (action === "capture-submit") submitUnifiedCapture(button.dataset.source, button.dataset.personId, button.dataset.mode, button);
       if (action === "capture-change-person") openProfileCapturePersonSheet(id);
       if (action === "voice-capture") startDictation(button.dataset.target || "quick-text");
-      if (action === "qg-process") openProcessing(id, []);
-      if (action === "qg-mock-ai") beginCaptureProcessing(id);
-      if (action === "qg-preset") openProcessing(id, [button.dataset.type]);
+      if (action === "qg-process") beginCaptureProcessing(id);
       if (action === "qg-toggle-more") toggleExpanded("expandedQuickGrabIds", id);
       if (action === "qg-done") updateQuickGrab(id, { status: "Done" }, "Marked done.");
       if (action === "qg-archive") updateQuickGrab(id, { status: "Archived" }, "Archived.");
@@ -12991,7 +11606,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       if (action === "snooze-set") setSnooze(id, button.dataset.when);
       if (action === "snooze-pick") setSnooze(id, "pick");
-      if (action === "process-save") saveProcessedQuickGrab(id);
       if (action === "person-open") {
         recordRecentPerson(id);
         view.screen = "person";
@@ -13006,11 +11620,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "person-pin") togglePinnedPerson(id);
       if (action === "person-create") openCreatePersonSheet();
       if (action === "person-followed-up") markFollowedUp(id);
-      if (action === "person-add-note") openProfileActionSheet("note", id);
-      if (action === "person-add-meeting") openProfileActionSheet("meeting", id);
-      if (action === "person-add-prayer") openProfileActionSheet("prayer", id);
-      if (action === "person-add-followup") openProfileActionSheet("followup", id);
-      if (action === "person-brief") openPersonBriefingMockAiGate(id);
       if (action === "profile-brief-open") openProfileBrief(id);
       if (action === "profile-followup-open") openProfileFollowUp(id);
       if (action === "profile-followup-variant") setProfileFollowUpVariant(button.dataset.draftIndex);
@@ -13018,11 +11627,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "profile-followup-mark") markProfileFollowedUp(id);
       if (action === "profile-history-toggle") toggleProfileHistory(id);
       if (action === "followup-draft") openFollowUpDraftMockAiGate(button.dataset.sourceType, id);
-      if (action === "person-copy-briefing") copyLocalBriefing(id);
-      if (action === "person-copy-drafts") copyTextDrafts(id);
-      if (action === "person-copy-draft") copyTextDraft(id);
       if (action === "person-remove-photo") removePersonPhoto(id);
-      if (action === "meeting-add-prayer") addPrayerFromMeeting(id);
       if (action === "person-edit-field") openEditFieldSheet("person", id, button.dataset.field, button.dataset.label);
       if (action === "edit-record-field") openEditFieldSheet("record", id, button.dataset.field, button.dataset.label, button.dataset.collection);
       if (action === "prayer-filter") {
@@ -13056,7 +11661,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "donor-update-builder") openDonorUpdateBuilderSheet();
       if (action === "weekly-reset-agent") openWeeklyResetMockAiGate();
       if (action === "data-janitor") openDataJanitorMockAiGate();
-      if (action === "apply-adhd-preset") applyAdhdPreset();
       if (action === "set-pin") openSecuritySheet("pin-set");
       if (action === "clear-pin") openSecuritySheet("pin-clear");
       if (action === "auto-memory-now") saveAutoMemoryRestorePoint();
@@ -13070,36 +11674,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "import-json") openDataSafetySheet("import");
       if (action === "reset-demo") openDataSafetySheet("reset-demo");
       if (action === "reset-copy") resetCustomCopy();
-    }
-
-    function applyAdhdModeDefaults() {
-      settings.calmMode = true;
-      settings.autopilotMode = true;
-      settings.showAutopilotOnToday = true;
-      settings.showAdvancedActions = false;
-      settings.showStartHere = true;
-      settings.launchScreen = "today";
-      settings.reviewBatchSize = "1";
-      settings.adhdTodayLimit = settings.adhdTodayLimit || "1";
-      settings.appCoachSensitivity = "gentle";
-      view.focusMode = true;
-      view.expandedQuickGrabIds = [];
-      view.expandedPrayerIds = [];
-    }
-
-    function applyAdhdPreset(id = settings.adhdPreset) {
-      const preset = ADHD_PRESETS[id] || ADHD_PRESETS["minimum-noise"];
-      recordUndo("attention preset");
-      settings.adhdPreset = id;
-      Object.assign(settings, preset.patch);
-      settings.launchScreen = calmLaunchScreen(settings.launchScreen);
-      view.screen = settings.launchScreen;
-      view.focusMode = Boolean(settings.calmMode);
-      view.expandedQuickGrabIds = [];
-      view.expandedPrayerIds = [];
-      saveSettings();
-      showToast(`${preset.label} preset applied.`);
-      render();
     }
 
     function updateSetting(key, value) {
@@ -13152,14 +11726,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return;
       }
       settings[key] = key === "launchScreen" ? calmLaunchScreen(value) : value;
-      if (key === "adhdMode" && value) applyAdhdModeDefaults();
-      if (key === "calmMode") {
-        view.focusMode = Boolean(value);
-        if (view.focusMode) {
-          view.expandedQuickGrabIds = [];
-          view.expandedPrayerIds = [];
-        }
-      }
       if (key === "enableAutoSave" && !value) clearAllAutosaveDrafts();
       saveSettings();
 	      render();
@@ -13169,7 +11735,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       recordUndo("App Coach adjustment");
       Object.assign(settings, patch);
       settings.launchScreen = calmLaunchScreen(settings.launchScreen);
-      if ("calmMode" in patch) view.focusMode = Boolean(settings.calmMode);
       saveSettings();
       showToast(message || "App Coach adjustment applied.");
       render();
@@ -13208,7 +11773,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return;
       }
       if (id === "gentle-review-flow") {
-        applyCoachSettings({ reviewBatchSize: "1", launchScreen: "quick", showStartHere: true }, "Capture now opens as the one-card review starting point.");
+        applyCoachSettings({ reviewBatchSize: "1", launchScreen: "quick" }, "Capture now opens as the one-card review starting point.");
         return;
       }
       if (id === "auto-archive-answered") {
@@ -13221,7 +11786,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return;
       }
       if (id === "launch-today") {
-        applyCoachSettings({ launchScreen: "today", showStartHere: true }, "The app will open to Today.");
+        applyCoachSettings({ launchScreen: "today" }, "The app will open to Today.");
         return;
       }
       if (id === "pin-care-people") {
@@ -13275,17 +11840,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       customCopy = {};
       saveCustomCopy();
       showToast("Edited wording reset.");
-      render();
-    }
-
-    function toggleFocusMode() {
-      settings.calmMode = !settings.calmMode;
-      view.focusMode = settings.calmMode;
-      saveSettings();
-      if (view.focusMode) {
-        view.expandedQuickGrabIds = [];
-        view.expandedPrayerIds = [];
-      }
       render();
     }
 
@@ -13404,21 +11958,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       view.screen = source === "profile" ? "person" : source === "today" ? "today" : "quick";
       view.quickGrabId = null;
-      view.processPreset = [];
       showToast(personId ? "Saved for later with this person. No profile records changed." : "Saved for later. You can process it when ready.");
       render();
       return grab;
-    }
-
-    function createQuickGrab() {
-      return submitUnifiedCapture("main", "", "later");
-    }
-
-    function openProcessing(id, preset) {
-      view.screen = "process";
-      view.quickGrabId = id;
-      view.processPreset = preset;
-      render();
     }
 
     function updateQuickGrab(id, patch, message) {
@@ -13427,7 +11969,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	      recordUndo("Quick Grab update");
 	      Object.assign(grab, patch, { updatedAt: nowISO() });
 	      saveData();
-	      if (["Done", "Archived", "Converted"].includes(patch.status)) clearAutosaveDraft("process:" + id);
 	      showToast(message);
       render();
     }
@@ -13457,26 +11998,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return localISODate(d);
     }
 
-    function updateNewPersonFields() {
-      const select = document.getElementById("person-select");
-      const fields = document.getElementById("new-person-fields");
-      if (!select || !fields) return;
-      fields.style.display = select.value === "new" ? "grid" : "none";
-      const actionPerson = document.getElementById("action-person");
-      if (actionPerson) actionPerson.checked = select.value === "new";
-      updateDuplicateWarning();
-    }
-
-    function updateDuplicateWarning() {
-      const input = document.getElementById("new-person-name");
-      const warning = document.getElementById("duplicate-warning");
-      if (!input || !warning) return;
-      const matches = similarPeople(input.value);
-      warning.innerHTML = matches.length
-        ? `A similar person already exists: ${matches.map(person => escapeHtml(person.name)).join(", ")}. Use existing person or create new?`
-        : "No close match found yet.";
-    }
-
     function similarPeople(name) {
       const cleaned = name.trim().toLowerCase();
       if (!cleaned) return [];
@@ -13498,235 +12019,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         }
       }
       return matrix[a.length][b.length];
-    }
-
-    function saveProcessedQuickGrab(id) {
-      const grab = db.quickGrabs.find(item => item.id === id);
-      if (!grab) return;
-      const actions = {
-        note: document.getElementById("action-note").checked,
-        meeting: document.getElementById("action-meeting").checked,
-        prayer: document.getElementById("action-prayer").checked,
-        followup: document.getElementById("action-followup").checked,
-        donor: document.getElementById("action-donor").checked,
-        teaching: document.getElementById("action-teaching").checked,
-        keep: document.getElementById("action-keep").checked
-	      };
-	      const sensitive = document.getElementById("action-sensitive").checked;
-	      let relatedPersonId = document.getElementById("person-select").value;
-	      const wantsNewPerson = relatedPersonId === "new";
-	      let newPersonName = "";
-	      let newPersonPhone = "";
-	      if (wantsNewPerson) {
-	        const name = document.getElementById("new-person-name").value.trim();
-	        if (!name) {
-	          showToast("Add a name for the new person.");
-	          return;
-	        }
-        const matches = similarPeople(name);
-        if (matches.length && !document.getElementById("duplicate-confirm").checked) {
-	          showToast("Check the similar person warning first.");
-	          return;
-	        }
-	        newPersonName = name;
-	        newPersonPhone = document.getElementById("new-person-phone")?.value.trim() || "";
-	        relatedPersonId = "";
-	      }
-	      const personActions = actions.note || actions.meeting || actions.prayer || actions.followup || actions.donor;
-	      if (personActions && !relatedPersonId && !wantsNewPerson) {
-	        showToast("Choose or create a person before saving linked records.");
-	        return;
-	      }
-
-      const convertedTypes = [];
-      const convertedIds = [];
-      let meetingId = null;
-      let prayerId = null;
-      let taskId = null;
-      const meetingDate = document.getElementById("meeting-date").value || todayISO();
-      const meetingSummary = document.getElementById("meeting-summary").value.trim();
-      const whatToRemember = document.getElementById("what-to-remember").value.trim();
-	      const prayerText = document.getElementById("prayer-text").value.trim();
-	      const followupText = document.getElementById("followup-task").value.trim();
-	      const followupDate = document.getElementById("followup-date").value;
-	      const shareableStatus = document.getElementById("shareable-status").value;
-
-	      const willCreateRecords = actions.note || actions.meeting || (actions.prayer && prayerText) || (actions.followup && followupText) || actions.donor || actions.teaching;
-	      if (!willCreateRecords && !actions.keep) {
-	        recordUndo("Quick Grab prompt");
-	        grab.status = "Prompt Me";
-	        grab.updatedAt = nowISO();
-	        saveData();
-	        showToast("Add details or keep this as a Quick Grab.");
-	        return;
-	      }
-
-	      recordUndo("processed Quick Grab");
-	      if (wantsNewPerson) {
-	        const person = createPerson(newPersonName, newPersonPhone);
-	        relatedPersonId = person.id;
-	      }
-
-	      if (actions.note) {
-        const note = {
-          id: uid("note"),
-          relatedPersonId,
-          noteDate: todayISO(),
-          noteType: "General",
-          content: whatToRemember || grab.rawContent,
-          sensitiveFlag: sensitive,
-          createdFromQuickGrabId: grab.id,
-          createdAt: nowISO(),
-          updatedAt: nowISO()
-        };
-        db.notes.unshift(note);
-        convertedTypes.push("Note");
-        convertedIds.push(note.id);
-      }
-
-      if (actions.meeting) {
-        const meeting = {
-          id: uid("meeting"),
-          relatedPersonId,
-          meetingDate,
-          meetingType: document.getElementById("meeting-type").value,
-          location: "",
-          whatWeTalkedAbout: meetingSummary || grab.rawContent,
-          whatToRemember: whatToRemember || meetingSummary || grab.rawContent,
-          prayerRequestText: prayerText,
-          nextFaithfulStep: followupText,
-          followUpNeeded: Boolean(followupText || followupDate),
-          followUpDate: followupDate,
-          sensitiveFlag: sensitive,
-          createdFromQuickGrabId: grab.id,
-          createdPrayerRequestIds: [],
-          createdFollowUpTaskIds: [],
-          createdAt: nowISO(),
-          updatedAt: nowISO()
-        };
-        db.meetingNotes.unshift(meeting);
-        meetingId = meeting.id;
-        convertedTypes.push("Meeting Note");
-        convertedIds.push(meeting.id);
-      }
-
-      if (actions.prayer && prayerText) {
-        const prayer = {
-          id: uid("prayer"),
-          relatedPersonId,
-          request: prayerText,
-          dateAdded: todayISO(),
-          status: followupDate ? "Follow-Up Needed" : "Active",
-          sensitivityLevel: sensitive ? "Sensitive" : "Normal",
-          followUpDate: followupDate,
-          shareableStatus,
-          answeredNote: "",
-          createdFromMeetingNoteId: meetingId,
-          createdFromQuickGrabId: grab.id,
-          createdFollowUpTaskIds: [],
-          createdAt: nowISO(),
-          updatedAt: nowISO()
-        };
-        db.prayerRequests.unshift(prayer);
-        prayerId = prayer.id;
-        convertedTypes.push("Prayer Request");
-        convertedIds.push(prayer.id);
-      }
-
-      if (actions.followup && followupText) {
-        const task = {
-          id: uid("task"),
-          relatedPersonId,
-          title: followupText,
-          dueDate: followupDate || daysFromNow(3),
-          status: "Today / Soon",
-          sourceType: prayerId ? "Prayer Request" : meetingId ? "Meeting Note" : "Quick Grab",
-          relatedPrayerRequestId: prayerId,
-          relatedMeetingNoteId: meetingId,
-          createdFromQuickGrabId: grab.id,
-          createdAt: nowISO(),
-          updatedAt: nowISO()
-        };
-        db.tasks.unshift(task);
-        taskId = task.id;
-        convertedTypes.push("Follow-Up Task");
-        convertedIds.push(task.id);
-      }
-
-      if (actions.donor) {
-        const note = {
-          id: uid("note"),
-          relatedPersonId,
-          noteDate: todayISO(),
-          noteType: "Donor Update Idea",
-          content: grab.rawContent,
-          sensitiveFlag: sensitive,
-          createdFromQuickGrabId: grab.id,
-          createdAt: nowISO(),
-          updatedAt: nowISO()
-        };
-        db.notes.unshift(note);
-        convertedTypes.push("Donor Update Idea");
-        convertedIds.push(note.id);
-      }
-
-      if (actions.teaching) {
-        const note = {
-          id: uid("note"),
-          relatedPersonId: relatedPersonId || "",
-          noteDate: todayISO(),
-          noteType: "Teaching Idea",
-          content: grab.rawContent,
-          sensitiveFlag: false,
-          createdFromQuickGrabId: grab.id,
-          createdAt: nowISO(),
-          updatedAt: nowISO()
-        };
-        db.notes.unshift(note);
-        convertedTypes.push("Teaching Idea");
-        convertedIds.push(note.id);
-      }
-
-      const meeting = meetingId ? db.meetingNotes.find(item => item.id === meetingId) : null;
-      if (meeting) {
-        if (prayerId) meeting.createdPrayerRequestIds.push(prayerId);
-        if (taskId) meeting.createdFollowUpTaskIds.push(taskId);
-      }
-      const prayer = prayerId ? db.prayerRequests.find(item => item.id === prayerId) : null;
-      if (prayer && taskId) prayer.createdFollowUpTaskIds.push(taskId);
-
-      if (!convertedTypes.length && !actions.keep) {
-        grab.status = "Prompt Me";
-        grab.updatedAt = nowISO();
-        saveData();
-        showToast("Add details or keep this as a Quick Grab.");
-        return;
-      }
-
-      const person = personById(relatedPersonId);
-      if (person) {
-        if (actions.meeting && document.getElementById("update-last").checked) person.lastMeaningfulInteraction = meetingDate;
-        if ((actions.followup || actions.meeting) && followupDate && document.getElementById("update-next").checked) {
-          person.nextFollowUpDate = followupDate;
-          person.followUpReason = followupText || "Follow up from Quick Grab.";
-        }
-        person.updatedAt = nowISO();
-      }
-
-      grab.relatedPersonId = relatedPersonId || grab.relatedPersonId;
-      grab.sensitiveFlag = sensitive;
-      grab.convertedToTypes = convertedTypes;
-      grab.convertedRecordIds = convertedIds;
-	      grab.status = actions.keep && !convertedTypes.length ? "Prompt Me" : "Converted";
-	      grab.updatedAt = nowISO();
-	      saveData();
-	      clearAutosaveDraft("process:" + id);
-	      showToast(convertedTypes.length ? "Saved structured records." : "Kept as Quick Grab.");
-      view.screen = relatedPersonId ? "person" : "quick";
-      view.personId = relatedPersonId || view.personId;
-      view.quickGrabId = null;
-      view.processPreset = [];
-      render();
     }
 
     function createPerson(name, phone = "") {
@@ -13820,55 +12112,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       saveData();
       showToast("Profile picture removed.");
       render();
-    }
-
-    function editPersonField(id, field, label) {
-      const person = personById(id);
-      if (!person || !field) return;
-      const next = window.prompt(`Edit ${label || field}:`, person[field] || "");
-      if (next === null) return;
-      recordUndo("profile edit");
-      person[field] = next.trim();
-      person.updatedAt = nowISO();
-      saveData();
-      showToast("Profile updated.");
-      render();
-    }
-
-    function editRecordField(collection, id, field, label) {
-      if (!collection || !id || !field || !db[collection]) return;
-      const record = db[collection].find(item => item.id === id);
-      if (!record) return;
-      const next = window.prompt(`Edit ${label || field}:`, record[field] || "");
-      if (next === null) return;
-      recordUndo("record edit");
-      record[field] = next.trim();
-      record.updatedAt = nowISO();
-      saveData();
-      showToast("Updated.");
-      render();
-    }
-
-    function createPersonFromPrompt() {
-      const name = window.prompt("Name for the new person:");
-      if (!name || !name.trim()) return;
-      const phone = window.prompt("Optional phone number:", "") || "";
-      const matches = similarPeople(name);
-      if (matches.length && !window.confirm("A similar person already exists. Use existing person instead? Choose Cancel to create a new one.")) {
-        recordUndo("person creation");
-        const person = createPerson(name.trim(), phone);
-        saveData();
-        view.screen = "person";
-        view.personId = person.id;
-        render();
-      } else if (!matches.length) {
-        recordUndo("person creation");
-        const person = createPerson(name.trim(), phone);
-        saveData();
-        view.screen = "person";
-        view.personId = person.id;
-        render();
-      }
     }
 
     function markFollowedUp(id) {
@@ -13985,47 +12228,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return task;
     }
 
-    function quickAddNote(personId) {
-      const content = window.prompt("Note to add:");
-      if (!content || !content.trim()) return;
-      recordUndo("note");
-      createProfileNoteRecord(personId, { content });
-      saveData();
-      showToast("Note added.");
-      render();
-    }
-
-    function quickAddMeeting(personId) {
-      const summary = window.prompt("What did you talk about?");
-      if (!summary || !summary.trim()) return;
-      recordUndo("meeting note");
-      createProfileMeetingRecord(personId, { summary });
-      saveData();
-      showToast("Meeting note added.");
-      render();
-    }
-
-    function quickAddPrayer(personId) {
-      const request = window.prompt("Prayer request:");
-      if (!request || !request.trim()) return;
-      recordUndo("prayer request");
-      createProfilePrayerRecord(personId, { request });
-      saveData();
-      showToast("Prayer request added.");
-      render();
-    }
-
-    function quickAddFollowUp(personId) {
-      const title = window.prompt("Follow-up task:");
-      if (!title || !title.trim()) return;
-      const due = window.prompt("Follow-up date (YYYY-MM-DD):", daysFromNow(3)) || daysFromNow(3);
-      recordUndo("follow-up task");
-      createProfileFollowUpRecord(personId, { title, dueDate: due });
-      saveData();
-      showToast("Follow-up added.");
-      render();
-    }
-
     function copyPlainText(text, successMessage, promptLabel) {
       const value = String(text || "").trim();
       if (!value) {
@@ -14037,57 +12239,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       } else {
         window.prompt(promptLabel, value);
       }
-    }
-
-    function localPersonBriefingText(personId) {
-      const person = personById(personId);
-      if (!person) return "";
-      const contextReview = buildPersonBriefingContextReview(personId);
-      const context = personBriefingAllowedContext(personId);
-      const briefing = buildPersonBriefingMockResult(context, contextReview.warnings);
-      const section = (title, items) => [
-        title,
-        ...(Array.isArray(items) && items.length ? items : ["Nothing recorded yet."]).map(item => `- ${item}`)
-      ].join("\n");
-      return [
-        `Local Briefing: ${person.name}`,
-        `Care level: ${person.careLevel || "Not set"}`,
-        `Last meaningful interaction: ${formatInteractionDate(person.lastMeaningfulInteraction)}`,
-        `Next follow-up: ${formatFollowUpDate(person.nextFollowUpDate)}${person.followUpReason ? ` (${person.followUpReason})` : ""}`,
-        "",
-        section("Remember before meeting", briefing.rememberBeforeMeeting),
-        "",
-        section("Good questions to ask", briefing.goodQuestionsToAsk),
-        "",
-        section("Prayer reminders", briefing.prayerReminders),
-        "",
-        section("Follow-up suggestions", briefing.followUpSuggestions),
-        "",
-        section("Sensitivity cautions", briefing.sensitivityCautions),
-        "",
-        `One faithful next step: ${briefing.oneFaithfulNextStep || "Choose one simple follow-up."}`,
-        "",
-        "Local-only copy. Nothing was sent anywhere."
-      ].filter(line => line !== "").join("\n");
-    }
-
-    function copyLocalBriefing(personId) {
-      copyPlainText(localPersonBriefingText(personId), "Local briefing copied.", "Local briefing:");
-    }
-
-    function localTextDrafts(personId) {
-      const contextReview = buildFollowUpDraftContextReview("person", personId);
-      const context = followUpDraftAllowedContext("person", personId);
-      const drafts = buildFollowUpDraftOptions(context, contextReview);
-      return drafts.map(draft => `${draft.tone}\n${draft.text}`).join("\n\n");
-    }
-
-    function copyTextDrafts(personId) {
-      copyPlainText(localTextDrafts(personId), "Text drafts copied.", "Text drafts:");
-    }
-
-    function copyTextDraft(personId) {
-      copyTextDrafts(personId);
     }
 
     function prayerStewardAuditText() {
@@ -14121,36 +12272,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function copyPrayerStewardAudit() {
       copyPlainText(prayerStewardAuditText(), "Prayer Steward audit copied.", "Prayer Steward audit:");
-    }
-
-    function addPrayerFromMeeting(meetingId) {
-      const meeting = db.meetingNotes.find(item => item.id === meetingId);
-      if (!meeting) return;
-      const request = window.prompt("Prayer request from this meeting:", meeting.prayerRequestText || "");
-      if (!request || !request.trim()) return;
-      recordUndo("meeting prayer request");
-      const prayer = {
-        id: uid("prayer"),
-        relatedPersonId: meeting.relatedPersonId,
-        request: request.trim(),
-        dateAdded: todayISO(),
-        status: "Active",
-        sensitivityLevel: meeting.sensitiveFlag ? "Sensitive" : "Normal",
-        followUpDate: meeting.followUpDate || "",
-        shareableStatus: meeting.sensitiveFlag ? "Private" : settings.defaultShareableStatus,
-        answeredNote: "",
-        createdFromMeetingNoteId: meeting.id,
-        createdFromQuickGrabId: meeting.createdFromQuickGrabId,
-        createdFollowUpTaskIds: [],
-        createdAt: nowISO(),
-        updatedAt: nowISO()
-      };
-      db.prayerRequests.unshift(prayer);
-      meeting.createdPrayerRequestIds.push(prayer.id);
-      meeting.updatedAt = nowISO();
-      saveData();
-      showToast("Prayer request added from meeting.");
-      render();
     }
 
     function markPrayerAnswered(id) {
@@ -14218,49 +12339,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         person.updatedAt = nowISO();
       }
       return task;
-    }
-
-    function addAnsweredNote(id) {
-      const note = window.prompt("Answered prayer note:");
-      if (!note || !note.trim()) return;
-      recordUndo("answered prayer note");
-      if (!savePrayerAnsweredNoteRecord(id, note)) return;
-      saveData();
-      showToast("Answered note added.");
-      render();
-    }
-
-    function setPrayerFollowDate(id) {
-      const prayer = db.prayerRequests.find(item => item.id === id);
-      if (!prayer) return;
-      const date = window.prompt("Follow-up date (YYYY-MM-DD):", prayer.followUpDate || daysFromNow(3));
-      if (!date) return;
-      if (!isISODateString(date)) {
-        showToast("Use a valid follow-up date.");
-        return;
-      }
-      recordUndo("prayer follow-up date");
-      savePrayerFollowDateRecord(id, date);
-      saveData();
-      showToast("Follow-up date set.");
-      render();
-    }
-
-    function createTaskFromPrayer(id) {
-      const prayer = db.prayerRequests.find(item => item.id === id);
-      if (!prayer) return;
-      const title = window.prompt("Follow-up task:", prayerTaskDefaultTitle(prayer));
-      if (!title || !title.trim()) return;
-      const due = window.prompt("Due date (YYYY-MM-DD):", prayer.followUpDate || daysFromNow(3)) || prayer.followUpDate || daysFromNow(3);
-      if (!isISODateString(due)) {
-        showToast("Use a valid due date.");
-        return;
-      }
-      recordUndo("prayer follow-up task");
-      createPrayerTaskRecord(id, { title, dueDate: due });
-      saveData();
-      showToast("Follow-up task created.");
-      render();
     }
 
     function archivePrayer(id) {
@@ -14333,25 +12411,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return true;
     }
 
-    async function exportEncryptedJson() {
-      try {
-        const passphrase = window.prompt("Choose a passphrase for this backup file:");
-        if (!passphrase || passphrase.length < 8) {
-          showToast("Use at least 8 characters.");
-          return;
-        }
-        const confirmPassphrase = window.prompt("Confirm the backup passphrase:");
-        if (confirmPassphrase !== passphrase) {
-          showToast("Passphrases did not match.");
-          return;
-        }
-        await exportEncryptedJsonWithPassphrase(passphrase);
-      } catch (error) {
-        console.warn("Encrypted export failed", error);
-        showToast("Encrypted export failed.");
-      }
-    }
-
     async function decodeBackupPayload(parsed, passphrase = "", options = {}) {
       if (parsed?.kind === "ruf-ministry-hub-encrypted-backup" || parsed?.kind === "ruf-ministry-hub-encrypted") {
         const chosenPassphrase = passphrase || (options.allowPrompt === false ? "" : window.prompt("Enter the backup passphrase:"));
@@ -14383,36 +12442,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return validateBackupPayload(payload);
     }
 
-    function importJsonBackup() {
-      const input = document.getElementById("import-backup-file");
-      const file = input && input.files ? input.files[0] : null;
-      if (!file) {
-        showToast("Choose a backup file first.");
-        return;
-      }
-      const reader = new FileReader();
-      try {
-        assertBackupFileSize(file);
-      } catch (error) {
-        showToast("That backup is too large to import safely.");
-        return;
-      }
-      reader.onload = async event => {
-        try {
-          const parsed = JSON.parse(event.target.result);
-          const payload = await decodeBackupPayload(parsed);
-          validateBackupPayload(payload);
-          if (!window.confirm("Restore this backup and replace current local app data?")) return;
-          applyRestoredPayload(payload);
-        } catch (error) {
-          console.warn("Backup import failed", error);
-          showToast("That backup could not be imported.");
-        }
-      };
-      reader.onerror = () => showToast("Could not read that backup file.");
-      reader.readAsText(file);
-    }
-
     function performDemoDataReset() {
 	      recordUndo("demo data reset");
 	      captureAutoMemorySnapshot("Before demo reset", { force: true });
@@ -14423,7 +12452,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         screen: calmLaunchScreen(settings.launchScreen),
         personId: null,
         quickGrabId: null,
-        processPreset: [],
         prayerFilter: "Active",
         aiReviewFilter: "Pending",
         aiReviewFocusId: "",
@@ -14441,7 +12469,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	        profileCaptureDraftTargetId: "",
 	        profileHistoryExpanded: [],
 	        globalSearch: "",
-	        focusMode: settings.calmMode,
+	        focusMode: true,
 	        locked: Boolean(settings.appLockEnabled && settings.pinHash),
 	        encryptionLocked: false,
 	        reviewIndex: 0,
@@ -14451,16 +12479,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       };
       showToast("Demo data reset.");
       render();
-    }
-
-    function resetDemoData() {
-      if (settings.resetProtection) {
-        const typed = window.prompt("This replaces local app data with fictional demo data. Type RESET to continue:");
-        if (typed !== "RESET") return;
-      } else if (!window.confirm("Reset the app to fictional demo data?")) {
-        return;
-      }
-      performDemoDataReset();
     }
 
     function showToast(message) {
