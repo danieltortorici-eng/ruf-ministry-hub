@@ -219,3 +219,12 @@ Status: implemented locally on 2026-07-15; final command evidence recorded with 
 - Read-only adversarial re-audit reported no unresolved P0/P1 defects. Real Safari/iPhone, VoiceOver, OS suspension, storage quota, slow-device vitals, and live provider AI remain `NOT VERIFIED`, not synthetic passes.
 - `npm test`, both extreme-timezone regression runs, the five tracked mandatory regression commands, all six tracked JavaScript syntax commands, CSP/deploy validation, generated-output drift, secret audit, asset audit, and whitespace checks exited 0.
 - Newer control-center instructions name candidate Calendar/Secretary/optimizer/steward files and four related suites that are not present in this branch's tracked tree. Those absent paths are `NOT VERIFIED`; no substitute pass is claimed and no unapproved candidate Worker was created, deployed, bound, or credentialed.
+
+## Phase 13 — Final documentation and view reproduction
+
+Status: completed locally on 2026-07-15.
+
+- Added the standalone product constitution and future-worker gates for Calm OS, one-question/one-action design, delete-first disclosure, attention/visual budgets, local-first privacy, backward compatibility, human AI approval, accessibility, interruption recovery, regression testing, and the no-production-action boundary.
+- Added the final redesign report with phase commits, changes/removals/merges/relocations, data/privacy results, explicit acceptance audit, exact automated evidence, known risks, unavailable candidate-path disclosure, worker A–P sign-offs, and Executive Product Lead sign-off.
+- Added disposable-origin before/after reproduction steps at 390 × 844, 430 × 932, and 1440 × 900. No production, preview, real-data, or real-device screenshot was created or implied.
+- Phase 13 changes documentation only; no app version, service-worker cache, CSP, runtime source, external state, or production setting changed.
