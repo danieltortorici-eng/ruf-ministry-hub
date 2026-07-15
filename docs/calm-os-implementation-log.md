@@ -60,3 +60,17 @@ Status: complete locally on 2026-07-15; no deployment or merge performed.
 ## Phase checkpoints
 
 Later phases append decisions, files, verification, defects, and evidence here. Each committed phase must leave the branch reviewable and must not imply deployment or release approval.
+
+## Phase 1 — Preimplementation audits
+
+Status: complete locally on 2026-07-15.
+
+- Added source-of-truth, product, cognitive-load, before/after workflow, performance/recovery, and accessibility audits.
+- Measured baseline authority: 577,038-byte single-file deploy app, 10 desktop/7 mobile primary destinations, and 19 rendered screen states.
+- Measured baseline load: Today approximately 125 attention points, People 94, Profile 84. Adopted 18 points for the initial mobile viewport, 30 per undrilled primary screen, and 7 per repeating card.
+- Classified duplicate Today recommendations, category-first capture, separate profile creation sheets, profile field/action grids, primary administrative navigation, timestamps, and preferred-contact behavior for merge, move, hide, or rebuild.
+- Confirmed existing `quickGrabs` and `aiProposals` are the compatible shared architecture; no second capture or proposal store will be introduced.
+- Recorded P1 blockers: demo seeding can mask IndexedDB recovery, and proposal-selected create actions can silently update unselected person dates.
+- Recorded P2 gates for idempotency, capture/proposal recovery, encrypted suspension, contextual dates, bounded profile rendering, and preferred-contact dormancy.
+- Audit workers B, C, D, E, F, G, H, I, J, K, L, M, N, O, and P signed off on their read-only audit portions. Browser/device evidence remains `NOT VERIFIED`.
+- No runtime files, external systems, secrets, production state, original dirty work, or other worktrees were changed by the audits.

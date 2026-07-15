@@ -35,3 +35,33 @@ This is the decision record for the Calm OS redesign. Decisions are constrained 
 - **Compatibility effect:** Existing optional AI remains proposal-only and default-safe; no integration contract is expanded.
 - **Files affected:** Documentation only in Phase 0.
 - **Tests used:** Secret/client-boundary audit through `npm test`.
+
+### PD-004 — Enforce a measurable attention budget
+
+- **Decision:** Cap the initial 390px viewport at 18 attention points, a full undrilled primary screen at 30, and a repeating list card at 7. Primary screens may show one CTA and three visual sections.
+- **Alternatives considered:** Treat calmness as subjective; retain user-configurable dashboard sections; use only a visual-weight guideline.
+- **Reason:** The baseline measured approximately 125 points on Today, 94 on People, and 84 on Profile. A numeric budget makes product review testable.
+- **Cognitive-load effect:** New functionality must pay for itself by removing equal or greater visual competition.
+- **Compatibility effect:** No data change. Secondary features remain reachable through More and disclosure.
+- **Files affected:** `docs/cognitive-load-audit.md`; later design and render source.
+- **Tests used:** Synthetic baseline render inventory; future structural Calm OS regression.
+
+### PD-005 — Reuse existing collections and proposal approval
+
+- **Decision:** `db.quickGrabs` remains the single raw-capture store and `db.aiProposals` remains the single suggestion/approval store.
+- **Alternatives considered:** Add a new captures collection; build a second profile-capture path; replace the proposal engine.
+- **Reason:** The current stores already preserve local-first backups and provide selection, editing, partial approval, and atomic rollback. Parallel systems would raise migration and cognitive costs.
+- **Cognitive-load effect:** One capture path and one review language across Today, Capture, and profiles.
+- **Compatibility effect:** Existing captures and proposals remain readable; new metadata is additive.
+- **Files affected:** Architecture documents and later authoritative app/test files.
+- **Tests used:** Baseline AI and backup suites plus planned unified-capture/idempotency coverage.
+
+### PD-006 — Treat both audit P1 findings as completion blockers
+
+- **Decision:** Calm OS cannot be signed off until startup recovers IndexedDB before demo seeding and proposal-created records no longer mutate unselected profile fields.
+- **Alternatives considered:** Document as legacy risks; defer to later cleanup.
+- **Reason:** Either defect can corrupt recovery expectations or bypass independent human approval.
+- **Cognitive-load effect:** Trustworthy recovery and explicit changes reduce uncertainty even though they add internal engineering work.
+- **Compatibility effect:** Recovery becomes more conservative; proposal behavior becomes narrower without deleting data.
+- **Files affected:** Later storage bootstrap, record-constructor, proposal-execution, and focused test changes.
+- **Tests used:** Planned missing-localStorage/IDB-present, locked-vault, and selected-action side-effect tests.
