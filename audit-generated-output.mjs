@@ -10,6 +10,10 @@ const mirrors = [
   {
     canonical: 'ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab.js',
     mirror: 'functions/api/ai/quick-grab.js'
+  },
+  {
+    canonical: 'ruf-ministry-hub-deploy-working/functions/api/[[path]].js',
+    mirror: 'functions/api/[[path]].js'
   }
 ];
 
