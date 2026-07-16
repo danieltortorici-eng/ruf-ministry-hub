@@ -18,6 +18,10 @@ const mirrors = [
   {
     canonical: 'ruf-ministry-hub-deploy-working/functions/api/ai/[[path]].js',
     mirror: 'functions/api/ai/[[path]].js'
+  },
+  {
+    canonical: 'ruf-ministry-hub-deploy-working/functions/api/ai/_middleware.js',
+    mirror: 'functions/api/ai/_middleware.js'
   }
 ];
 

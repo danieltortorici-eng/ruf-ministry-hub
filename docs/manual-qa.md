@@ -11,7 +11,7 @@ The second release-candidate audit verified the 390px and 430px layout contracts
 - Open More, then Settings and data, and export a JSON backup.
 - Confirm the deployed URL is HTTPS.
 - Confirm `/ruf-ministry-hub` loads with `200`, `/ruf-ministry-hub.html` canonicalizes once to that extensionless route, and `/app` reaches it without a redirect loop.
-- Confirm unknown `/api/*` and nested `/api/ai/*` paths return metadata-only JSON `404`, not the app HTML; `/api/ai/health` and `/api/ai/quick-grab` must remain the only active release API routes.
+- Confirm unknown `/api/*` and nested `/api/ai/*` paths return metadata-only JSON `404`, not the app HTML; confirm wrong methods on the two active routes return metadata-only JSON `405`. `/api/ai/health` and `/api/ai/quick-grab` must remain the only active release API routes.
 - Open the app once in Safari while online.
 - If testing Home Screen behavior, add the app to the Home Screen from Safari.
 
