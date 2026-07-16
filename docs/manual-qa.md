@@ -10,6 +10,7 @@ The second release-candidate audit verified the 390px and 430px layout contracts
 
 - Open More, then Settings and data, and export a JSON backup.
 - Confirm the deployed URL is HTTPS.
+- Confirm `/ruf-ministry-hub` loads with `200`, `/ruf-ministry-hub.html` canonicalizes once to that extensionless route, and `/app` reaches it without a redirect loop.
 - Open the app once in Safari while online.
 - If testing Home Screen behavior, add the app to the Home Screen from Safari.
 

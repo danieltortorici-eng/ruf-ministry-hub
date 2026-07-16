@@ -9,10 +9,12 @@ const appPath = path.resolve(appDir, "ruf-ministry-hub.html");
 const serviceWorkerPath = path.resolve(appDir, "ruf-ministry-hub-sw.js");
 const redirectsPath = path.resolve(appDir, "_redirects");
 const indexPath = path.resolve(appDir, "index.html");
+const manifestPath = path.resolve(appDir, "ruf-ministry-hub.webmanifest");
 const html = fs.readFileSync(appPath, "utf8");
 const serviceWorkerSource = fs.readFileSync(serviceWorkerPath, "utf8");
 const redirectsSource = fs.readFileSync(redirectsPath, "utf8");
 const indexSource = fs.readFileSync(indexPath, "utf8");
+const manifestSource = fs.readFileSync(manifestPath, "utf8");
 const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
 
 if (!scriptMatch) throw new Error("Could not find app script in ruf-ministry-hub.html");
@@ -1666,7 +1668,7 @@ function testContextualDatesAndLegacyProfileCompatibility() {
 }
 
 function testServiceWorkerShape() {
-  assert(/const APP_VERSION = "2026\.07\.15-calm-os-[^"]+"/.test(html), "deploy app version is in the Calm OS release family");
+  assert(/const APP_VERSION = "2026\.07\.\d{2}-calm-os-[^"]+"/.test(html), "deploy app version is in the Calm OS release family");
   assert(/ruf-ministry-hub-v(?:3[5-9]|[4-9]\d+)-calm-os-[^"']+/.test(serviceWorkerSource), "service worker cache version is bumped for Calm OS");
   assert(serviceWorkerSource.includes('"index.html"'), "service worker caches redirect entry point");
   assert(serviceWorkerSource.includes("ruf-ministry-hub-icon.svg"), "service worker caches the SVG icon");
@@ -1691,10 +1693,10 @@ function testServiceWorkerShape() {
 }
 
 function testRedirectAndServiceWorkerRouting() {
-  assert(indexSource.includes('window.location.replace("./ruf-ministry-hub.html" + window.location.search + window.location.hash)'), "index redirects only to ruf-ministry-hub.html");
-  assert(redirectsSource.includes("/ruf-ministry-hub /ruf-ministry-hub.html 200"), "Cloudflare rewrites extensionless app path to HTML");
-  assert(redirectsSource.includes("/app /ruf-ministry-hub.html 200"), "Cloudflare rewrites app alias to HTML");
-  assert(!redirectsSource.includes("/ruf-ministry-hub /ruf-ministry-hub 200"), "Cloudflare redirects do not loop ruf-ministry-hub to itself");
+  assert(indexSource.includes('window.location.replace("./ruf-ministry-hub" + window.location.search + window.location.hash)'), "index enters the native extensionless Pages route");
+  assert(redirectsSource.includes("/app /ruf-ministry-hub 302"), "Cloudflare redirects the app alias to the extensionless route");
+  assert(!/^\/ruf-ministry-hub\s/m.test(redirectsSource), "Cloudflare leaves the native extensionless route unmodified");
+  assert(manifestSource.includes('"start_url": "./ruf-ministry-hub"'), "installed app starts at the native extensionless route");
   assert(!serviceWorkerSource.includes('"ruf-ministry-hub"'), "service worker does not cache extensionless app route");
   assert(serviceWorkerSource.includes('requestUrl.pathname.startsWith("/api/")') && serviceWorkerSource.includes("if (requestUrl.pathname.startsWith(\"/api/\")) return;"), "service worker bypasses API routes");
   assert(serviceWorkerSource.includes("networkFirstNavigation(event.request)") && serviceWorkerSource.includes('cache.match(APP_SHELL, { ignoreSearch: true })'), "service worker falls back to the cached app shell for document requests");

@@ -16,6 +16,12 @@ for (const [label, root] of audits) {
   for (const ref of refs) {
     if (/^(https?:|data:|#|\$\{)/.test(ref)) continue;
     const file = ref.replace(/^\.\//, '');
+    if (label === 'canonical deploy' && file === 'ruf-ministry-hub') {
+      const redirects = fs.readFileSync(path.join(root, '_redirects'), 'utf8');
+      const hasNativeHtmlTarget = fs.existsSync(path.join(root, 'ruf-ministry-hub.html'));
+      const overridesNativeRoute = /^\/ruf-ministry-hub\s/m.test(redirects);
+      if (hasNativeHtmlTarget && !overridesNativeRoute) continue;
+    }
     if (!fs.existsSync(path.join(root, file))) missing.push(`${label}: ${ref}`);
   }
 }
