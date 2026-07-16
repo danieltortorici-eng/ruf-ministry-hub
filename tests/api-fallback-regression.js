@@ -6,6 +6,8 @@ const vm = require("node:vm");
 const repoRoot = path.resolve(__dirname, "..");
 const canonicalPath = path.join(repoRoot, "ruf-ministry-hub-deploy-working/functions/api/[[path]].js");
 const mirrorPath = path.join(repoRoot, "functions/api/[[path]].js");
+const nestedCanonicalPath = path.join(repoRoot, "ruf-ministry-hub-deploy-working/functions/api/ai/[[path]].js");
+const nestedMirrorPath = path.join(repoRoot, "functions/api/ai/[[path]].js");
 const source = fs.readFileSync(canonicalPath, "utf8");
 const runnable = source.replace(/export\s+/g, "");
 const context = { Request, Response };
@@ -14,6 +16,8 @@ vm.runInContext(`${runnable}\nglobalThis.__handler = onRequest;`, context, { fil
 
 async function run() {
   assert.equal(fs.readFileSync(canonicalPath).equals(fs.readFileSync(mirrorPath)), true, "root and deploy API fallbacks are byte-identical");
+  assert.equal(fs.readFileSync(canonicalPath).equals(fs.readFileSync(nestedCanonicalPath)), true, "parent and nested deploy API fallbacks are byte-identical");
+  assert.equal(fs.readFileSync(canonicalPath).equals(fs.readFileSync(nestedMirrorPath)), true, "all root and deploy API fallback mirrors are byte-identical");
 
   const getResponse = context.__handler({
     request: new Request("https://synthetic.example/api/calendar/fictional-private-name")

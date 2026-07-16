@@ -1,12 +1,12 @@
 {
   "name": "ruf-ministry-hub-hotfix",
-  "version": "2026.07.16-calm-os-core-v5",
+  "version": "2026.07.16-calm-os-core-v6",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "npm run check:app && npm run check:deploy && npm run test:regression && npm run audit:assets && npm run audit:generated && npm run audit:secrets",
     "check:app": "node check-app-syntax.mjs && node --check ruf-ministry-hub-sw.js",
-    "check:deploy": "node --check functions/api/ai/quick-grab.js && node --check functions/api/ai/health.js && node --check 'functions/api/[[path]].js' && node --check ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab.js && node --check ruf-ministry-hub-deploy-working/functions/api/ai/health.js && node --check 'ruf-ministry-hub-deploy-working/functions/api/[[path]].js' && node --check ruf-ministry-hub-deploy-working/ruf-ministry-hub-sw.js && node --check cloudflare/ai-rate-limiter/worker.js",
+    "check:deploy": "node --check functions/api/ai/quick-grab.js && node --check functions/api/ai/health.js && node --check 'functions/api/[[path]].js' && node --check 'functions/api/ai/[[path]].js' && node --check ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab.js && node --check ruf-ministry-hub-deploy-working/functions/api/ai/health.js && node --check 'ruf-ministry-hub-deploy-working/functions/api/[[path]].js' && node --check 'ruf-ministry-hub-deploy-working/functions/api/ai/[[path]].js' && node --check ruf-ministry-hub-deploy-working/ruf-ministry-hub-sw.js && node --check cloudflare/ai-rate-limiter/worker.js",
     "test:regression": "node tests/regression-harness.js && node tests/calm-os-recovery-regression.js && node tests/calm-os-accessibility-regression.js && node tests/calm-accessibility-contract-regression.js && node tests/service-worker-lifecycle-regression.js && node tests/calm-service-worker-boundary-regression.js && node tests/person-profile-fix-regression.js && node tests/calm-core-integration-regression.js && node tests/ai-functions-regression.js && node tests/api-fallback-regression.js && node tests/ai-rate-limiter-regression.js && node tests/deployment-config-regression.js && node tests/calm-supply-chain-regression.js && node tests/github-coordination-regression.js && node tests/incident-response-simulations.js",
     "audit:assets": "node audit-assets.mjs",
     "audit:generated": "node audit-generated-output.mjs",

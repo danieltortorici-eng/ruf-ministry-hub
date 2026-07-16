@@ -57,16 +57,21 @@ function testPagesFunctionRoutesExist() {
   const healthPath = "ruf-ministry-hub-deploy-working/functions/api/ai/health.js";
   const quickGrabPath = "ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab.js";
   const fallbackPath = "ruf-ministry-hub-deploy-working/functions/api/[[path]].js";
+  const nestedFallbackPath = "ruf-ministry-hub-deploy-working/functions/api/ai/[[path]].js";
   const health = read(healthPath);
   const quickGrab = read(quickGrabPath);
   const fallback = read(fallbackPath);
+  const nestedFallback = read(nestedFallbackPath);
   assert(fs.existsSync(path.resolve(repoRoot, healthPath)), `${healthPath} exists`);
   assert(fs.existsSync(path.resolve(repoRoot, quickGrabPath)), `${quickGrabPath} exists`);
   assert(/export\s+async\s+function\s+onRequestGet/.test(health), "health endpoint is a Pages Function GET handler");
   assert(/export\s+async\s+function\s+onRequestPost/.test(quickGrab), "quick-grab endpoint is a Pages Function POST handler");
   assert(fs.existsSync(path.resolve(repoRoot, fallbackPath)), `${fallbackPath} exists`);
+  assert(fs.existsSync(path.resolve(repoRoot, nestedFallbackPath)), `${nestedFallbackPath} exists`);
   assert(/export\s+function\s+onRequest/.test(fallback), "unknown API routes have a Pages Function catch-all handler");
+  assert(/export\s+function\s+onRequest/.test(nestedFallback), "unknown nested AI routes have a Pages Function catch-all handler");
   assert(fallback.includes('status: 404') && fallback.includes('"Cache-Control": "no-store"'), "unknown API routes fail closed without caching");
+  assert(nestedFallback.includes('status: 404') && nestedFallback.includes('"Cache-Control": "no-store"'), "unknown nested AI routes fail closed without caching");
 }
 
 function assertAiApprovalFix(relativePath) {
@@ -121,9 +126,11 @@ function testStaticSecurityHeaders() {
     "functions/api/ai/health.js",
     "functions/api/ai/quick-grab.js",
     "functions/api/[[path]].js",
+    "functions/api/ai/[[path]].js",
     "ruf-ministry-hub-deploy-working/functions/api/ai/health.js",
     "ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab.js",
-    "ruf-ministry-hub-deploy-working/functions/api/[[path]].js"
+    "ruf-ministry-hub-deploy-working/functions/api/[[path]].js",
+    "ruf-ministry-hub-deploy-working/functions/api/ai/[[path]].js"
   ].forEach(relativePath => {
     assert(read(relativePath).includes('"X-Content-Type-Options": "nosniff"'), `${relativePath} sets nosniff on Function responses`);
   });
