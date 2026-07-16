@@ -6,6 +6,16 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 
 The second release-candidate audit verified the 390px and 430px layout contracts, large-text navigation/Right Now wrapping, offline cached-shell behavior, and no-overflow preview checks with local/DevTools evidence. Real iPhone Safari, VoiceOver, Dynamic Type, Home Screen suspension, and Safari storage-quota behavior remain `NOT VERIFIED` until this checklist is run on a physical device. Use fictional records only, and confirm linked Sensitive/Do Not Send captures remain masked and are blocked before any backend Quick Grab request.
 
+## Physical-device evidence (2026-07-16 17:23 CDT)
+
+- Device/mode: iPhone 17 Pro Max, iOS 26.5.1; Safari and saved Home Screen app. No unnecessary device identifier is retained in this record.
+- Candidate shown: Calm v7 stable preview alias for commit `0ecfd1a5e186f79881ff13306c06de73a8a5864b`; visible content is fictional-only.
+- `MANUAL-DEVICE / OBSERVED`: Safari renders Today, the next-action card, Quick Capture, saved-thought list, and all five bottom destinations without a blank screen or visible horizontal overflow. Home Screen installation and launch are also observed.
+- `P2 / OBSERVED`: when **Skip to main content** is focused in Home Screen mode, the fixed link overlaps the iOS status area. This is not accepted as a complete safe-area or accessibility pass. `CALM-A11Y-07` changes installed-app status-bar behavior from overlay to reserved status area and requires a same-device recheck.
+- `NOT VERIFIED`: complete five-destination interaction, capture cancel/approved save/reload, VoiceOver semantics, largest Dynamic Type, landscape, Reduced Motion, update-ready flow, Airplane Mode reopen, backup/vault recovery, Undo, and rollback. The visible focused link does not by itself prove VoiceOver was enabled or passed.
+
+The next preview candidate is app/package `2026.07.16-calm-os-core-v8` with cache `ruf-ministry-hub-v57-calm-os-core-v8`. Its source, preview, and physical evidence remain invalid until the bounded fix is frozen, tested, pushed through the sole release lane, deployed to the preview-only QA project, and rechecked.
+
 ## Before Testing
 
 - Open More, then Settings and data, and export a JSON backup.

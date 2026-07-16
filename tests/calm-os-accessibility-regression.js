@@ -31,6 +31,8 @@ function contrastRatio(first, second) {
 
 check(html.includes('<a class="skip-link" href="#main-content">Skip to main content</a>'), "keyboard users can skip repeated navigation");
 check(html.includes('<main class="content" id="main-content" tabindex="-1">'), "the skip target is a focusable main landmark");
+check(html.includes('<meta name="apple-mobile-web-app-status-bar-style" content="default">'), "installed iPhone mode reserves the status area instead of overlaying focused content");
+check(/\.skip-link\s*\{[\s\S]*?top:\s*calc\(8px \+ env\(safe-area-inset-top\)\)/.test(html), "the focused skip link retains top safe-area clearance");
 check(html.includes('<nav class="mobile-nav" aria-label="Primary">') && html.includes('<nav class="nav" aria-label="Primary">'), "both primary navigation surfaces are named landmarks");
 check(html.includes('aria-current="page"'), "the current primary destination is announced");
 check(html.includes("requestPageHeadingFocus();") && html.includes('document.querySelector("#main-content h1")'), "intentional navigation moves focus to the new heading");
