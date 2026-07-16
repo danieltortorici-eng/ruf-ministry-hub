@@ -1712,10 +1712,12 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.15-calm-os-qa-v4";
+    const APP_VERSION = "2026.07.15-calm-os-core-v3";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
+    const FOLLOW_UP_CADENCES = ["None", "Weekly", "Every 2 Weeks", "Monthly", "Quarterly", "Custom days"];
+    const MAX_FOLLOW_UP_CUSTOM_DAYS = 730;
     const CAPTURE_PROCESSOR_VERSION = "calm-os-capture-v1";
     const CAPTURE_SOURCES = ["main", "today", "profile", "dictation", "shared", "imported", "legacy"];
     const MAX_BACKUP_FILE_BYTES = 8 * 1024 * 1024;
@@ -1900,6 +1902,22 @@
 
     function daysAgo(days) {
       return daysFromNow(-days);
+    }
+
+    function addCalendarDaysISO(value, days) {
+      const parts = calendarDateParts(value);
+      const amount = Number(days);
+      if (!parts || !Number.isInteger(amount)) return "";
+      return localISODate(new Date(parts.year, parts.month - 1, parts.day + amount, 12));
+    }
+
+    function addCalendarMonthsISO(value, months) {
+      const parts = calendarDateParts(value);
+      const amount = Number(months);
+      if (!parts || !Number.isInteger(amount)) return "";
+      const targetMonthStart = new Date(parts.year, parts.month - 1 + amount, 1, 12);
+      const lastDay = new Date(targetMonthStart.getFullYear(), targetMonthStart.getMonth() + 1, 0, 12).getDate();
+      return localISODate(new Date(targetMonthStart.getFullYear(), targetMonthStart.getMonth(), Math.min(parts.day, lastDay), 12));
     }
 
     function isISODateString(value) {
@@ -2192,6 +2210,10 @@
       return aiPrivacyTierForRecord(record, collection) !== "Normal";
     }
 
+    function taskIsWaiting(task = {}) {
+      return String(task.status || "").trim() === "Waiting";
+    }
+
     function taskIsActive(task = {}, reference = new Date()) {
       if (["Done / Archived", "Done", "Archived", "Completed"].includes(task.status)) return false;
       if (!task.snoozedUntil) return true;
@@ -2207,6 +2229,41 @@
 
     function personIsActive(person = {}) {
       return !["Archived", "Inactive"].includes(String(person.status || ""));
+    }
+
+    function normalizeFollowUpCadence(value) {
+      return FOLLOW_UP_CADENCES.includes(String(value || "")) ? String(value) : "None";
+    }
+
+    function normalizeFollowUpCustomDays(value, cadence) {
+      if (normalizeFollowUpCadence(cadence) !== "Custom days") return "";
+      const days = Number(value);
+      return Number.isInteger(days) && days >= 1 && days <= MAX_FOLLOW_UP_CUSTOM_DAYS ? days : "";
+    }
+
+    function normalizePersonCare(person = {}) {
+      const cadence = normalizeFollowUpCadence(person.followUpCadence);
+      person.followUpCadence = cadence;
+      person.followUpCustomDays = normalizeFollowUpCustomDays(person.followUpCustomDays, cadence);
+      return person;
+    }
+
+    function proposedFollowUpDate(cadence, customDays, interactionDate) {
+      const normalizedCadence = normalizeFollowUpCadence(cadence);
+      if (!isISODateString(interactionDate) || normalizedCadence === "None") return "";
+      if (normalizedCadence === "Weekly") return addCalendarDaysISO(interactionDate, 7);
+      if (normalizedCadence === "Every 2 Weeks") return addCalendarDaysISO(interactionDate, 14);
+      if (normalizedCadence === "Monthly") return addCalendarMonthsISO(interactionDate, 1);
+      if (normalizedCadence === "Quarterly") return addCalendarMonthsISO(interactionDate, 3);
+      const days = normalizeFollowUpCustomDays(customDays, normalizedCadence);
+      return days ? addCalendarDaysISO(interactionDate, days) : "";
+    }
+
+    function followUpCadenceLabel(person = {}) {
+      const cadence = normalizeFollowUpCadence(person.followUpCadence);
+      if (cadence !== "Custom days") return cadence;
+      const days = normalizeFollowUpCustomDays(person.followUpCustomDays, cadence);
+      return days ? `Every ${days} days` : "Custom days not set";
     }
 
     function aiPrivacyTierTone(tier) {
@@ -2443,6 +2500,7 @@
         if (!String(person.name || "").trim()) person.name = "Unnamed person";
         if (!("phone" in person)) person.phone = "";
         if (!("photoDataUrl" in person)) person.photoDataUrl = "";
+        normalizePersonCare(person);
       });
       return normalized;
     }
@@ -4435,8 +4493,30 @@
     function taskDueSoon() {
       const cutoff = new Date(startOfToday().getTime() + 7 * 86400000);
       return db.tasks
-        .filter(task => task.status !== "Done / Archived" && task.dueDate && new Date(task.dueDate + "T00:00:00") <= cutoff)
+        .filter(task => !taskIsWaiting(task) && task.status !== "Done / Archived" && task.dueDate && new Date(task.dueDate + "T00:00:00") <= cutoff)
         .sort((a, b) => String(a.dueDate || "").localeCompare(String(b.dueDate || "")));
+    }
+
+    function waitingReviewTasks(reference = new Date(), tasks = db.tasks) {
+      return (Array.isArray(tasks) ? tasks : [])
+        .filter(task => taskIsActive(task, reference) && taskIsWaiting(task))
+        .sort((a, b) => {
+          const left = calendarDayDelta(a.dueDate, reference);
+          const right = calendarDayDelta(b.dueDate, reference);
+          if (left === null && right !== null) return 1;
+          if (left !== null && right === null) return -1;
+          if (left !== right) return (left ?? 0) - (right ?? 0);
+          return String(a.id || "").localeCompare(String(b.id || ""));
+        });
+    }
+
+    function waitingReviewDateText(task = {}, reference = new Date()) {
+      const delta = calendarDayDelta(task.dueDate, reference);
+      if (delta === null) return "No review date set";
+      if (delta < 0) return `Review overdue by ${Math.abs(delta)} day${delta === -1 ? "" : "s"}`;
+      if (delta === 0) return "Review today";
+      if (delta === 1) return "Review tomorrow";
+      return `Review ${formatCalendarDay(task.dueDate, reference)}`;
     }
 
     function hashPin(pin) {
@@ -5149,7 +5229,7 @@
       });
 
       tasks.forEach(task => {
-        if (!taskIsActive(task, reference)) return;
+        if (!taskIsActive(task, reference) || taskIsWaiting(task)) return;
         const delta = calendarDayDelta(task.dueDate, reference);
         if (delta === null || delta > 0) return;
         const relatedPrayer = prayerMap.get(task.relatedPrayerRequestId);
@@ -9489,7 +9569,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         });
       const tasks = [];
       data.tasks
-        .filter(item => item.relatedPersonId === personId && taskIsActive(item, reference))
+        .filter(item => item.relatedPersonId === personId && taskIsActive(item, reference) && !taskIsWaiting(item))
         .forEach(item => {
           tasks.push(item);
           tasks.sort((a, b) => {
@@ -9580,7 +9660,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (kind === "prayers") return formatHistoryDate(record.dateAdded, "Prayer added") || "Prayer";
       if (kind === "tasks") return ["Done / Archived", "Done", "Archived"].includes(record.status)
         ? formatHistoryDate(record.updatedAt || record.dueDate, "Completed") || "Completed"
-        : formatDueDate(record.dueDate);
+        : taskIsWaiting(record) ? waitingReviewDateText(record) : formatDueDate(record.dueDate);
       if (kind === "timeline") return record.dateLabel || "Saved care history";
       return "";
     }
@@ -9589,7 +9669,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (kind === "notes") return record.noteType || "Note";
       if (kind === "meetings") return `${record.meetingType || "Ministry"} meeting`;
       if (kind === "prayers") return record.status === "Answered" ? "Answered prayer" : record.status || "Prayer request";
-      if (kind === "tasks") return record.status || "Follow-up";
+      if (kind === "tasks") return taskIsWaiting(record) ? "Waiting on them" : record.status || "Follow-up";
       if (kind === "timeline") return record.title || "Care update";
       return "Saved item";
     }
@@ -9687,6 +9767,32 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
+    function renderProfileCareCadence(person) {
+      if (!personIsActive(person)) return "";
+      const cadence = followUpCadenceLabel(person);
+      const nextPlan = person.nextFollowUpDate ? formatFollowUpDate(person.nextFollowUpDate) : "No next date planned";
+      return `
+        <section class="section" aria-labelledby="profile-care-cadence-title">
+          <div class="surface">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title" id="profile-care-cadence-title">Follow-up rhythm</h2>
+                <p class="page-kicker">A local reminder plan. Nothing is scheduled or sent outside this device.</p>
+              </div>
+            </div>
+            <div class="grid two">
+              <div class="stat"><span>Cadence</span><strong>${escapeHtml(cadence)}</strong></div>
+              <div class="stat"><span>Next plan</span><strong>${escapeHtml(nextPlan)}</strong></div>
+            </div>
+            <div class="action-row" style="margin-top:var(--space-3);">
+              <button class="button quiet" data-action="care-cadence-open" data-id="${escapeHtml(person.id)}">Set rhythm</button>
+              <button class="button quiet" data-action="person-followed-up" data-id="${escapeHtml(person.id)}">Mark followed up</button>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
     function renderProfileDetails(person) {
       const pinned = isPinnedPerson(person.id);
       return `
@@ -9715,7 +9821,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               <summary>More actions</summary>
               <div class="action-row">
                 <button class="button quiet" data-action="person-pin" data-id="${escapeHtml(person.id)}">${pinned ? "Unpin person" : "Pin person"}</button>
-                <button class="button quiet" data-action="person-followed-up" data-id="${escapeHtml(person.id)}">Mark followed up</button>
                 ${settings.inlineEditing ? `<button class="button quiet" data-action="person-edit-field" data-id="${escapeHtml(person.id)}" data-field="name" data-label="Name">Edit name</button>` : ""}
               </div>
               ${timestampLine(person)}
@@ -9764,6 +9869,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           <div class="section-header"><h2 class="section-title" id="right-now-title">Right Now</h2></div>
           ${renderProfileRightNow(buildProfileRightNow(person.id))}
         </section>
+        ${renderProfileCareCadence(person)}
         <section class="section" aria-label="Add something about this person">
           ${renderCaptureComposer({ source: "profile", personId: capturePerson.id })}
           <div class="profile-secondary-actions" style="margin-top:var(--space-3);">
@@ -9946,10 +10052,37 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
+    function renderWaitingReview() {
+      const waiting = waitingReviewTasks();
+      const visible = waiting.slice(0, 20);
+      return `
+        <section class="section" aria-labelledby="waiting-review-title">
+          <div class="surface">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title" id="waiting-review-title">Waiting on others</h2>
+                <p class="page-kicker">These are not tasks you owe. Review the date without marking someone else’s move done.</p>
+              </div>
+              <span class="pill violet">${waiting.length}</span>
+            </div>
+            ${visible.length ? `<div class="calm-list">${visible.map(task => {
+              const person = personById(task.relatedPersonId);
+              const sensitive = recordIsSensitive(task, "tasks") || recordIsSensitive(person, "people");
+              const title = sensitive ? "Sensitive waiting item" : String(task.title || "Waiting follow-up");
+              const owner = sensitive ? "Private person" : String(person?.name || "Unlinked person");
+              return `<article class="calm-list-row" data-waiting-task-id="${escapeHtml(task.id)}"><div><strong>${escapeHtml(title)}</strong><div class="meta">${escapeHtml(owner)} · ${escapeHtml(waitingReviewDateText(task))}</div></div><span class="pill violet">Waiting</span></article>`;
+            }).join("")}</div>` : `<div class="meta">No follow-ups are waiting on someone else.</div>`}
+            ${waiting.length > visible.length ? `<div class="meta" style="margin-top:var(--space-3);">Showing ${visible.length} of ${waiting.length} waiting items.</div>` : ""}
+          </div>
+        </section>
+      `;
+    }
+
     function renderWeeklyReset() {
       const items = openQuickGrabs().filter(grab => ["New", "Needs Processing", "Prompt Me"].includes(grab.status));
       return `
         ${renderTopbar("Weekly Reset", "A steady review so Quick Grab stays useful instead of becoming a junk drawer.")}
+        ${renderWaitingReview()}
         <section class="section">
           <div class="surface quick-box">
             <div>
@@ -11432,6 +11565,147 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       render();
     }
 
+    function openCareCadenceSheet(personId) {
+      const person = personById(personId);
+      if (!person || !personIsActive(person)) {
+        showToast("This person is not active in the care queue.");
+        return;
+      }
+      view.sheet = { type: "care-cadence", personId, saving: false };
+      render();
+    }
+
+    function careSaveIsPending() {
+      return Boolean(view.sheet?.saving && ["care-cadence", "care-follow-up-saving"].includes(view.sheet.type));
+    }
+
+    async function confirmCareVaultRevision(requiredRevision) {
+      const required = Number(requiredRevision);
+      if (!settings.localEncryptionEnabled || !vaultPassphrase || !Number.isInteger(required) || required < 1) return false;
+      while (vaultSaveCompletedRevision < required) {
+        if (vaultSaveTimer) {
+          const clear = window.clearTimeout || clearTimeout;
+          clear(vaultSaveTimer);
+          vaultSaveTimer = null;
+        }
+        const saved = await flushEncryptedVaultSaves();
+        if (vaultSaveCompletedRevision >= required) return true;
+        if (!saved) return false;
+      }
+      return true;
+    }
+
+    function renderCareFollowUpSavingSheet(sheet = {}) {
+      const person = personById(sheet.personId);
+      const name = person && !recordIsSensitive(person, "people") ? person.name : "this person";
+      return `
+        <div class="sheet-backdrop">
+          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="care-follow-up-saving-title" aria-busy="true" data-sheet-panel>
+            <div class="sheet-head">
+              <div><h2 id="care-follow-up-saving-title">Saving follow-up</h2><p class="page-kicker">Confirming the encrypted local save for ${escapeHtml(name)}.</p></div>
+            </div>
+            <div class="sheet-form">
+              <div class="notice secure" role="status">Keep the app open. Other work is paused until this save finishes.</div>
+            </div>
+          </section>
+        </div>
+      `;
+    }
+
+    function renderCareCadenceSheet(sheet = {}) {
+      const person = personById(sheet.personId);
+      if (!person || !personIsActive(person)) return "";
+      const cadence = normalizeFollowUpCadence(person.followUpCadence);
+      const customDays = normalizeFollowUpCustomDays(person.followUpCustomDays, cadence);
+      const suggestedDate = person.nextFollowUpDate || proposedFollowUpDate(cadence, customDays, todayISO());
+      const disabled = sheet.saving ? "disabled" : "";
+      return `
+        <div class="sheet-backdrop" data-action="sheet-close">
+          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="care-cadence-title" aria-busy="${sheet.saving ? "true" : "false"}" data-sheet-panel>
+            <div class="sheet-head">
+              <div><h2 id="care-cadence-title">Set follow-up rhythm</h2><p class="page-kicker">Choose a local reminder rhythm for this person.</p></div>
+              <button class="button quiet" data-action="sheet-close" aria-label="Close" ${disabled}>Close</button>
+            </div>
+            <div class="sheet-form">
+              <div class="notice"><strong>${escapeHtml(recordIsSensitive(person, "people") ? "Private person" : person.name)}</strong><div class="meta">Nothing changes until you save.</div></div>
+              ${sheetField("Care cadence", `<select class="select" id="sheet-care-cadence" ${disabled}>${FOLLOW_UP_CADENCES.map(value => `<option value="${escapeHtml(value)}" ${value === cadence ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>`)}
+              ${sheetField("Custom days", `<input class="input" id="sheet-care-custom-days" type="number" min="1" max="${MAX_FOLLOW_UP_CUSTOM_DAYS}" step="1" value="${escapeHtml(customDays)}" aria-describedby="sheet-care-custom-help" ${disabled}><div class="meta" id="sheet-care-custom-help">Used only when Care cadence is Custom days.</div>`)}
+              ${sheetField("Next follow-up date", `<input class="input" id="sheet-care-next-date" type="date" value="${escapeHtml(suggestedDate)}" ${disabled}><div class="meta">You may change or clear the suggestion. No message or appointment is created.</div>`)}
+              <div class="notice secure">This plan stays on this device. Cancel closes without saving.</div>
+              ${sheet.saving ? `<div class="notice" role="status">Saving this local rhythm…</div>` : ""}
+            </div>
+            <div class="sheet-actions">
+              <button class="button quiet" data-action="sheet-close" ${disabled}>Cancel</button>
+              <button class="button primary" data-action="care-cadence-save" ${disabled}>${sheet.saving ? "Saving…" : "Save rhythm"}</button>
+            </div>
+          </section>
+        </div>
+      `;
+    }
+
+    function updateCareCadenceSheetProposal() {
+      if (view.sheet?.type !== "care-cadence") return;
+      const cadence = document.getElementById("sheet-care-cadence")?.value || "None";
+      const customDays = document.getElementById("sheet-care-custom-days")?.value || "";
+      const nextDate = document.getElementById("sheet-care-next-date");
+      if (nextDate) nextDate.value = proposedFollowUpDate(cadence, customDays, todayISO());
+    }
+
+    async function submitCareCadenceSheet() {
+      const sheet = view.sheet?.type === "care-cadence" ? view.sheet : null;
+      if (!sheet || sheet.saving) return false;
+      const person = personById(sheet.personId);
+      if (!person || !personIsActive(person)) return false;
+      const cadence = document.getElementById("sheet-care-cadence")?.value || "";
+      if (!FOLLOW_UP_CADENCES.includes(cadence)) {
+        reportFieldError("sheet-care-cadence", "Choose a valid care cadence.");
+        return false;
+      }
+      const rawCustomDays = document.getElementById("sheet-care-custom-days")?.value || "";
+      const customDays = normalizeFollowUpCustomDays(rawCustomDays, cadence);
+      if (cadence === "Custom days" && !customDays) {
+        reportFieldError("sheet-care-custom-days", `Use a whole number from 1 to ${MAX_FOLLOW_UP_CUSTOM_DAYS}.`);
+        return false;
+      }
+      const nextDate = document.getElementById("sheet-care-next-date")?.value || "";
+      if (nextDate && (!isISODateString(nextDate) || calendarDayDelta(nextDate) < 0)) {
+        reportFieldError("sheet-care-next-date", "Choose today or a future date, or clear the date.");
+        return false;
+      }
+      const beforeData = cloneJson(db);
+      const beforeMemoryVault = cloneJson(memoryVaultCache);
+      const beforeUndoStack = cloneJson(undoStack);
+      const storageSnapshot = localStorageSnapshot([STORAGE_KEY, AUTO_MEMORY_KEY]);
+      sheet.saving = true;
+      render();
+      try {
+        recordUndo("care cadence update");
+        person.followUpCadence = cadence;
+        person.followUpCustomDays = customDays;
+        person.nextFollowUpDate = nextDate;
+        person.updatedAt = nowISO();
+        saveData();
+        const requiredVaultRevision = settings.localEncryptionEnabled ? vaultSaveRequestedRevision : 0;
+        if (settings.localEncryptionEnabled) {
+          if (!(await confirmCareVaultRevision(requiredVaultRevision))) throw new Error("Encrypted care cadence save failed.");
+        }
+      } catch (error) {
+        db = beforeData;
+        memoryVaultCache = beforeMemoryVault;
+        undoStack = beforeUndoStack;
+        restoreLocalStorageSnapshot(storageSnapshot);
+        view.sheet = { ...sheet, saving: false };
+        console.warn("Could not save care cadence", error);
+        showToast("The follow-up rhythm was not saved. Your previous plan is intact.", "error");
+        render();
+        return false;
+      }
+      view.sheet = null;
+      showToast(nextDate ? `Follow-up rhythm saved for ${formatCalendarDay(nextDate)}.` : "Follow-up rhythm saved with no next date.");
+      render();
+      return true;
+    }
+
     function renderSheet() {
       if (!view.sheet) return "";
       if (view.sheet.type === "prayer-action") return renderPrayerActionSheet(view.sheet);
@@ -11449,6 +11723,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (view.sheet.type === "donor-update-builder") return renderDonorUpdateBuilderSheet(view.sheet);
       if (view.sheet.type === "ai-gate") return renderAiGateSheet(view.sheet);
       if (view.sheet.type === "ai-action-confirm") return renderAiActionConfirmSheet(view.sheet);
+      if (view.sheet.type === "care-cadence") return renderCareCadenceSheet(view.sheet);
+      if (view.sheet.type === "care-follow-up-saving") return renderCareFollowUpSavingSheet(view.sheet);
       return "";
     }
 
@@ -11467,6 +11743,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           updateSetting(event.target.dataset.settingSelect, event.target.value);
         });
       });
+      const careCadence = document.getElementById("sheet-care-cadence");
+      const careCustomDays = document.getElementById("sheet-care-custom-days");
+      if (careCadence) careCadence.addEventListener("change", updateCareCadenceSheetProposal);
+      if (careCustomDays) careCustomDays.addEventListener("input", updateCareCadenceSheetProposal);
       document.querySelectorAll("[data-copy-key]").forEach(el => {
         el.addEventListener("click", event => {
           event.preventDefault();
@@ -11591,9 +11871,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function closeSheet() {
+      if (careSaveIsPending()) return false;
       view.sheet = null;
       render();
       restoreSheetReturnFocus();
+      return true;
     }
 
     function submitPrayerActionSheet(kind, prayerId) {
@@ -12721,6 +13003,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function handleAction(event) {
+	      if (careSaveIsPending()) {
+	        event.preventDefault?.();
+	        event.stopPropagation?.();
+	        return;
+	      }
 	      const button = event.currentTarget;
       const action = button.dataset.action;
       const id = button.dataset.id;
@@ -12788,6 +13075,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       if (action === "today-later-save") {
         submitTodayLater(id);
+        return;
+      }
+      if (action === "care-cadence-save") {
+        submitCareCadenceSheet();
         return;
       }
       if (action === "ai-draft-copy") {
@@ -12876,6 +13167,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         render();
       }
       if (action === "person-create") openCreatePersonSheet();
+      if (action === "care-cadence-open") openCareCadenceSheet(id);
       if (action === "person-followed-up") markFollowedUp(id);
       if (action === "profile-brief-open") openProfileBrief(id);
       if (action === "profile-followup-open") openProfileFollowUp(id);
@@ -13337,6 +13629,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         lastMeaningfulInteraction: "",
         nextFollowUpDate: "",
         followUpReason: "",
+        followUpCadence: "None",
+        followUpCustomDays: "",
         createdAt: nowISO(),
         updatedAt: nowISO()
       };
@@ -13419,17 +13713,45 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       render();
     }
 
-    function markFollowedUp(id) {
+    async function markFollowedUp(id) {
       const person = personById(id);
-      if (!person) return;
-      recordUndo("follow-up update");
-      person.lastMeaningfulInteraction = todayISO();
-      person.nextFollowUpDate = "";
-      person.followUpReason = "Recently followed up.";
-      person.updatedAt = nowISO();
-      saveData();
-      showToast("Marked followed up.");
-      render();
+      if (!person || !personIsActive(person)) return false;
+      const beforeData = cloneJson(db);
+      const beforeMemoryVault = cloneJson(memoryVaultCache);
+      const beforeUndoStack = cloneJson(undoStack);
+      const storageSnapshot = localStorageSnapshot([STORAGE_KEY, AUTO_MEMORY_KEY]);
+      const previousSheet = view.sheet ? cloneJson(view.sheet) : null;
+      try {
+        recordUndo("follow-up update");
+        normalizePersonCare(person);
+        const completedOn = todayISO();
+        const nextFollowUpDate = proposedFollowUpDate(person.followUpCadence, person.followUpCustomDays, completedOn);
+        person.lastMeaningfulInteraction = completedOn;
+        person.nextFollowUpDate = nextFollowUpDate;
+        person.followUpReason = nextFollowUpDate ? "Regular care check-in." : "Recently followed up.";
+        person.updatedAt = nowISO();
+        saveData();
+        const requiredVaultRevision = settings.localEncryptionEnabled ? vaultSaveRequestedRevision : 0;
+        if (settings.localEncryptionEnabled) {
+          view.sheet = { type: "care-follow-up-saving", personId: id, saving: true };
+          render();
+          if (!(await confirmCareVaultRevision(requiredVaultRevision))) throw new Error("Encrypted follow-up save failed.");
+        }
+        view.sheet = previousSheet;
+        showToast(nextFollowUpDate ? `Marked followed up. Next check-in: ${formatCalendarDay(nextFollowUpDate)}.` : "Marked followed up.");
+        render();
+        return true;
+      } catch (error) {
+        db = beforeData;
+        memoryVaultCache = beforeMemoryVault;
+        undoStack = beforeUndoStack;
+        restoreLocalStorageSnapshot(storageSnapshot);
+        view.sheet = previousSheet;
+        console.warn("Could not mark person followed up", error);
+        showToast("The follow-up was not saved. The previous plan is intact.", "error");
+        render();
+        return false;
+      }
     }
 
     function createProfileNoteRecord(personId, options = {}) {
