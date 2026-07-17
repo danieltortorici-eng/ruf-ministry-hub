@@ -256,6 +256,24 @@ class BrowserPage {
     assert.equal(clicked, true, `click target exists: ${selector}`);
   }
 
+  async pressTab(modifiers = 0) {
+    const event = {
+      key: "Tab",
+      code: "Tab",
+      windowsVirtualKeyCode: 9,
+      nativeVirtualKeyCode: 9,
+      modifiers
+    };
+    await this.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", ...event });
+    await this.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...event });
+  }
+
+  async accessibilityNodes() {
+    await this.cdp.send("Accessibility.enable");
+    const tree = await this.cdp.send("Accessibility.getFullAXTree");
+    return tree.nodes || [];
+  }
+
   async setValue(selector, value) {
     const changed = await this.evaluate(`(() => {
       const element = document.querySelector(${JSON.stringify(selector)});
@@ -285,6 +303,37 @@ function permanentCountsExpression() {
 
 async function runJourney(page, baseUrl, apiRequests) {
   await page.navigate(baseUrl + appPath);
+  const initialSkipLinkHidden = await page.evaluate("document.querySelector('.skip-link')?.hidden === true");
+  assert.equal(initialSkipLinkHidden, true);
+  const initialAccessibilityNodes = await page.accessibilityNodes();
+  assert.equal(initialAccessibilityNodes.some(node => node.role?.value === "link" && node.name?.value === "Skip to main content"), false);
+  for (const modifiers of [1, 2, 4, 8]) {
+    await page.pressTab(modifiers);
+    assert.equal(await page.evaluate("document.querySelector('.skip-link')?.hidden === true && document.activeElement !== document.querySelector('.skip-link')"), true);
+  }
+  assert.equal(await page.evaluate("Boolean(document.querySelector('.mobile-nav button')?.focus()) || document.activeElement === document.querySelector('.mobile-nav button')"), true);
+  await page.pressTab();
+  assert.equal(await page.evaluate("document.querySelector('.skip-link')?.hidden === true && document.activeElement !== document.querySelector('.skip-link')"), true);
+  assert.equal(await page.evaluate("document.activeElement?.blur(); document.activeElement === document.body"), true);
+  await page.pressTab();
+  await waitFor(() => page.evaluate("document.querySelector('.skip-link')?.hidden === false && document.activeElement === document.querySelector('.skip-link')"), "keyboard skip-link reveal");
+  const focusedSkipLink = await page.evaluate(`(() => {
+    const link = document.querySelector('.skip-link');
+    const box = link?.getBoundingClientRect();
+    return link && box ? { width: box.width, height: box.height, top: box.top, text: link.textContent.trim() } : null;
+  })()`);
+  assert.equal(focusedSkipLink?.text, "Skip to main content");
+  assert.ok(focusedSkipLink.width > 1 && focusedSkipLink.height > 1 && focusedSkipLink.top >= 0);
+  const keyboardAccessibilityNodes = await page.accessibilityNodes();
+  assert.equal(keyboardAccessibilityNodes.some(node => node.role?.value === "link" && node.name?.value === "Skip to main content"), true);
+  await page.click(".skip-link");
+  await waitFor(() => page.evaluate("document.activeElement?.id === 'main-content'"), "skip-link main-content focus transfer");
+  await page.navigate(baseUrl + appPath);
+  assert.equal(await page.evaluate("document.querySelector('.skip-link')?.hidden === true"), true);
+  const reloadedAccessibilityNodes = await page.accessibilityNodes();
+  assert.equal(reloadedAccessibilityNodes.some(node => node.role?.value === "link" && node.name?.value === "Skip to main content"), false);
+  pass("touch accessibility starts on meaningful app content while only plain keyboard Tab reveals and activates the skip link, then reload hides it again");
+
   const expectedDestinations = [
     ["today", "Today"],
     ["quick", "Capture"],

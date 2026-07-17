@@ -24,6 +24,23 @@ The next preview candidate is app/package `2026.07.16-calm-os-core-v8` with cach
 - `NOT VERIFIED`: the screenshot contains no audio or visible label, so the spoken **Skip to main content** announcement, activation, focus transfer, and broader VoiceOver checklist are not image-proven.
 - `CALM-A11Y-08` replaces the off-viewport transform with a clipped one-pixel default box anchored at the safe-area-aware position, while keyboard focus restores a fully visible link. The local candidate is app/package `2026.07.17-calm-os-core-v9` with cache `ruf-ministry-hub-v58-calm-os-core-v9`; it must pass automated gates, exact preview verification, and same-device recheck before this P2 can close.
 
+## Exact-v9 VoiceOver recheck evidence (2026-07-17 11:11 CDT)
+
+- Daniel reports updating the saved Home Screen app and rerunning the requested VoiceOver check. The screenshot itself does not display the app version, commit, cache name, or spoken label, so candidate identity remains `MANUAL-QA-REPORTED` rather than image-proven.
+- `MANUAL-DEVICE / OBSERVED`: the VoiceOver rectangle no longer intersects the iOS status/time area. The v8 status-bar collision is improved.
+- `P2 / OBSERVED`: the wide empty focus rectangle now crosses and clips the visible **Today** heading. Focus-box containment therefore still fails; this is not a VoiceOver pass.
+- `INFERENCE`: the rectangle remains the hidden **Skip to main content** link. Its width matches that label more closely than the **Today** heading, and exact v9 keeps the link in the accessibility tree as a clipped one-pixel element while only DOM `:focus` restores its visible state.
+- `NOT VERIFIED`: focused element, spoken label, rotor order, skip activation/focus transfer, hardware-keyboard behavior, broader VoiceOver semantics, Dynamic Type, orientation, update/offline/recovery, backup/vault, rollback, provider, and production.
+
+## `CALM-A11Y-10` later-preview recheck
+
+- Candidate under local review: app/package `2026.07.17-calm-os-core-v10`, cache `ruf-ministry-hub-v59-calm-os-core-v10`. Do not run this section until its exact commit, fingerprint, and preview deployment are recorded.
+- Start a fresh saved Home Screen session with VoiceOver enabled and no hardware keyboard input. Swipe from the first item. Confirm the first announced item is meaningful visible app content and no empty focus rectangle appears over the iOS status area or **Today**.
+- Continue through headings and both named primary-navigation landmarks. Confirm the removed initial skip link does not remove access to the **Today** heading or main content.
+- In a separate fresh session with VoiceOver off, connect a hardware keyboard and press plain Tab once. Confirm **Skip to main content** becomes visibly focused below the safe area, then activate it and confirm focus moves to current main content.
+- Press Option+Tab, Control+Tab, Command+Tab, and Shift+Tab before plain Tab in separate reloads. Confirm modified keys do not reveal or focus the skip link and do not trap focus.
+- Record screenshot plus spoken label/target separately. A screenshot alone cannot prove the announcement, activation, focus transfer, or broader VoiceOver semantics.
+
 ## Before Testing
 
 - Open More, then Settings and data, and export a JSON backup.

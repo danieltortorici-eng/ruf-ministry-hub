@@ -82,6 +82,10 @@
       font-weight: 780;
     }
 
+    .skip-link[hidden] {
+      display: none;
+    }
+
     .skip-link:focus {
       width: auto;
       height: auto;
@@ -1715,13 +1719,26 @@
   </style>
 </head>
 <body>
-  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <a class="skip-link" href="#main-content" hidden>Skip to main content</a>
   <div id="app" tabindex="-1" role="main"></div>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script>
+    function revealSkipLinkForKeyboard(event) {
+      if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (document.activeElement && document.activeElement !== document.body && document.activeElement !== document.documentElement) return;
+      const skipLink = document.querySelector(".skip-link");
+      if (!skipLink || !skipLink.hidden) return;
+      event.preventDefault();
+      skipLink.hidden = false;
+      skipLink.focus({ preventScroll: true });
+      window.removeEventListener("keydown", revealSkipLinkForKeyboard, true);
+    }
+
+    window.addEventListener("keydown", revealSkipLinkForKeyboard, true);
+
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.17-calm-os-core-v9";
+    const APP_VERSION = "2026.07.17-calm-os-core-v10";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];

@@ -29,15 +29,18 @@ function contrastRatio(first, second) {
   return (values[0] + 0.05) / (values[1] + 0.05);
 }
 
-check(html.includes('<a class="skip-link" href="#main-content">Skip to main content</a>'), "keyboard users can skip repeated navigation");
+check(html.includes('<a class="skip-link" href="#main-content" hidden>Skip to main content</a>'), "the keyboard skip link starts outside the touch accessibility tree");
 check(html.includes('<main class="content" id="main-content" tabindex="-1">'), "the skip target is a focusable main landmark");
 check(html.includes('<meta name="apple-mobile-web-app-status-bar-style" content="default">'), "installed iPhone mode reserves the status area instead of overlaying focused content");
 check(/\.skip-link\s*\{[\s\S]*?top:\s*calc\(8px \+ env\(safe-area-inset-top\)\)/.test(html), "the focused skip link retains top safe-area clearance");
+check(/\.skip-link\[hidden\]\s*\{[\s\S]*?display:\s*none/.test(html), "the initial hidden state removes the skip link from layout and accessibility geometry");
 const skipLinkRule = html.match(/\.skip-link\s*\{([\s\S]*?)\}/)?.[1] || "";
 const skipLinkFocusRule = html.match(/\.skip-link:focus\s*\{([\s\S]*?)\}/)?.[1] || "";
 check(/width:\s*1px/.test(skipLinkRule) && /height:\s*1px/.test(skipLinkRule) && /clip-path:\s*inset\(50%\)/.test(skipLinkRule) && /overflow:\s*hidden/.test(skipLinkRule), "the unfocused skip link uses a clipped one-pixel accessibility box");
 check(!/transform\s*:/.test(skipLinkRule), "the unfocused skip link is not translated above the VoiceOver viewport");
 check(/width:\s*auto/.test(skipLinkFocusRule) && /height:\s*auto/.test(skipLinkFocusRule) && /clip-path:\s*none/.test(skipLinkFocusRule) && /overflow:\s*visible/.test(skipLinkFocusRule) && /padding:\s*10px 14px/.test(skipLinkFocusRule), "keyboard focus restores a visible unclipped skip link");
+check(html.includes("function revealSkipLinkForKeyboard(event)") && html.includes('event.key !== "Tab"') && html.includes("event.altKey") && html.includes("event.ctrlKey") && html.includes("event.metaKey") && html.includes("event.shiftKey") && html.includes("document.activeElement !== document.body") && html.includes("document.activeElement !== document.documentElement") && html.includes("event.preventDefault();") && html.includes("skipLink.hidden = false;") && html.includes("skipLink.focus({ preventScroll: true });"), "only the first plain keyboard Tab from untouched page entry reveals and focuses the skip link");
+check(html.includes('window.addEventListener("keydown", revealSkipLinkForKeyboard, true);') && html.includes('window.removeEventListener("keydown", revealSkipLinkForKeyboard, true);'), "keyboard skip-link activation is one-shot and capture-phase");
 check(html.includes('<nav class="mobile-nav" aria-label="Primary">') && html.includes('<nav class="nav" aria-label="Primary">'), "both primary navigation surfaces are named landmarks");
 check(html.includes('aria-current="page"'), "the current primary destination is announced");
 check(html.includes("requestPageHeadingFocus();") && html.includes('document.querySelector("#main-content h1")'), "intentional navigation moves focus to the new heading");
