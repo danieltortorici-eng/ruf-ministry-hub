@@ -69,16 +69,25 @@
       top: calc(8px + env(safe-area-inset-top));
       left: calc(8px + env(safe-area-inset-left));
       z-index: 50;
-      padding: 10px 14px;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+      border: 0;
       border-radius: var(--radius-sm);
       background: var(--ink);
       color: #fff;
       font-weight: 780;
-      transform: translateY(-180%);
     }
 
     .skip-link:focus {
-      transform: translateY(0);
+      width: auto;
+      height: auto;
+      padding: 10px 14px;
+      overflow: visible;
+      clip-path: none;
     }
 
     button,
@@ -1712,7 +1721,7 @@
 
   <script>
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.16-calm-os-core-v8";
+    const APP_VERSION = "2026.07.17-calm-os-core-v9";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];

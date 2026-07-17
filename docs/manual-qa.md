@@ -16,6 +16,14 @@ The second release-candidate audit verified the 390px and 430px layout contracts
 
 The next preview candidate is app/package `2026.07.16-calm-os-core-v8` with cache `ruf-ministry-hub-v57-calm-os-core-v8`. Its source, preview, and physical evidence remain invalid until the bounded fix is frozen, tested, pushed through the sole release lane, deployed to the preview-only QA project, and rechecked.
 
+## VoiceOver follow-up evidence (2026-07-17 10:28 CDT)
+
+- Device/mode context remains the previously recorded iPhone 17 Pro Max on iOS 26.5.1 in saved Home Screen mode; no unnecessary device identifier is retained. The current QA context was the v8 preview, although the app identity is not visible in the screenshot itself.
+- `MANUAL-DEVICE / OBSERVED`: a large empty VoiceOver focus rectangle appears against the top edge and intersects the visible iOS status/time area. The screenshot does not pass status-area containment.
+- `INFERENCE`: the rectangle is the first skip link's accessibility box. The exact frozen v8 CSS keeps that link full-size and hides it with `translateY(-180%)`; VoiceOver virtual focus can expose the translated accessibility rectangle without applying the keyboard `:focus` reveal state.
+- `NOT VERIFIED`: the screenshot contains no audio or visible label, so the spoken **Skip to main content** announcement, activation, focus transfer, and broader VoiceOver checklist are not image-proven.
+- `CALM-A11Y-08` replaces the off-viewport transform with a clipped one-pixel default box anchored at the safe-area-aware position, while keyboard focus restores a fully visible link. The local candidate is app/package `2026.07.17-calm-os-core-v9` with cache `ruf-ministry-hub-v58-calm-os-core-v9`; it must pass automated gates, exact preview verification, and same-device recheck before this P2 can close.
+
 ## Before Testing
 
 - Open More, then Settings and data, and export a JSON backup.

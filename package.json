@@ -1,6 +1,6 @@
 {
   "name": "ruf-ministry-hub-hotfix",
-  "version": "2026.07.16-calm-os-core-v8",
+  "version": "2026.07.17-calm-os-core-v9",
   "private": true,
   "type": "module",
   "scripts": {
