@@ -41,6 +41,12 @@ The next preview candidate is app/package `2026.07.16-calm-os-core-v8` with cach
 - Press Option+Tab, Control+Tab, Command+Tab, and Shift+Tab before plain Tab in separate reloads. Confirm modified keys do not reveal or focus the skip link and do not trap focus.
 - Record screenshot plus spoken label/target separately. A screenshot alone cannot prove the announcement, activation, focus transfer, or broader VoiceOver semantics.
 
+## `CALM-AI-DURABLE-LOCK-16` exact-v12 Device Vault recheck
+
+- Candidate under local review: app/package `2026.07.18-calm-os-core-v12`, cache `ruf-ministry-hub-v61-calm-os-core-v12`. Use fictional records only after its exact fingerprint and preview are recorded.
+- With Device Vault enabled, approve one fictional AI action. Confirm the review stays visibly busy, Save and Cancel remain unavailable, and no success message appears until the encrypted save finishes. After success, reload and confirm the selected action exists exactly once and the interrupted-workflow prompt is gone.
+- On a disposable synthetic origin, force the encrypted-save failure boundary. Confirm no approved record appears, no success is announced, the prior records and recovery choice remain intact, and the same approval can be retried. Automated evidence does not replace this browser/device check.
+
 ## Before Testing
 
 - Open More, then Settings and data, and export a JSON backup.

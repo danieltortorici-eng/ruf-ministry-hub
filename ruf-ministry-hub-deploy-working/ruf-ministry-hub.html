@@ -1738,7 +1738,7 @@
     window.addEventListener("keydown", revealSkipLinkForKeyboard, true);
 
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.17-calm-os-core-v10";
+    const APP_VERSION = "2026.07.18-calm-os-core-v12";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
@@ -1862,6 +1862,7 @@
       aiConfirmPersonChoice: {},
       aiConfirmValidationErrors: [],
       aiConfirmValidationWarnings: [],
+      aiConfirmSaving: false,
       search: "",
       peopleVisibleLimit: PEOPLE_BATCH_SIZE,
       searchVisibleLimits: {},
@@ -8457,12 +8458,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const suggestedName = validation.newPersonName || validation.suggestedPersonName || "";
       const duplicateNames = sensitiveProposal ? "Sensitive person details hidden" : validation.duplicatePeople.map(person => person.name).join(", ");
       const selectedPersonId = personChoice.existingPersonId || validation.existingPersonId || "";
+      const saving = Boolean(view.aiConfirmSaving);
       const peopleOptions = db.people
         .slice()
         .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
         .map(person => `<option value="${escapeHtml(person.id)}" ${selectedPersonId === person.id ? "selected" : ""}>${escapeHtml(person.name)} - ${escapeHtml(person.personType)}</option>`)
         .join("");
-      const disabled = validation.errors.length ? "disabled" : "";
+      const disabled = validation.errors.length || saving ? "disabled" : "";
       return `
         ${renderTopbar("Review before saving", "Only the approved updates below will become local records.", false)}
         <section class="section">
@@ -8477,8 +8479,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           </div>
         </section>
         <section class="section">
-          <div class="surface">
+          <div class="surface" aria-busy="${saving ? "true" : "false"}">
             <div class="notice secure">AI is still only proposing. These records are saved locally only after this confirmation.</div>
+            ${saving ? `<div class="notice secure" role="status" aria-busy="true">Saving approved updates to Device Vault. Keep the app open until this finishes.</div>` : ""}
             ${visibleErrors.length ? `<div class="settings-list" style="margin-top:12px;">${visibleErrors.map(error => `<div class="notice danger">${escapeHtml(error)}</div>`).join("")}</div>` : ""}
             <div class="field" style="margin-top:12px;">
               <div class="field-label">Selected actions to save</div>
@@ -8496,19 +8499,19 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               <div class="field">
                 <label for="ai-confirm-person-choice">Person for these updates</label>
                 <div class="notice sensitive">Keep the suggested person, choose a different local person, or explicitly choose Create new person before saving.</div>
-                <select class="select" id="ai-confirm-person-choice">
+                <select class="select" id="ai-confirm-person-choice" ${saving ? "disabled" : ""}>
                   <option value="">Choose a person</option>
                   ${peopleOptions}
                   ${suggestedName ? `<option value="new" ${personChoice.mode === "new" ? "selected" : ""}>Create new person: ${escapeHtml(suggestedName)}</option>` : ""}
                 </select>
                 ${suggestedName ? `
                   <label for="ai-confirm-new-person-name">New person name</label>
-                  <input class="input" id="ai-confirm-new-person-name" value="${escapeHtml(personChoice.newPersonName || suggestedName)}" placeholder="First and last name">
+                  <input class="input" id="ai-confirm-new-person-name" value="${escapeHtml(personChoice.newPersonName || suggestedName)}" placeholder="First and last name" ${saving ? "disabled" : ""}>
                   <div class="meta">No person is created unless Create new person is selected here.</div>
                 ` : `<div class="meta">No clear new-person name was detected, so choose an existing person before saving.</div>`}
               </div>
             ` : ""}
-            <fieldset class="field-group">
+            <fieldset class="field-group"${saving ? ` disabled aria-disabled="true" aria-busy="true"` : ""}>
               <legend>Final approval</legend>
               ${validation.duplicatePeople.length ? `
                 <div class="notice danger">Similar people already exist: ${escapeHtml(duplicateNames)}. Review before creating another person.</div>
@@ -8518,8 +8521,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               ${checkbox("ai-confirm-action-confirm", "I reviewed these updates and want to save only the selected local changes.", false)}
             </fieldset>
             <div class="action-row" style="margin-top:14px;">
-              <button class="button" data-action="ai-action-confirm-cancel">Cancel</button>
-              <button class="button primary" data-action="ai-action-confirm-save" data-id="${escapeHtml(proposal.id)}" ${disabled}>Save approved updates</button>
+              <button class="button" data-action="ai-action-confirm-cancel" ${saving ? "disabled" : ""}>Cancel</button>
+              <button class="button primary" data-action="ai-action-confirm-save" data-id="${escapeHtml(proposal.id)}" ${disabled}>${saving ? "Saving approved updates…" : "Save approved updates"}</button>
             </div>
           </div>
         </section>
@@ -12433,6 +12436,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       view.aiConfirmPersonChoice = {};
       view.aiConfirmValidationErrors = [];
       view.aiConfirmValidationWarnings = [];
+      view.aiConfirmSaving = false;
       view.sheet = null;
       view.aiReviewFocusId = proposalId;
       render();
@@ -12877,12 +12881,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       view.aiConfirmPersonChoice = {};
       view.aiConfirmValidationErrors = [];
       view.aiConfirmValidationWarnings = [];
+      view.aiConfirmSaving = false;
     }
 
-    function submitAiActionConfirmSheet() {
+    async function submitAiActionConfirmSheet() {
+      if (view.aiConfirmSaving) return false;
       const state = currentAiActionConfirmState();
-      if (!state) return;
-      saveCurrentDraftNow();
+      if (!state) return false;
       const proposal = aiProposalById(state.proposalId);
       if (!proposal || !aiProposalCanExecute(proposal) || proposal.result?.executedAt) {
         showToast("These approved updates were already saved.");
@@ -12890,7 +12895,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         clearAiActionConfirmState();
         view.screen = "aiReview";
         render();
-        return;
+        return false;
       }
       const personChoice = aiSheetPersonChoiceFromDom();
       state.personChoice = personChoice;
@@ -12904,7 +12909,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         persistAiActionConfirmState(state);
         render();
         reportFieldError(document.getElementById("ai-confirm-person-choice") || document.getElementById("ai-confirm-new-person-name"), validation.errors[0]);
-        return;
+        return false;
       }
       if (validation.willCreatePerson && validation.duplicatePeople.length && !isCheckedInAiActionConfirm("ai-confirm-duplicate-confirm")) {
         state.validationErrors = ["Review the similar person warning first."];
@@ -12912,7 +12917,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         persistAiActionConfirmState(state);
         render();
         reportFieldError("ai-confirm-duplicate-confirm", "Review the similar person warning first.");
-        return;
+        return false;
       }
       if (!isCheckedInAiActionConfirm("ai-confirm-action-confirm")) {
         state.validationErrors = ["Confirm the selected actions first."];
@@ -12920,39 +12925,89 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         persistAiActionConfirmState(state);
         render();
         reportFieldError("ai-confirm-action-confirm", "Confirm the selected actions first.");
-        return;
+        return false;
       }
       const convertQuickGrab = Boolean(validation.sourceQuickGrab && isCheckedInAiActionConfirm("ai-confirm-convert-quickgrab"));
-      const before = cloneJson(db);
-      const willRecordUndo = settings.enableUndo;
-      recordUndo("AI proposal action approval");
+      if (autosaveTimer) {
+        const clear = window.clearTimeout || clearTimeout;
+        clear(autosaveTimer);
+        autosaveTimer = null;
+      }
+      const beforeData = cloneJson(db);
+      const beforeSettings = cloneJson(settings);
+      const beforeMemoryVault = cloneJson(memoryVaultCache);
+      const beforeAutosaveDrafts = cloneJson(autosaveDraftsCache);
+      const beforeUndoStack = cloneJson(undoStack);
+      const beforeWorkflow = {
+        screen: view.screen,
+        sheet: view.sheet ? cloneJson(view.sheet) : null,
+        aiReviewFocusId: view.aiReviewFocusId || "",
+        confirmState: cloneJson(state)
+      };
+      const beforeVaultRevisions = {
+        requested: vaultSaveRequestedRevision,
+        completed: vaultSaveCompletedRevision
+      };
+      const persistenceKeys = [SETTINGS_KEY, CALM_MODE_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, ENCRYPTED_STORAGE_KEY, AUTO_MEMORY_KEY];
+      const storageSnapshot = localStorageSnapshot(persistenceKeys);
+      state.validationErrors = [];
+      state.validationWarnings = validation.warnings;
+      persistAiActionConfirmState(state);
+      saveCurrentDraftNow();
+      view.aiConfirmSaving = true;
+      render();
       try {
+        recordUndo("AI proposal action approval");
         const result = applyAiProposalActions(proposal, validation, { convertQuickGrab });
-        saveData();
         clearActiveWorkflowRecovery(proposal.id);
+        saveData();
+        const requiredVaultRevision = settings.localEncryptionEnabled ? vaultSaveRequestedRevision : 0;
+        if (settings.localEncryptionEnabled) {
+          if (!(await confirmCareVaultRevision(requiredVaultRevision))) throw new Error("Encrypted approved-update save failed.");
+        }
         view.sheet = null;
         clearAiActionConfirmState();
         view.screen = "aiReview";
         view.aiReviewFocusId = proposal.id;
         showToast(`Saved ${result.executedActions.length} approved update${result.executedActions.length === 1 ? "" : "s"}.`);
         render();
+        return true;
       } catch (error) {
-        db = before;
-        if (willRecordUndo) undoStack.shift();
+        if (vaultSaveTimer) {
+          const clear = window.clearTimeout || clearTimeout;
+          clear(vaultSaveTimer);
+          vaultSaveTimer = null;
+        }
+        db = beforeData;
+        settings = normalizeSettings(beforeSettings);
+        memoryVaultCache = beforeMemoryVault;
+        autosaveDraftsCache = beforeAutosaveDrafts;
+        undoStack = beforeUndoStack;
+        vaultSaveRequestedRevision = beforeVaultRevisions.requested;
+        vaultSaveCompletedRevision = beforeVaultRevisions.completed;
+        restoreLocalStorageSnapshot(storageSnapshot);
+        view.screen = beforeWorkflow.screen;
+        view.sheet = beforeWorkflow.sheet;
+        view.aiReviewFocusId = beforeWorkflow.aiReviewFocusId;
+        persistAiActionConfirmState(beforeWorkflow.confirmState);
+        view.aiConfirmSaving = false;
         state.validationErrors = [error.message || "Could not save those AI actions."];
         state.validationWarnings = validation.warnings;
         persistAiActionConfirmState(state);
-        showToast(error.message || "Could not save those AI actions.");
+        showToast("The approved updates were not saved. Your previous records are intact; retry when Device Vault is ready.", "error");
         render();
+        return false;
       }
     }
 
     function cancelAiActionConfirmView() {
+      if (view.aiConfirmSaving) return false;
       clearActiveWorkflowRecovery(view.aiConfirmProposalId);
       clearAiActionConfirmState();
       view.sheet = null;
       view.screen = "aiReview";
       render();
+      return true;
     }
 
     function copyAiDraftOption(proposalId, draftIndex) {
@@ -13029,6 +13084,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function handleAction(event) {
+	      if (view.aiConfirmSaving) {
+	        event.preventDefault?.();
+	        event.stopPropagation?.();
+	        return false;
+	      }
 	      if (careSaveIsPending()) {
 	        event.preventDefault?.();
 	        event.stopPropagation?.();

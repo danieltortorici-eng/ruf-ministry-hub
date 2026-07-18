@@ -788,6 +788,186 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
   assert(vaultDisableRollback.envelopeSame && vaultDisableRollback.plaintextAbsent, "failed vault disable preserves the prior envelope without a mixed plaintext state");
 }
 
+async function testAiApprovalWaitsForDurablePersistence() {
+  resetApp("emptyData()");
+  const pendingId = appEval(`(() => {
+    settings.enableAutoSave = true;
+    settings.localEncryptionEnabled = true;
+    vaultPassphrase = "synthetic-vault-passphrase";
+    memoryVaultCache = { version: 1, snapshots: [{ id: "memory-before", label: "Before approval" }] };
+    const person = createPerson("Durable Approval Person");
+    const proposal = emptyAiProposal({
+      id: "durable-pending-proposal",
+      proposedActions: [{ actionId: "durable-task", actionType: "createFollowUpTask", title: "Durable approval task", dueDate: todayISO(), relatedPersonId: person.id }]
+    });
+    db.aiProposals.push(proposal);
+    view.screen = "aiConfirmActions";
+    view.aiConfirmProposalId = proposal.id;
+    view.aiConfirmActionIndexes = [0];
+    view.aiConfirmPersonChoice = { mode: "existing", existingPersonId: person.id };
+    autosaveDraftsCache = {
+      ["workflow:ai-confirm:" + proposal.id]: { key: "workflow:ai-confirm:" + proposal.id, fields: { "ai-confirm-person-choice": person.id } },
+      [ACTIVE_WORKFLOW_DRAFT_KEY]: { type: "aiConfirmActions", proposalId: proposal.id, draftKey: "workflow:ai-confirm:" + proposal.id }
+    };
+    vaultSaveRequestedRevision = 40;
+    vaultSaveCompletedRevision = 40;
+    return proposal.id;
+  })()`);
+  makeElement("ai-confirm-person-choice").tagName = "SELECT";
+  makeElement("ai-confirm-person-choice").value = appEval("db.people[0].id");
+  makeElement("ai-confirm-action-confirm").type = "checkbox";
+  makeElement("ai-confirm-action-confirm").checked = true;
+  appEval(`
+    __durableRequiredRevision = 0;
+    __durableResolve = null;
+    __queuedAutosaveFired = false;
+    autosaveTimer = setTimeout(() => { __queuedAutosaveFired = true; }, 0);
+    __originalConfirmCareVaultRevision = confirmCareVaultRevision;
+    confirmCareVaultRevision = requiredRevision => {
+      __durableRequiredRevision = requiredRevision;
+      if (vaultSaveTimer) {
+        clearTimeout(vaultSaveTimer);
+        vaultSaveTimer = null;
+      }
+      return new Promise(resolve => { __durableResolve = resolve; });
+    };
+  `);
+  const pendingSave = appEval("submitAiActionConfirmSheet()");
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert(view().aiConfirmSaving === true && view().screen === "aiConfirmActions", "encrypted AI approval stays in its confirmation workflow while durable persistence is pending");
+  assert(appEval("__queuedAutosaveFired") === false && appEval("autosaveTimer") === null, "encrypted AI approval cancels queued autosave before taking transaction ownership");
+  const pendingMarkup = appEval("renderConfirmAiActions()");
+  assert(pendingMarkup.includes('role="status" aria-busy="true"') && pendingMarkup.includes('<fieldset class="field-group" disabled aria-disabled="true" aria-busy="true">') && pendingMarkup.includes("Saving approved updates") && (pendingMarkup.match(/disabled/g) || []).length >= 3, "pending encrypted approval marks its status and full approval controls busy and natively disabled");
+  const requestedDuringPending = appEval("vaultSaveRequestedRevision");
+  assert(appEval("__durableRequiredRevision") === requestedDuringPending && requestedDuringPending > 40, "encrypted AI approval waits for the exact requested vault revision");
+  const recordsDuringPending = db().tasks.length;
+  const recoveryDuringPending = appEval("JSON.stringify(autosaveDraftsCache)");
+  sandbox.__blockedPendingAction = {
+    dataset: { action: "nav", screen: "settings" },
+    classList: { contains() { return false; } }
+  };
+  appEval("__pendingActionPrevented = false; __pendingActionStopped = false");
+  const blockedActionResult = appEval(`handleAction({
+    currentTarget: __blockedPendingAction,
+    target: __blockedPendingAction,
+    preventDefault() { __pendingActionPrevented = true; },
+    stopPropagation() { __pendingActionStopped = true; }
+  })`);
+  const reentryResult = await appEval("submitAiActionConfirmSheet()");
+  const cancelResult = appEval("cancelAiActionConfirmView()");
+  assert(blockedActionResult === false && appEval("__pendingActionPrevented && __pendingActionStopped") && reentryResult === false && cancelResult === false && db().tasks.length === recordsDuringPending && view().screen === "aiConfirmActions", "pending encrypted approval globally blocks navigation, save re-entry, and cancellation without duplicating records");
+  assert(appEval("JSON.stringify(autosaveDraftsCache)") === recoveryDuringPending, "blocked pending actions cannot clear or replace transaction-owned workflow recovery");
+  assert(!String(makeElement("toast").textContent).startsWith("Saved "), "encrypted AI approval does not announce success before durability resolves");
+  appEval("__durableResolve(true)");
+  const pendingSuccess = await pendingSave;
+  appEval("confirmCareVaultRevision = __originalConfirmCareVaultRevision");
+  assert(pendingSuccess === true && db().tasks.length === 1 && view().screen === "aiReview" && view().aiConfirmSaving === false, "durable encrypted approval saves selected actions exactly once after persistence resolves");
+  assert(!appEval(`loadAutosaveDrafts()["workflow:ai-confirm:${pendingId}"]`) && !appEval("loadAutosaveDrafts()[ACTIVE_WORKFLOW_DRAFT_KEY]"), "durable encrypted approval clears workflow recovery only after success");
+  assert(String(makeElement("toast").textContent).startsWith("Saved 1 approved update"), "durable encrypted approval announces success only after persistence resolves");
+
+  resetApp("emptyData()");
+  const failureBefore = appEval(`(() => {
+    settings.enableAutoSave = true;
+    settings.localEncryptionEnabled = true;
+    vaultPassphrase = "synthetic-vault-passphrase";
+    memoryVaultCache = { version: 1, snapshots: [{ id: "memory-failure", label: "Failure baseline" }] };
+    const person = createPerson("Failure Approval Person");
+    const proposal = emptyAiProposal({
+      id: "durable-failure-proposal",
+      proposedActions: [{ actionId: "failure-task", actionType: "createFollowUpTask", title: "Must roll back", dueDate: todayISO(), relatedPersonId: person.id }]
+    });
+    db.aiProposals.push(proposal);
+    view.screen = "aiConfirmActions";
+    view.aiConfirmProposalId = proposal.id;
+    view.aiConfirmActionIndexes = [0];
+    view.aiConfirmPersonChoice = { mode: "existing", existingPersonId: person.id };
+    undoStack = [{ label: "existing undo", db: cloneJson(db), settings: cloneJson(settings), customCopy: {} }];
+    autosaveDraftsCache = {
+      ["workflow:ai-confirm:" + proposal.id]: { key: "workflow:ai-confirm:" + proposal.id, fields: { "ai-confirm-person-choice": person.id } },
+      [ACTIVE_WORKFLOW_DRAFT_KEY]: { type: "aiConfirmActions", proposalId: proposal.id, draftKey: "workflow:ai-confirm:" + proposal.id }
+    };
+    localStorage.setItem(ENCRYPTED_STORAGE_KEY, "encrypted-before-failure");
+    localStorage.setItem(SETTINGS_KEY, "settings-before-failure");
+    localStorage.setItem(CALM_MODE_KEY, "calm-before-failure");
+    localStorage.setItem(STORAGE_KEY, "plain-before-failure");
+    localStorage.setItem(COPY_KEY, "copy-before-failure");
+    localStorage.setItem(AUTOSAVE_KEY, "autosave-before-failure");
+    localStorage.setItem(AUTO_MEMORY_KEY, "memory-before-failure");
+    vaultSaveRequestedRevision = 70;
+    vaultSaveCompletedRevision = 70;
+    return {
+      db: JSON.stringify(db),
+      memory: JSON.stringify(memoryVaultCache),
+      undo: JSON.stringify(undoStack),
+      drafts: JSON.stringify(autosaveDraftsCache),
+      proposal: JSON.stringify(proposal),
+      storage: JSON.stringify(Object.fromEntries(localStorageSnapshot([SETTINGS_KEY, CALM_MODE_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, ENCRYPTED_STORAGE_KEY, AUTO_MEMORY_KEY])))
+    };
+  })()`);
+  makeElement("ai-confirm-person-choice").tagName = "SELECT";
+  makeElement("ai-confirm-person-choice").value = appEval("db.people[0].id");
+  makeElement("ai-confirm-action-confirm").type = "checkbox";
+  makeElement("ai-confirm-action-confirm").checked = true;
+  const failureResult = await appEval(`(async () => {
+    const originalConfirm = confirmCareVaultRevision;
+    confirmCareVaultRevision = async requiredRevision => {
+      __failureRequiredRevision = requiredRevision;
+      if (vaultSaveTimer) {
+        clearTimeout(vaultSaveTimer);
+        vaultSaveTimer = null;
+      }
+      return false;
+    };
+    const result = await submitAiActionConfirmSheet();
+    confirmCareVaultRevision = originalConfirm;
+    return result;
+  })()`);
+  const failureAfter = appEval(`({
+    db: JSON.stringify(db),
+    memory: JSON.stringify(memoryVaultCache),
+    undo: JSON.stringify(undoStack),
+    drafts: JSON.stringify(autosaveDraftsCache),
+    proposal: JSON.stringify(aiProposalById("durable-failure-proposal")),
+    storage: JSON.stringify(Object.fromEntries(localStorageSnapshot([SETTINGS_KEY, CALM_MODE_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, ENCRYPTED_STORAGE_KEY, AUTO_MEMORY_KEY]))),
+    requested: vaultSaveRequestedRevision,
+    completed: vaultSaveCompletedRevision
+  })`);
+  assert(failureResult === false && failureAfter.db === failureBefore.db && failureAfter.memory === failureBefore.memory && failureAfter.undo === failureBefore.undo, "failed encrypted AI approval restores exact database, memory vault, and Undo state");
+  assert(failureAfter.drafts === failureBefore.drafts && failureAfter.proposal === failureBefore.proposal && failureAfter.storage === failureBefore.storage, "failed encrypted AI approval restores exact workflow recovery, proposal, and relevant local persistence");
+  assert(failureAfter.requested === 70 && failureAfter.completed === 70 && db().tasks.length === 0 && view().screen === "aiConfirmActions" && view().aiConfirmSaving === false, "failed encrypted AI approval restores vault revisions, creates no record, and remains retryable");
+  assert(!String(makeElement("toast").textContent).startsWith("Saved "), "failed encrypted AI approval never announces success");
+
+  appEval(`[SETTINGS_KEY, CALM_MODE_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, ENCRYPTED_STORAGE_KEY, AUTO_MEMORY_KEY].forEach(key => localStorage.removeItem(key))`);
+  resetApp("emptyData()");
+  appEval(`(() => {
+    const person = createPerson("Plain Approval Person");
+    const proposal = emptyAiProposal({
+      id: "plain-durable-proposal",
+      proposedActions: [{ actionId: "plain-task", actionType: "createFollowUpTask", title: "Plain approval task", dueDate: todayISO(), relatedPersonId: person.id }]
+    });
+    db.aiProposals.push(proposal);
+    view.screen = "aiConfirmActions";
+    view.aiConfirmProposalId = proposal.id;
+    view.aiConfirmActionIndexes = [0];
+    view.aiConfirmPersonChoice = { mode: "existing", existingPersonId: person.id };
+    __plainStorageWrites = 0;
+    __originalPersistPlainRecord = persistPlainRecord;
+    persistPlainRecord = (key, value) => {
+      if (key === STORAGE_KEY) __plainStorageWrites += 1;
+      return __originalPersistPlainRecord(key, value);
+    };
+  })()`);
+  makeElement("ai-confirm-person-choice").tagName = "SELECT";
+  makeElement("ai-confirm-person-choice").value = appEval("db.people[0].id");
+  makeElement("ai-confirm-action-confirm").type = "checkbox";
+  makeElement("ai-confirm-action-confirm").checked = true;
+  const plainFirst = await appEval("submitAiActionConfirmSheet()");
+  const plainSecond = await appEval("submitAiActionConfirmSheet()");
+  const plainWrites = appEval("__plainStorageWrites");
+  appEval("persistPlainRecord = __originalPersistPlainRecord");
+  assert(plainFirst === true && plainSecond === false && db().tasks.length === 1 && plainWrites === 1, "plain-mode AI approval persists selected actions exactly once and rejects re-entry");
+}
+
 function testCoreLocalActions() {
   resetApp("demoData()");
   const firstPersonId = db().people[0].id;
@@ -1720,6 +1900,7 @@ async function run() {
   testUnifiedCaptureAndProposalSafety();
   testProposalActionsDoNotHidePersonDateUpdates();
   await testAdversarialApprovalAndPersistenceBoundaries();
+  await testAiApprovalWaitsForDurablePersistence();
   testCoreLocalActions();
   testAdhdModeAndTodaySectionVisibility();
   testAutopilotAndAttentionPresets();
