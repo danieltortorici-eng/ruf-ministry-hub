@@ -6,7 +6,21 @@
   <title>RUF Ministry Hub</title>
   <link rel="canonical" href="./ruf-ministry-hub">
   <script>
-    window.location.replace("./ruf-ministry-hub" + window.location.search + window.location.hash);
+    const legacyCaptureQueryKeys = [
+      "quickgrab",
+      "text",
+      "note",
+      "quickgrabCategory",
+      "category",
+      "tag",
+      "tags",
+      "quickgrabUrgency",
+      "urgency"
+    ];
+    const redirectParams = new URLSearchParams(window.location.search);
+    legacyCaptureQueryKeys.forEach(key => redirectParams.delete(key));
+    const redirectSearch = redirectParams.toString();
+    window.location.replace("./ruf-ministry-hub" + (redirectSearch ? "?" + redirectSearch : "") + window.location.hash);
   </script>
 </head>
 <body>

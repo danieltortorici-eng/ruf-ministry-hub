@@ -23,6 +23,7 @@ const storage = Object.create(null);
 const elements = Object.create(null);
 const downloadEvents = [];
 const toastMessages = [];
+const historyReplacements = [];
 let objectUrlCounter = 0;
 
 function makeElement(idOrTag) {
@@ -88,13 +89,13 @@ const location = {
   hash: ""
 };
 
-function setUrl(search = "") {
+function setUrl(search = "", hash = "") {
   location.protocol = "https:";
   location.hostname = "example.test";
   location.pathname = "/ruf-ministry-hub.html";
   location.search = search;
-  location.hash = "";
-  location.href = `https://example.test${location.pathname}${location.search}`;
+  location.hash = hash;
+  location.href = `https://example.test${location.pathname}${location.search}${location.hash}`;
 }
 
 const sandbox = {
@@ -158,7 +159,8 @@ const sandbox = {
       return `blob:regression-${objectUrlCounter}`;
     },
     revokeObjectURL() {}
-  }
+  },
+  __replaceStateShouldThrow: false
 };
 
 sandbox.window = {
@@ -166,7 +168,11 @@ sandbox.window = {
   navigator: sandbox.navigator,
   URL: sandbox.URL,
   history: {
-    replaceState(_state, _title, url) {
+    state: { syntheticNavigationState: "preserve" },
+    replaceState(state, _title, url) {
+      if (sandbox.__replaceStateShouldThrow) throw new Error("Synthetic replaceState failure");
+      historyReplacements.push({ state, url: String(url) });
+      this.state = state;
       const [pathAndSearch, hash = ""] = String(url).split("#");
       const [pathname, search = ""] = pathAndSearch.split("?");
       location.pathname = pathname || location.pathname;
@@ -219,6 +225,9 @@ function resetDom() {
   makeElement("toast");
   toastMessages.length = 0;
   downloadEvents.length = 0;
+  historyReplacements.length = 0;
+  sandbox.__replaceStateShouldThrow = false;
+  sandbox.window.history.state = { syntheticNavigationState: "preserve" };
   setUrl("");
   sandbox.window.prompt = () => null;
   sandbox.window.confirm = () => true;
@@ -257,8 +266,8 @@ function resetApp(dataCode = "emptyData()") {
     undoStack = [];
     memoryVaultCache = null;
     localStorage.removeItem(AUTO_MEMORY_KEY);
-    pendingUrlQuickGrabText = "";
-    pendingUrlQuickGrabParams = null;
+    pendingFragmentQuickGrabText = "";
+    sharedFragmentImportDeferred = false;
   `);
 }
 
@@ -345,34 +354,851 @@ function testCleanupAndLargeDataPaths() {
   assert(proposalSource.includes("beginCaptureProcessing(proposal.sourceId)"), "proposal source retries reuse the shared capture pipeline");
 }
 
-function testQuickGrabSharedUrlImport() {
+function triggerSharedCaptureIntake() {
+  return appEval("importQuickGrabFromCurrentFragment()");
+}
+
+function applyPendingSharedCapture() {
+  return appEval("applyPendingFragmentQuickGrabText()");
+}
+
+function sharedCaptureMutationSnapshot() {
+  return appEval(`JSON.stringify({
+    screen: view.screen,
+    draft: view.quickGrabDraftText,
+    source: view.quickGrabDraftSource,
+    quickGrabId: view.quickGrabId,
+    db,
+    undoStack,
+    autosaveDraftsCache,
+    autosavePending: Boolean(autosaveTimer),
+    localData: localStorage.getItem(STORAGE_KEY),
+    localDrafts: localStorage.getItem(AUTOSAVE_KEY)
+  })`);
+}
+
+function testQuickGrabFragmentPrivacyBoundary() {
+  const boundaryFailures = [];
+  const boundaryCheck = (condition, label) => {
+    if (!condition) boundaryFailures.push(label);
+  };
   resetApp();
-  makeElement("quick-text").value = "";
-  setUrl("?quickgrab=Prayer%20capture&quickgrabCategory=prayer&quickgrabUrgency=soon");
-  appEval("importQuickGrabFromCurrentUrl(); applyPendingUrlQuickGrabText();");
+  const template = appEval("shortcutTemplateUrl()");
+  boundaryCheck(template.endsWith("#quickgrab=[Shortcut Input]") && !template.includes("?quickgrab="), "template still exposes query content");
 
-  assert(view().screen === "quick", "shared URL opens Quick Grab");
-  assert(view().quickGrabDraftText === "Prayer capture", "shared URL populates Quick Grab draft");
-  const captureMarkup = appEval("renderQuickGrab()");
-  assert(!captureMarkup.includes('id="quick-tags"'), "shared URL does not expose or preselect a visible category");
-  assert(!captureMarkup.includes('id="urgency-tags"'), "shared URL does not expose or preselect visible urgency");
-  assert(location.search === "", "shared URL params are removed after import");
+  const indexScript = indexSource.match(/<script>([\s\S]*?)<\/script>/)?.[1] || "";
+  const redirectLocation = {
+    search: "?quickgrab=Legacy%20Host%20Visible&text=Legacy&note=Legacy&quickgrabCategory=prayer&category=task&tag=a&tags=b&quickgrabUrgency=soon&urgency=now&safe=kept",
+    hash: "#quickgrab=Fragment%20Only",
+    replaced: "",
+    replace(value) { this.replaced = String(value); }
+  };
+  vm.runInNewContext(indexScript, { window: { location: redirectLocation }, URLSearchParams });
+  boundaryCheck(redirectLocation.replaced === "./ruf-ministry-hub?safe=kept#quickgrab=Fragment%20Only", "index redirect still forwards legacy capture query");
 
-  appEval("importQuickGrabFromCurrentUrl(); applyPendingUrlQuickGrabText();");
-  assert(view().quickGrabDraftText === "Prayer capture", "shared URL import does not duplicate after cleanup");
+  resetApp();
+  const queryBefore = sharedCaptureMutationSnapshot();
+  setUrl("?quickgrab=Never%20Import&text=Never&note=Never&quickgrabCategory=prayer&category=task&tag=a&tags=b&quickgrabUrgency=soon&urgency=now&safe=kept", "#main-content");
+  triggerSharedCaptureIntake();
+  applyPendingSharedCapture();
+  boundaryCheck(location.search === "?safe=kept" && location.hash === "#main-content", "legacy query scrub does not preserve only unrelated query and anchor");
+  boundaryCheck(sharedCaptureMutationSnapshot() === queryBefore, "legacy query content is still imported");
+  boundaryCheck(JSON.stringify(sandbox.window.history.state) === JSON.stringify({ syntheticNavigationState: "preserve" }), "cleanup replaces existing history state");
 
-  makeElement("quick-text").value = "Prayer capture";
-  appEval('view.quickGrabDraftText = "Prayer capture"');
-  setUrl("?quickgrab=Prayer%20capture&quickgrabCategory=prayer");
-  appEval("importQuickGrabFromCurrentUrl(); applyPendingUrlQuickGrabText();");
-  assert(view().quickGrabDraftText === "Prayer capture", "shared URL import does not duplicate an existing identical draft");
+  resetApp();
+  setUrl("", "#quickgrab=Red%20fragment%20probe");
+  const redFragmentImported = triggerSharedCaptureIntake();
+  applyPendingSharedCapture();
+  boundaryCheck(redFragmentImported === true && location.hash === "" && view().quickGrabDraftText === "Red fragment probe", "fragment intake is absent");
+  if (boundaryFailures.length) throw new Error(`Fragment privacy boundary failures: ${boundaryFailures.join("; ")}`);
 
+  assert(true, "Shortcut template, redirect, legacy-query discard, history state, and fragment intake pass the local-first boundary");
+
+  const sharedText = "Unicode prayer 🙏\n100% + / ? & = # : exact";
+  resetApp();
+  setUrl("?safe=kept", `#quickgrab=${encodeURIComponent(sharedText)}`);
+  const imported = triggerSharedCaptureIntake();
+  applyPendingSharedCapture();
+  assert(imported === true && location.search === "?safe=kept" && location.hash === "", "one exact quickgrab fragment is scrubbed before local import while unrelated query survives");
+  assert(view().screen === "quick" && view().quickGrabDraftText === sharedText, "encoded Unicode, newline, percent, plus, and reserved characters decode exactly once");
+  assert(db().quickGrabs.length === 0 && db().aiProposals.length === 0 && appEval("undoStack.length") === 0, "valid fragment creates no record, proposal, or Undo entry before user action");
+  const exactDraft = view().quickGrabDraftText;
+  triggerSharedCaptureIntake();
+  applyPendingSharedCapture();
+  triggerSharedCaptureIntake();
+  applyPendingSharedCapture();
+  assert(view().quickGrabDraftText === exactDraft, "reload/focus/pageshow-style repeated intake cannot duplicate a scrubbed fragment");
+
+  makeElement("quick-text").value = sharedText;
   appEval('submitUnifiedCapture("main", "", "later");');
-  const grab = db().quickGrabs[0];
-  assert(grab.rawContent === "Prayer capture", "shared draft saves through unified capture");
-  assert(grab.captureSource === "shared", "shared draft keeps its capture source");
-  assert(grab.category === "Prayer", "classification happens after shared text is captured");
-  assert(grab.urgency === "Whenever", "legacy urgency query input is dormant in the calm capture flow");
+  assert(db().quickGrabs.length === 1 && db().quickGrabs[0].rawContent === sharedText && db().quickGrabs[0].captureSource === "shared" && db().aiProposals.length === 0, "Save for later creates exactly one raw shared Quick Grab and no proposal");
+
+  resetApp();
+  setUrl("", "#quickgrab=Process%20fragment");
+  triggerSharedCaptureIntake();
+  applyPendingSharedCapture();
+  makeElement("quick-text").value = "Process fragment";
+  appEval('submitUnifiedCapture("main", "", "process");');
+  assert(db().quickGrabs.length === 1 && db().quickGrabs[0].rawContent === "Process fragment" && db().aiProposals.length === 0 && view().sheet?.type === "ai-gate", "Process creates exactly one raw shared Quick Grab and opens privacy review without a proposal before approval");
+
+  resetApp();
+  const maxText = "m".repeat(6000);
+  setUrl("", `#quickgrab=${maxText}`);
+  triggerSharedCaptureIntake();
+  applyPendingSharedCapture();
+  assert(view().quickGrabDraftText === maxText && location.hash === "", "a 6,000-character fragment imports exactly once");
+
+  const invalidFragments = [
+    ["empty", "#quickgrab="],
+    ["malformed", "#quickgrab=%"],
+    ["duplicate", "#quickgrab=one&quickgrab=two"],
+    ["unknown parameter", "#quickgrab=one&unexpected=two"],
+    ["oversized", `#quickgrab=${"x".repeat(6001)}`],
+    ["surrogate-pair oversized", `#quickgrab=${encodeURIComponent("😀".repeat(3001))}`]
+  ];
+  invalidFragments.forEach(([label, hash]) => {
+    resetApp();
+    const before = sharedCaptureMutationSnapshot();
+    setUrl("?safe=kept", hash);
+    triggerSharedCaptureIntake();
+    applyPendingSharedCapture();
+    assert(location.search === "?safe=kept" && location.hash === "", `${label} capture fragment is rejected and cleaned`);
+    assert(sharedCaptureMutationSnapshot() === before, `${label} capture fragment causes zero draft/autosave/view/record/proposal/Undo mutation`);
+  });
+
+  resetApp();
+  appEval("settings.enableUrlQuickGrab = false");
+  const disabledBefore = sharedCaptureMutationSnapshot();
+  setUrl("", "#quickgrab=Disabled%20content");
+  triggerSharedCaptureIntake();
+  applyPendingSharedCapture();
+  assert(location.hash === "" && sharedCaptureMutationSnapshot() === disabledBefore, "feature-disabled fragment is scrubbed without import or mutation");
+
+  resetApp();
+  const failureBefore = sharedCaptureMutationSnapshot();
+  setUrl("", "#quickgrab=Never%20retain%20this");
+  sandbox.__replaceStateShouldThrow = true;
+  triggerSharedCaptureIntake();
+  applyPendingSharedCapture();
+  assert(sharedCaptureMutationSnapshot() === failureBefore, "history cleanup failure retains and imports no shared content");
+  assert(!makeElement("toast").textContent.includes("Never retain this") && makeElement("toast").textContent.length > 0, "history cleanup failure reports only a generic content-free status");
+
+  ["#main-content", "#unknown-anchor", "#quickgrabbing-is-not-capture"].forEach(anchor => {
+    resetApp();
+    const before = sharedCaptureMutationSnapshot();
+    setUrl("?safe=kept", anchor);
+    triggerSharedCaptureIntake();
+    assert(location.search === "?safe=kept" && location.hash === anchor && sharedCaptureMutationSnapshot() === before, `${anchor} survives because it is not a capture fragment`);
+  });
+}
+
+async function testDictationPrivacyBoundary() {
+  const failures = [];
+  const check = (condition, label) => {
+    if (!condition) failures.push(label);
+  };
+
+  const hasV25Contract = appEval(`typeof VOICE_CAPTURE_DISCLOSURE_VERSION === "string"
+    && typeof DICTATION_SESSION_DEADLINE_MS === "number"
+    && typeof openDictationConsentSheet === "function"
+    && typeof submitDictationStartSheet === "function"
+    && typeof submitVoiceCaptureEnablement === "function"
+    && typeof beginConfirmedDictation === "function"`);
+  check(appEval("normalizeSettings({}).enableVoiceCapture") === false, "new and missing settings still default dictation on");
+  check(appEval("normalizeSettings({ enableVoiceCapture: true }).enableVoiceCapture") === false, "legacy stored true survives without a current disclosure marker");
+  check(appEval("normalizeSettings({ enableVoiceCapture: 'true', voiceCaptureDisclosureVersion: 'unexpected' }).enableVoiceCapture") === false, "malformed imported voice settings survive normalization");
+  check(hasV25Contract, "versioned disclosure and atomic dictation helpers are absent");
+  if (!hasV25Contract) throw new Error(`Dictation privacy boundary failures: ${failures.join("; ")}`);
+
+  const currentMarker = appEval("VOICE_CAPTURE_DISCLOSURE_VERSION");
+  const normalizeMatrix = appEval(`(() => {
+    const marker = VOICE_CAPTURE_DISCLOSURE_VERSION;
+    return {
+      current: normalizeSettings({ enableVoiceCapture: true, voiceCaptureDisclosureVersion: marker }),
+      falseWithMarker: normalizeSettings({ enableVoiceCapture: false, voiceCaptureDisclosureVersion: marker }),
+      wrongMarker: normalizeSettings({ enableVoiceCapture: true, voiceCaptureDisclosureVersion: marker + "-old" }),
+      numeric: normalizeSettings({ enableVoiceCapture: 1, voiceCaptureDisclosureVersion: marker })
+    };
+  })()`);
+  check(normalizeMatrix.current.enableVoiceCapture === true && normalizeMatrix.current.voiceCaptureDisclosureVersion === currentMarker, "current exact true plus marker does not remain enabled");
+  check(normalizeMatrix.falseWithMarker.enableVoiceCapture === false, "explicit false does not remain disabled");
+  check(normalizeMatrix.wrongMarker.enableVoiceCapture === false && normalizeMatrix.numeric.enableVoiceCapture === false, "wrong-marker or non-boolean imports do not fail closed");
+
+  resetApp();
+  const enableStorageBefore = JSON.stringify(storage);
+  appEval('updateSetting("enableVoiceCapture", true)');
+  const enableSheet = appEval(`({ settings: cloneJson(settings), sheet: cloneJson(view.sheet), markup: renderSheet() })`);
+  check(enableSheet.settings.enableVoiceCapture === false && enableSheet.sheet?.type === "dictation" && enableSheet.sheet?.kind === "enable", "turning on dictation does not pause at disclosure");
+  check(enableSheet.markup.includes('role="dialog"') && enableSheet.markup.includes('aria-modal="true"') && enableSheet.markup.includes('aria-labelledby="dictation-sheet-title"') && enableSheet.markup.includes('id="dictation-confirm"') && enableSheet.markup.includes('data-action="dictation-enable-confirm"'), "enablement disclosure is not an accessible checked-confirmation sheet");
+  check(enableSheet.markup.includes("browser or device") && enableSheet.markup.includes("cannot verify") && !/processed locally|never retained|permission (?:is|was) granted/i.test(enableSheet.markup), "enablement disclosure makes an unsupported processing, retention, or permission claim");
+  check(JSON.stringify(storage) === enableStorageBefore, "opening enablement disclosure persists settings or drafts");
+  appEval("closeSheet()");
+  check(appEval("settings.enableVoiceCapture") === false && JSON.stringify(storage) === enableStorageBefore, "canceling enablement turns dictation on or persists state");
+
+  appEval('updateSetting("enableVoiceCapture", true)');
+  makeElement("dictation-confirm").checked = true;
+  const enabled = appEval("submitVoiceCaptureEnablement()");
+  const persistedSettings = JSON.parse(storage[appEval("SETTINGS_KEY")]);
+  check(enabled === true && appEval("settings.enableVoiceCapture") === true && appEval("settings.voiceCaptureDisclosureVersion") === currentMarker, "checked enablement does not atomically activate the current marker");
+  check(persistedSettings.enableVoiceCapture === true && persistedSettings.voiceCaptureDisclosureVersion === currentMarker, "persisted settings do not contain the enabled flag and marker together");
+
+  const preDisclosureCases = [
+    { source: "today", screen: "today", targetId: "today-capture-text", viewField: "todayCaptureDraftText", autosave: true },
+    { source: "today", screen: "today", targetId: "today-capture-text", viewField: "todayCaptureDraftText", autosave: false },
+    { source: "profile", screen: "person", targetId: "profile-capture-text", viewField: "profileCaptureDraftText", autosave: true, usesPerson: true },
+    { source: "profile", screen: "person", targetId: "profile-capture-text", viewField: "profileCaptureDraftText", autosave: false, usesPerson: true }
+  ];
+  for (const fixture of preDisclosureCases) {
+    resetApp(fixture.usesPerson ? "demoData()" : "emptyData()");
+    const ownerId = fixture.usesPerson ? appEval("db.people[0].id") : "";
+    const renderedPersonId = fixture.usesPerson ? appEval("(db.people[1] || db.people[0]).id") : "";
+    const liveDraft = `  ${fixture.source} ${fixture.autosave ? "autosave on" : "autosave off"} live draft\nsecond line  `;
+    const olderDraft = `${fixture.source} older stored draft`;
+    sandbox.__preDisclosureFixture = { ...fixture, ownerId, renderedPersonId, liveDraft, olderDraft };
+    appEval(`(() => {
+      const fixture = globalThis.__preDisclosureFixture;
+      settings = normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        enableAutoSave: fixture.autosave,
+        enableVoiceCapture: true,
+        voiceCaptureDisclosureVersion: VOICE_CAPTURE_DISCLOSURE_VERSION,
+        autoMemoryVaultEnabled: false,
+        localEncryptionEnabled: false
+      });
+      view.screen = fixture.screen;
+      view.personId = fixture.ownerId || null;
+      view.todayCaptureDraftText = fixture.source === "today" ? "programmatic stale view" : "";
+      view.profileCaptureOwnerId = fixture.ownerId;
+      view.profileCapturePersonId = fixture.renderedPersonId;
+      view.profileCaptureDraftText = fixture.source === "profile" ? "programmatic stale view" : "";
+      view.profileCaptureDraftTargetId = "";
+      const key = captureDraftKey(fixture.source, fixture.renderedPersonId);
+      if (fixture.autosave) {
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+          [key]: {
+            key,
+            fields: { [fixture.targetId]: fixture.olderDraft },
+            screen: fixture.screen,
+            updatedAt: "2026-07-19T00:00:00.000Z"
+          }
+        }));
+        autosaveTimer = 30;
+      } else {
+        localStorage.removeItem(AUTOSAVE_KEY);
+        autosaveTimer = null;
+      }
+      globalThis.__preDisclosureStorageBefore = localStorage.getItem(AUTOSAVE_KEY);
+      globalThis.__preDisclosureRecordsBefore = JSON.stringify({ db, undoStack });
+      globalThis.__preDisclosurePersistenceCalls = 0;
+      globalThis.__preDisclosureOriginalSaveCurrentDraftNow = saveCurrentDraftNow;
+      saveCurrentDraftNow = () => { globalThis.__preDisclosurePersistenceCalls += 1; return true; };
+    })()`);
+    const liveTarget = makeElement(fixture.targetId);
+    liveTarget.tagName = "TEXTAREA";
+    liveTarget.value = liveDraft;
+    liveTarget.isConnected = true;
+    if (fixture.usesPerson) {
+      liveTarget.closest = selector => selector === '[data-capture-composer="profile"]'
+        ? { dataset: { personId: renderedPersonId } }
+        : null;
+    }
+    let constructed = 0;
+    sandbox.window.SpeechRecognition = function Recognition() {
+      constructed += 1;
+      sandbox.__preDisclosureRecognition = this;
+      this.start = () => {};
+      this.abort = () => {};
+    };
+    const opened = appEval(`openDictationConsentSheet(${JSON.stringify(fixture.targetId)})`);
+    check(opened === true && liveTarget.value === liveDraft && appEval(`view[${JSON.stringify(fixture.viewField)}]`) === liveDraft, `${fixture.source}/${fixture.autosave} disclosure open loses byte-exact live input`);
+    check(constructed === 0 && appEval("document.getElementById('dictation-confirm').checked") === false, `${fixture.source}/${fixture.autosave} disclosure constructs recognition or opens checked`);
+    check(appEval("__preDisclosurePersistenceCalls") === 0 && appEval("localStorage.getItem(AUTOSAVE_KEY)") === appEval("__preDisclosureStorageBefore"), `${fixture.source}/${fixture.autosave} disclosure open persists`);
+    if (fixture.usesPerson) {
+      check(appEval("view.profileCaptureDraftTargetId") === renderedPersonId && appEval("view.sheet.context.profileCapturePersonId") === renderedPersonId && appEval("view.sheet.context.profileCaptureDraftTargetId") === renderedPersonId, `${fixture.source}/${fixture.autosave} disclosure context misses rendered person identity`);
+    }
+    appEval("closeSheet()");
+    check(liveTarget.value === liveDraft && appEval(`view[${JSON.stringify(fixture.viewField)}]`) === liveDraft && constructed === 0 && appEval("__preDisclosurePersistenceCalls") === 0, `${fixture.source}/${fixture.autosave} disclosure cancel changes draft, recognition, or persistence`);
+    appEval(`openDictationConsentSheet(${JSON.stringify(fixture.targetId)})`);
+    makeElement("dictation-confirm").checked = true;
+    const started = appEval("submitDictationStartSheet()");
+    check(started === true && constructed === 1 && liveTarget.value === liveDraft && appEval(`view[${JSON.stringify(fixture.viewField)}]`) === liveDraft && appEval("__preDisclosurePersistenceCalls") === 0, `${fixture.source}/${fixture.autosave} checked Start loses baseline or persists before terminal success`);
+    if (fixture.usesPerson) {
+      check(appEval("activeDictationSession.context.profileCapturePersonId") === renderedPersonId && appEval("activeDictationSession.context.profileCaptureDraftTargetId") === renderedPersonId, `${fixture.source}/${fixture.autosave} started session misses rendered person identity`);
+    }
+    appEval(`
+      cancelActiveDictation({ announce: false });
+      autosaveTimer = null;
+      saveCurrentDraftNow = globalThis.__preDisclosureOriginalSaveCurrentDraftNow;
+    `);
+    check(appEval("localStorage.getItem(AUTOSAVE_KEY)") === appEval("__preDisclosureStorageBefore") && appEval("JSON.stringify({ db, undoStack })") === appEval("__preDisclosureRecordsBefore"), `${fixture.source}/${fixture.autosave} disclosure path mutates storage, records, proposals, or Undo`);
+    check(!makeElement("toast").textContent.includes("live draft") && !makeElement("toast").textContent.includes("older stored draft"), `${fixture.source}/${fixture.autosave} disclosure status exposes draft content`);
+  }
+
+  resetApp();
+  const scopedRestoreTarget = makeElement("today-capture-text");
+  scopedRestoreTarget.tagName = "TEXTAREA";
+  scopedRestoreTarget.value = "  private live draft\nsecond line  ";
+  const scopedRestoreUnrelated = makeElement("synthetic-unrelated-field");
+  scopedRestoreUnrelated.tagName = "INPUT";
+  scopedRestoreUnrelated.value = "current unrelated value";
+  const scopedRestoreResult = appEval(`(() => {
+    settings = normalizeSettings({ ...DEFAULT_SETTINGS, enableAutoSave: true, localEncryptionEnabled: false });
+    view.screen = "today";
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+      "capture:today": {
+        key: "capture:today",
+        fields: {
+          "today-capture-text": "older target value",
+          "synthetic-unrelated-field": "restored unrelated value"
+        },
+        screen: "today",
+        updatedAt: "2026-07-19T00:00:00.000Z"
+      }
+    }));
+    const originalRender = render;
+    try {
+      render = () => restoreAutosaveDraft();
+      renderWithoutRestoringAutosaveTarget("today-capture-text");
+      return {
+        target: document.getElementById("today-capture-text").value,
+        unrelated: document.getElementById("synthetic-unrelated-field").value,
+        cleared: autosaveRestoreSkipTargetId === ""
+      };
+    } finally {
+      render = originalRender;
+      autosaveRestoreSkipTargetId = "";
+    }
+  })()`);
+  check(scopedRestoreResult.target === scopedRestoreTarget.value && scopedRestoreResult.unrelated === "restored unrelated value", "dictation render guard suppresses more than its exact target field");
+  check(scopedRestoreResult.cleared === true, "dictation render guard survives a successful render");
+
+  const throwingRenderGuard = appEval(`(() => {
+    const originalRender = render;
+    let observed = "";
+    let mutationEffects;
+    let threw = false;
+    try {
+      render = options => {
+        observed = autosaveRestoreSkipTargetId;
+        mutationEffects = options?.mutationEffects;
+        throw new Error("synthetic render failure");
+      };
+      try {
+        renderWithoutRestoringAutosaveTarget("today-capture-text");
+      } catch (error) {
+        threw = error?.message === "synthetic render failure";
+      }
+      return {
+        threw,
+        observed,
+        mutationEffects,
+        cleared: autosaveRestoreSkipTargetId === ""
+      };
+    } finally {
+      render = originalRender;
+      autosaveRestoreSkipTargetId = "";
+    }
+  })()`);
+  check(throwingRenderGuard.threw === true && throwingRenderGuard.cleared === true && throwingRenderGuard.mutationEffects === false, "dictation render guard survives a throwing render or fails to suppress mutation effects");
+  check(throwingRenderGuard.observed === "today-capture-text" && !throwingRenderGuard.observed.includes("private live draft"), "dictation render guard carries content instead of only the fixed target id");
+
+  const prepareSession = (initialText = "Existing fictional draft") => {
+    resetApp();
+    appEval(`
+      if (typeof globalThis.__dictationOriginalScheduleAutosave !== "function") {
+        globalThis.__dictationOriginalScheduleAutosave = scheduleAutosave;
+      }
+      if (typeof globalThis.__dictationMaintainedSaveCurrentDraftNow !== "function") {
+        globalThis.__dictationMaintainedSaveCurrentDraftNow = saveCurrentDraftNow;
+      }
+      settings = normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        enableAutoSave: true,
+        enableVoiceCapture: true,
+        voiceCaptureDisclosureVersion: VOICE_CAPTURE_DISCLOSURE_VERSION,
+        autoMemoryVaultEnabled: false,
+        localEncryptionEnabled: false
+      });
+      view.screen = "quick";
+      view.quickGrabDraftText = ${JSON.stringify(initialText)};
+      __dictationAutosaveCalls = 0;
+      scheduleAutosave = () => { __dictationAutosaveCalls += 1; return true; };
+      saveCurrentDraftNow = () => { __dictationAutosaveCalls += 1; return true; };
+    `);
+    const textarea = makeElement("quick-text");
+    textarea.tagName = "TEXTAREA";
+    textarea.value = initialText;
+    textarea.isConnected = true;
+    return textarea;
+  };
+
+  let constructorCalls = 0;
+  let textarea = prepareSession();
+  sandbox.window.SpeechRecognition = function Recognition() {
+    constructorCalls += 1;
+    sandbox.__recognition = this;
+    this.start = () => {};
+    this.abort = () => {};
+  };
+  const beforeOpenStorage = JSON.stringify(storage);
+  const beforeOpenDrafts = appEval("JSON.stringify(autosaveDraftsCache)");
+  appEval("__dictationOriginalSaveCurrentDraftNow = saveCurrentDraftNow; __dictationDraftSaveCalls = 0; saveCurrentDraftNow = () => { __dictationDraftSaveCalls += 1; return true; }");
+  const dictateButton = makeElement("dictation-action-button");
+  dictateButton.dataset.action = "voice-capture";
+  dictateButton.dataset.target = "quick-text";
+  dictateButton.classList.contains = () => false;
+  const opened = appEval("handleAction({ currentTarget: globalThis.__dictationButton, target: globalThis.__dictationButton, preventDefault() {}, stopPropagation() {} })", sandbox.__dictationButton = dictateButton);
+  const startMarkup = appEval("renderSheet()");
+  check(opened === true && constructorCalls === 0 && appEval("view.sheet?.kind") === "start", "Dictate constructs recognition before per-start confirmation");
+  check(appEval("__dictationDraftSaveCalls") === 0, "Dictate falls through the dispatcher and saves a draft before disclosure");
+  check(startMarkup.includes('role="dialog"') && startMarkup.includes('id="dictation-confirm"') && startMarkup.includes('data-action="dictation-start-confirm"') && startMarkup.includes("browser or device") && startMarkup.includes("cannot verify"), "per-start sheet lacks accessible truthful confirmation");
+  check(JSON.stringify(storage) === beforeOpenStorage && appEval("JSON.stringify(autosaveDraftsCache)") === beforeOpenDrafts, "opening per-start disclosure autosaves a draft");
+  appEval("closeSheet()");
+  check(constructorCalls === 0 && textarea.value === "Existing fictional draft" && JSON.stringify(storage) === beforeOpenStorage, "canceling per-start disclosure constructs recognition or mutates the draft");
+  appEval("saveCurrentDraftNow = __dictationOriginalSaveCurrentDraftNow");
+
+  appEval('openDictationConsentSheet("quick-text")');
+  makeElement("dictation-confirm").checked = true;
+  const started = appEval("submitDictationStartSheet()");
+  check(started === true && constructorCalls === 1 && appEval("view.sheet") === null, "checked per-start confirmation does not start exactly one session");
+  const secondStart = appEval('beginConfirmedDictation("quick-text", dictationCaptureContext("quick-text"))');
+  check(secondStart === false && constructorCalls === 1, "a second simultaneous start constructs another recognizer");
+  const successStateBeforeResult = appEval(`JSON.stringify({ db, undoStack, draft: view.quickGrabDraftText, autosave: __dictationAutosaveCalls })`);
+  sandbox.__recognition.onresult({ results: [Object.assign([{ transcript: "Staged fictional words" }], { isFinal: true })] });
+  check(textarea.value === "Existing fictional draft" && appEval("__dictationAutosaveCalls") === 0 && appEval(`JSON.stringify({ db, undoStack, draft: view.quickGrabDraftText, autosave: __dictationAutosaveCalls })`) === successStateBeforeResult, "onresult commits or autosaves before terminal success");
+  sandbox.__recognition.onend();
+  check(textarea.value === "Existing fictional draft\nStaged fictional words" && appEval("view.quickGrabDraftText") === textarea.value && appEval("__dictationAutosaveCalls") === 1, "one successful onend does not append and autosave exactly once");
+  sandbox.__recognition.onend?.();
+  check(textarea.value === "Existing fictional draft\nStaged fictional words" && appEval("__dictationAutosaveCalls") === 1, "duplicate terminal completion commits twice");
+  check(db().quickGrabs.length === 0 && db().people.length === 0 && db().prayerRequests.length === 0 && db().aiProposals.length === 0 && appEval("undoStack.length") === 0, "successful dictation creates a permanent record, proposal, or Undo entry");
+
+  textarea = prepareSession("Failure baseline");
+  let errorRecognition;
+  sandbox.window.SpeechRecognition = function Recognition() {
+    errorRecognition = this;
+    this.start = () => {};
+    this.abort = () => {};
+  };
+  appEval('openDictationConsentSheet("quick-text")');
+  makeElement("dictation-confirm").checked = true;
+  appEval("submitDictationStartSheet()");
+  errorRecognition.onresult({ results: [Object.assign([{ transcript: "Never persist this fictional transcript" }], { isFinal: true })] });
+  errorRecognition.onerror({ error: "synthetic-private-error-code" });
+  errorRecognition.onend?.();
+  check(textarea.value === "Failure baseline" && appEval("view.quickGrabDraftText") === "Failure baseline" && appEval("__dictationAutosaveCalls") === 0, "onerror after a result preserves staged transcript or autosaves it");
+  check(!makeElement("toast").textContent.includes("Never persist") && !makeElement("toast").textContent.includes("synthetic-private-error-code"), "failure status exposes transcript or browser error detail");
+
+  textarea = prepareSession("Empty baseline");
+  sandbox.window.SpeechRecognition = function Recognition() {
+    sandbox.__emptyRecognition = this;
+    this.start = () => {};
+    this.abort = () => {};
+  };
+  appEval('openDictationConsentSheet("quick-text")');
+  makeElement("dictation-confirm").checked = true;
+  appEval("submitDictationStartSheet()");
+  sandbox.__emptyRecognition.onresult({ results: [Object.assign([{ transcript: "Ignored interim words" }], { isFinal: false })] });
+  sandbox.__emptyRecognition.onend();
+  check(textarea.value === "Empty baseline" && appEval("__dictationAutosaveCalls") === 0 && appEval("activeDictationSession") === null, "empty or interim-only terminal completion mutates or autosaves a draft");
+
+  textarea = prepareSession("Navigation baseline");
+  sandbox.window.SpeechRecognition = function Recognition() {
+    sandbox.__navigationRecognition = this;
+    this.start = () => {};
+    this.abort = () => {};
+  };
+  appEval('openDictationConsentSheet("quick-text")');
+  makeElement("dictation-confirm").checked = true;
+  appEval("submitDictationStartSheet()");
+  sandbox.__navigationRecognition.onresult({ results: [Object.assign([{ transcript: "Wrong screen words" }], { isFinal: true })] });
+  appEval('view.screen = "today"');
+  sandbox.__navigationRecognition.onend();
+  check(textarea.value === "Navigation baseline" && appEval("__dictationAutosaveCalls") === 0, "screen/draft identity drift accepts a terminal transcript");
+
+  textarea = prepareSession("Disable baseline");
+  sandbox.window.SpeechRecognition = function Recognition() {
+    sandbox.__disableRecognition = this;
+    this.start = () => {};
+    this.abort = () => {};
+  };
+  appEval('openDictationConsentSheet("quick-text")');
+  makeElement("dictation-confirm").checked = true;
+  appEval("submitDictationStartSheet()");
+  sandbox.__disableRecognition.onresult({ results: [Object.assign([{ transcript: "Disabled staged words" }], { isFinal: true })] });
+  appEval('updateSetting("enableVoiceCapture", false)');
+  sandbox.__disableRecognition.onend?.();
+  check(textarea.value === "Disable baseline" && appEval("__dictationAutosaveCalls") === 0 && appEval("activeDictationSession") === null && appEval("settings.enableVoiceCapture") === false, "disabling dictation fails to discard the active transcript and turn the feature off");
+
+  for (const failureKind of ["constructor", "property", "start"]) {
+    textarea = prepareSession(`${failureKind} baseline`);
+    sandbox.window.SpeechRecognition = failureKind === "constructor"
+      ? function Recognition() { throw new Error("private constructor detail"); }
+      : function Recognition() {
+          if (failureKind === "property") Object.defineProperty(this, "lang", { set() { throw new Error("private property detail"); } });
+          this.start = () => { if (failureKind === "start") throw new Error("private start detail"); };
+          this.abort = () => {};
+        };
+    appEval('openDictationConsentSheet("quick-text")');
+    makeElement("dictation-confirm").checked = true;
+    const failureResult = appEval("submitDictationStartSheet()");
+    check(failureResult === false && textarea.value === `${failureKind} baseline` && appEval("__dictationAutosaveCalls") === 0 && appEval("activeDictationSession") === null, `${failureKind} failure escapes containment or mutates a draft`);
+    check(!/private (?:constructor|property|start) detail/.test(makeElement("toast").textContent), `${failureKind} failure exposes exception content`);
+  }
+
+  textarea = prepareSession("Deadline baseline");
+  let deadlineCallback = null;
+  const dictationDeadline = appEval("DICTATION_SESSION_DEADLINE_MS");
+  const originalWindowSetTimeout = sandbox.window.setTimeout;
+  const originalWindowClearTimeout = sandbox.window.clearTimeout;
+  sandbox.window.setTimeout = (callback, delay) => {
+    if (delay === dictationDeadline) deadlineCallback = callback;
+    return 77;
+  };
+  sandbox.window.clearTimeout = () => {};
+  sandbox.window.SpeechRecognition = function Recognition() {
+    sandbox.__deadlineRecognition = this;
+    this.start = () => {};
+    this.abort = () => {};
+  };
+  appEval('openDictationConsentSheet("quick-text")');
+  makeElement("dictation-confirm").checked = true;
+  appEval("submitDictationStartSheet()");
+  sandbox.__deadlineRecognition.onresult({ results: [Object.assign([{ transcript: "Deadline staged words" }], { isFinal: true })] });
+  deadlineCallback?.();
+  sandbox.__deadlineRecognition.onend?.();
+  sandbox.window.setTimeout = originalWindowSetTimeout;
+  sandbox.window.clearTimeout = originalWindowClearTimeout;
+  check(textarea.value === "Deadline baseline" && appEval("__dictationAutosaveCalls") === 0 && appEval("activeDictationSession") === null, "missing onend deadline commits staged words or leaves a live session");
+
+  textarea = prepareSession("Detached baseline");
+  sandbox.window.SpeechRecognition = function Recognition() {
+    sandbox.__detachedRecognition = this;
+    this.start = () => {};
+    this.abort = () => {};
+  };
+  appEval('openDictationConsentSheet("quick-text")');
+  makeElement("dictation-confirm").checked = true;
+  appEval("submitDictationStartSheet()");
+  sandbox.__detachedRecognition.onresult({ results: [Object.assign([{ transcript: "Detached staged words" }], { isFinal: true })] });
+  textarea.isConnected = false;
+  sandbox.__detachedRecognition.onend();
+  check(textarea.value === "Detached baseline" && appEval("__dictationAutosaveCalls") === 0, "detached target accepts a terminal transcript");
+
+  appEval(`
+    scheduleAutosave = __dictationOriginalScheduleAutosave;
+    saveCurrentDraftNow = __dictationMaintainedSaveCurrentDraftNow;
+  `);
+
+  const dictationRaceCases = [
+    { source: "main", screen: "quick", targetId: "quick-text", viewField: "quickGrabDraftText" },
+    { source: "today", screen: "today", targetId: "today-capture-text", viewField: "todayCaptureDraftText" },
+    { source: "profile", screen: "person", targetId: "profile-capture-text", viewField: "profileCaptureDraftText", usesPerson: true }
+  ];
+
+  for (const fixture of dictationRaceCases) {
+    resetApp(fixture.usesPerson ? "demoData()" : "emptyData()");
+    const personId = fixture.usesPerson ? appEval("db.people[0].id") : "";
+    const baseline = `${fixture.source} persisted baseline`;
+    const transcript = `${fixture.source} recognized words`;
+    const committed = `${baseline}\n${transcript}`;
+    sandbox.__dictationRaceFixture = { ...fixture, personId, baseline };
+    appEval(`(() => {
+      const fixture = globalThis.__dictationRaceFixture;
+      settings = normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        enableAutoSave: true,
+        enableVoiceCapture: true,
+        voiceCaptureDisclosureVersion: VOICE_CAPTURE_DISCLOSURE_VERSION,
+        autoMemoryVaultEnabled: false,
+        localEncryptionEnabled: false
+      });
+      view.screen = fixture.screen;
+      view.personId = fixture.personId || null;
+      view.quickGrabDraftText = fixture.source === "main" ? fixture.baseline : "";
+      view.todayCaptureDraftText = fixture.source === "today" ? fixture.baseline : "";
+      view.profileCaptureOwnerId = fixture.personId || "";
+      view.profileCapturePersonId = fixture.personId || "";
+      view.profileCaptureDraftText = fixture.source === "profile" ? fixture.baseline : "";
+      view.profileCaptureDraftTargetId = fixture.personId || "";
+      autosaveDraftsCache = {};
+      const key = captureDraftKey(fixture.source, fixture.personId);
+      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+        [key]: {
+          key,
+          fields: { [fixture.targetId]: fixture.baseline },
+          screen: fixture.screen,
+          updatedAt: "2026-07-19T00:00:00.000Z"
+        }
+      }));
+      globalThis.__dictationRaceKey = key;
+      globalThis.__dictationPersistenceCalls = 0;
+      globalThis.__dictationSuccessPersistedValue = null;
+      globalThis.__dictationOriginalSaveAutosaveDrafts = saveAutosaveDrafts;
+      globalThis.__dictationOriginalShowToast = showToast;
+      saveAutosaveDrafts = drafts => {
+        globalThis.__dictationPersistenceCalls += 1;
+        return globalThis.__dictationOriginalSaveAutosaveDrafts(drafts);
+      };
+      showToast = (message, type) => {
+        if (message === "Dictation added to this draft.") {
+          globalThis.__dictationSuccessPersistedValue = loadAutosaveDrafts()[globalThis.__dictationRaceKey]?.fields?.[fixture.targetId] ?? null;
+        }
+        return globalThis.__dictationOriginalShowToast(message, type);
+      };
+    })()`);
+    textarea = makeElement(fixture.targetId);
+    textarea.tagName = "TEXTAREA";
+    textarea.value = baseline;
+    textarea.isConnected = true;
+    if (fixture.usesPerson) {
+      textarea.closest = selector => selector === '[data-capture-composer="profile"]'
+        ? { dataset: { personId } }
+        : null;
+    }
+    sandbox.window.SpeechRecognition = function Recognition() {
+      sandbox.__dictationRaceRecognition = this;
+      this.start = () => {};
+      this.abort = () => {};
+    };
+    appEval(`openDictationConsentSheet(${JSON.stringify(fixture.targetId)})`);
+    makeElement("dictation-confirm").checked = true;
+    appEval("submitDictationStartSheet()");
+    appEval("scheduleAutosave()");
+    const lateResult = sandbox.__dictationRaceRecognition.onresult;
+    const lateEnd = sandbox.__dictationRaceRecognition.onend;
+    lateResult({ results: [Object.assign([{ transcript }], { isFinal: true })] });
+    lateEnd();
+    const persistedImmediately = appEval("loadAutosaveDrafts()[__dictationRaceKey]?.fields?.[__dictationRaceFixture.targetId] || ''");
+    check(textarea.value === committed, `${fixture.source} successful onend does not append the recognized words`);
+    check(appEval(`String(view[${JSON.stringify(fixture.viewField)}] || "")`) === committed, `${fixture.source} successful onend does not synchronize the current view draft`);
+    check(persistedImmediately === committed && appEval("__dictationPersistenceCalls") === 1 && appEval("autosaveTimer") === null, `${fixture.source} successful onend does not synchronously replace the older autosave exactly once`);
+    check(appEval("__dictationSuccessPersistedValue") === committed, `${fixture.source} announces success before the current draft is persisted`);
+    appEval(`openDictationConsentSheet(${JSON.stringify(fixture.targetId)})`);
+    check(textarea.value === committed && appEval(`String(view[${JSON.stringify(fixture.viewField)}] || "")`) === committed, `${fixture.source} immediate Dictate reopen restores the older autosave over the recognized words`);
+    lateResult({ results: [Object.assign([{ transcript: `${fixture.source} late duplicate words` }], { isFinal: true })] });
+    lateEnd();
+    await new Promise(resolve => setTimeout(resolve, 230));
+    const settledDraft = appEval("loadAutosaveDrafts()[__dictationRaceKey]?.fields?.[__dictationRaceFixture.targetId] || ''");
+    check(textarea.value === committed && settledDraft === committed && appEval("__dictationPersistenceCalls") === 1, `${fixture.source} stale timer or late events duplicate or replace the committed draft`);
+    appEval(`
+      closeSheet();
+      saveAutosaveDrafts = globalThis.__dictationOriginalSaveAutosaveDrafts;
+      showToast = globalThis.__dictationOriginalShowToast;
+    `);
+  }
+
+  for (const fixture of dictationRaceCases) {
+    resetApp(fixture.usesPerson ? "demoData()" : "emptyData()");
+    const personId = fixture.usesPerson ? appEval("db.people[0].id") : "";
+    const baseline = `${fixture.source} autosave-off baseline`;
+    const transcript = `${fixture.source} autosave-off words`;
+    const committed = `${baseline}\n${transcript}`;
+    sandbox.__dictationRaceFixture = { ...fixture, personId, baseline };
+    appEval(`(() => {
+      const fixture = globalThis.__dictationRaceFixture;
+      settings = normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        enableAutoSave: false,
+        enableVoiceCapture: true,
+        voiceCaptureDisclosureVersion: VOICE_CAPTURE_DISCLOSURE_VERSION,
+        autoMemoryVaultEnabled: false,
+        localEncryptionEnabled: false
+      });
+      view.screen = fixture.screen;
+      view.personId = fixture.personId || null;
+      view.quickGrabDraftText = fixture.source === "main" ? fixture.baseline : "";
+      view.todayCaptureDraftText = fixture.source === "today" ? fixture.baseline : "";
+      view.profileCaptureOwnerId = fixture.personId || "";
+      view.profileCapturePersonId = fixture.personId || "";
+      view.profileCaptureDraftText = fixture.source === "profile" ? fixture.baseline : "";
+      view.profileCaptureDraftTargetId = fixture.personId || "";
+      autosaveDraftsCache = {};
+      localStorage.removeItem(AUTOSAVE_KEY);
+      globalThis.__dictationPersistenceCalls = 0;
+      globalThis.__dictationOriginalSaveAutosaveDrafts = saveAutosaveDrafts;
+      saveAutosaveDrafts = drafts => {
+        globalThis.__dictationPersistenceCalls += 1;
+        return globalThis.__dictationOriginalSaveAutosaveDrafts(drafts);
+      };
+    })()`);
+    textarea = makeElement(fixture.targetId);
+    textarea.tagName = "TEXTAREA";
+    textarea.value = baseline;
+    textarea.isConnected = true;
+    if (fixture.usesPerson) {
+      textarea.closest = selector => selector === '[data-capture-composer="profile"]'
+        ? { dataset: { personId } }
+        : null;
+    }
+    sandbox.window.SpeechRecognition = function Recognition() {
+      sandbox.__dictationAutosaveOffRecognition = this;
+      this.start = () => {};
+      this.abort = () => {};
+    };
+    appEval(`openDictationConsentSheet(${JSON.stringify(fixture.targetId)})`);
+    makeElement("dictation-confirm").checked = true;
+    appEval("submitDictationStartSheet()");
+    sandbox.__dictationAutosaveOffRecognition.onresult({ results: [Object.assign([{ transcript }], { isFinal: true })] });
+    sandbox.__dictationAutosaveOffRecognition.onend();
+    const composerMarkup = appEval(`renderCaptureComposer({
+      source: ${JSON.stringify(fixture.source)},
+      personId: ${JSON.stringify(personId)}
+    })`);
+    appEval(`openDictationConsentSheet(${JSON.stringify(fixture.targetId)})`);
+    check(textarea.value === committed && appEval(`String(view[${JSON.stringify(fixture.viewField)}] || "")`) === committed && composerMarkup.includes(committed), `${fixture.source} autosave-off dictation does not retain the current view draft across immediate render`);
+    check(appEval("localStorage.getItem(AUTOSAVE_KEY)") === null && appEval("Object.keys(autosaveDraftsCache).length") === 0 && appEval("__dictationPersistenceCalls") === 0, `${fixture.source} autosave-off dictation creates draft persistence`);
+    appEval(`
+      closeSheet();
+      saveAutosaveDrafts = globalThis.__dictationOriginalSaveAutosaveDrafts;
+    `);
+  }
+
+  for (const failureMode of ["false", "throw"]) {
+    resetApp();
+    const baseline = `${failureMode} persistence baseline`;
+    appEval(`
+      settings = normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        enableAutoSave: true,
+        enableVoiceCapture: true,
+        voiceCaptureDisclosureVersion: VOICE_CAPTURE_DISCLOSURE_VERSION,
+        autoMemoryVaultEnabled: false,
+        localEncryptionEnabled: false
+      });
+      view.screen = "quick";
+      view.quickGrabDraftText = ${JSON.stringify(baseline)};
+      localStorage.removeItem(AUTOSAVE_KEY);
+      autosaveDraftsCache = {};
+      globalThis.__dictationFailureOriginalSaveCurrentDraftNow = saveCurrentDraftNow;
+      saveCurrentDraftNow = () => {
+        ${failureMode === "throw" ? 'throw new Error("synthetic private persistence detail");' : "return false;"}
+      };
+    `);
+    textarea = makeElement("quick-text");
+    textarea.tagName = "TEXTAREA";
+    textarea.value = baseline;
+    textarea.isConnected = true;
+    if (failureMode === "false") textarea.dataset.captureMethod = "keyboard";
+    else delete textarea.dataset.captureMethod;
+    const hadCaptureMethod = Object.prototype.hasOwnProperty.call(textarea.dataset, "captureMethod");
+    const priorCaptureMethod = textarea.dataset.captureMethod;
+    sandbox.window.SpeechRecognition = function Recognition() {
+      sandbox.__dictationPersistenceFailureRecognition = this;
+      this.start = () => {};
+      this.abort = () => {};
+    };
+    appEval('openDictationConsentSheet("quick-text")');
+    makeElement("dictation-confirm").checked = true;
+    appEval("submitDictationStartSheet()");
+    sandbox.__dictationPersistenceFailureRecognition.onresult({ results: [Object.assign([{ transcript: "must roll back" }], { isFinal: true })] });
+    const failureResult = sandbox.__dictationPersistenceFailureRecognition.onend();
+    check(failureResult === false && textarea.value === baseline && appEval("view.quickGrabDraftText") === baseline, `${failureMode} draft persistence failure does not roll target and view back exactly`);
+    check(Object.prototype.hasOwnProperty.call(textarea.dataset, "captureMethod") === hadCaptureMethod && textarea.dataset.captureMethod === priorCaptureMethod, `${failureMode} draft persistence failure does not restore capture-method metadata exactly`);
+    check(appEval("localStorage.getItem(AUTOSAVE_KEY)") === null && appEval("Object.keys(autosaveDraftsCache).length") === 0 && appEval("activeDictationSession") === null, `${failureMode} draft persistence failure leaves saved or active dictation state`);
+    check(!makeElement("toast").textContent.includes("must roll back") && !makeElement("toast").textContent.includes("synthetic private persistence detail") && !makeElement("toast").textContent.includes("Dictation added"), `${failureMode} draft persistence failure exposes content or announces success`);
+    appEval("saveCurrentDraftNow = globalThis.__dictationFailureOriginalSaveCurrentDraftNow");
+  }
+
+  resetApp();
+  const vaultFailureBaseline = "Device Vault failure baseline";
+  appEval(`
+    settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      enableAutoSave: true,
+      enableVoiceCapture: true,
+      voiceCaptureDisclosureVersion: VOICE_CAPTURE_DISCLOSURE_VERSION,
+      autoMemoryVaultEnabled: false,
+      localEncryptionEnabled: true
+    });
+    view.screen = "quick";
+    view.quickGrabDraftText = ${JSON.stringify(vaultFailureBaseline)};
+    autosaveDraftsCache = {
+      "capture:main": {
+        key: "capture:main",
+        fields: { "quick-text": ${JSON.stringify(vaultFailureBaseline)} },
+        screen: "quick",
+        updatedAt: "2026-07-19T00:00:00.000Z"
+      }
+    };
+  `);
+  textarea = makeElement("quick-text");
+  textarea.tagName = "TEXTAREA";
+  textarea.value = vaultFailureBaseline;
+  textarea.isConnected = true;
+  textarea.dataset.captureMethod = "keyboard";
+  const originalRemoveItem = sandbox.localStorage.removeItem;
+  sandbox.localStorage.removeItem = key => {
+    if (key === appEval("AUTOSAVE_KEY")) throw new Error("synthetic private vault cleanup detail");
+    return originalRemoveItem.call(sandbox.localStorage, key);
+  };
+  sandbox.window.SpeechRecognition = function Recognition() {
+    sandbox.__dictationVaultFailureRecognition = this;
+    this.start = () => {};
+    this.abort = () => {};
+  };
+  appEval('openDictationConsentSheet("quick-text")');
+  makeElement("dictation-confirm").checked = true;
+  appEval("submitDictationStartSheet()");
+  sandbox.__dictationVaultFailureRecognition.onresult({ results: [Object.assign([{ transcript: "must not remain in cache" }], { isFinal: true })] });
+  const vaultFailureResult = sandbox.__dictationVaultFailureRecognition.onend();
+  sandbox.localStorage.removeItem = originalRemoveItem;
+  check(vaultFailureResult === false && textarea.value === vaultFailureBaseline && appEval("view.quickGrabDraftText") === vaultFailureBaseline && textarea.dataset.captureMethod === "keyboard", "Device Vault cache-write failure does not restore target, view, and capture method");
+  check(appEval('autosaveDraftsCache["capture:main"]?.fields?.["quick-text"]') === vaultFailureBaseline && appEval("activeDictationSession") === null, "Device Vault cache-write failure retains the recognized words or active session");
+  check(!makeElement("toast").textContent.includes("must not remain") && !makeElement("toast").textContent.includes("synthetic private vault cleanup detail") && !makeElement("toast").textContent.includes("Dictation added"), "Device Vault cache-write failure exposes content or announces success");
+
+  resetApp();
+  const vaultBaseline = "Device Vault cache baseline";
+  const vaultTranscript = "Device Vault recognized words";
+  const vaultCommitted = `${vaultBaseline}\n${vaultTranscript}`;
+  appEval(`
+    settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      enableAutoSave: true,
+      enableVoiceCapture: true,
+      voiceCaptureDisclosureVersion: VOICE_CAPTURE_DISCLOSURE_VERSION,
+      autoMemoryVaultEnabled: false,
+      localEncryptionEnabled: true
+    });
+    view.screen = "quick";
+    view.quickGrabDraftText = ${JSON.stringify(vaultBaseline)};
+    localStorage.removeItem(AUTOSAVE_KEY);
+    autosaveDraftsCache = {
+      "capture:main": {
+        key: "capture:main",
+        fields: { "quick-text": ${JSON.stringify(vaultBaseline)} },
+        screen: "quick",
+        updatedAt: "2026-07-19T00:00:00.000Z"
+      }
+    };
+    globalThis.__dictationVaultScheduleCalls = 0;
+    globalThis.__dictationOriginalScheduleVaultSave = scheduleVaultSave;
+    scheduleVaultSave = () => { globalThis.__dictationVaultScheduleCalls += 1; return true; };
+  `);
+  textarea = makeElement("quick-text");
+  textarea.tagName = "TEXTAREA";
+  textarea.value = vaultBaseline;
+  textarea.isConnected = true;
+  sandbox.window.SpeechRecognition = function Recognition() {
+    sandbox.__dictationVaultRecognition = this;
+    this.start = () => {};
+    this.abort = () => {};
+  };
+  appEval('openDictationConsentSheet("quick-text")');
+  makeElement("dictation-confirm").checked = true;
+  appEval("submitDictationStartSheet()");
+  appEval("scheduleAutosave()");
+  sandbox.__dictationVaultRecognition.onresult({ results: [Object.assign([{ transcript: vaultTranscript }], { isFinal: true })] });
+  sandbox.__dictationVaultRecognition.onend();
+  appEval('openDictationConsentSheet("quick-text")');
+  check(textarea.value === vaultCommitted && appEval("view.quickGrabDraftText") === vaultCommitted && appEval('autosaveDraftsCache["capture:main"]?.fields?.["quick-text"]') === vaultCommitted, "Device Vault dictation does not update the current cache before immediate render");
+  check(appEval("localStorage.getItem(AUTOSAVE_KEY)") === null && appEval("__dictationVaultScheduleCalls") === 1 && appEval("autosaveTimer") === null, "Device Vault dictation creates plaintext autosave, duplicate schedule, or stale timer state");
+  appEval(`
+    closeSheet();
+    scheduleVaultSave = globalThis.__dictationOriginalScheduleVaultSave;
+  `);
+
+  if (failures.length) throw new Error(`Dictation privacy boundary failures: ${failures.join("; ")}`);
+  assert(true, "dictation defaults off, discloses before use, and commits one draft only at successful terminal completion");
 }
 
 function testUnifiedCaptureAndProposalSafety() {
@@ -728,7 +1554,7 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
   assert(quotaBoundary.threw && quotaBoundary.events.length === 1 && quotaBoundary.events[0] === "threw", "quota failure does not mirror an uncommitted IndexedDB record before surfacing an unconfirmed save");
 
   resetApp("emptyData()");
-  const restoreRollback = appEval(`(() => {
+  const restoreRollback = await appEval(`(async () => {
     settings.autoMemoryVaultEnabled = false;
     const original = createPerson("Original Restore Person");
     saveData();
@@ -743,7 +1569,7 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
       if (key === STORAGE_KEY) throw new Error("synthetic restore quota");
       return originalSet.call(localStorage, key, value);
     };
-    const restored = applyRestoredPayload(payload, { captureBefore: false });
+    const restored = await applyRestoredPayload(payload, { captureBefore: false });
     localStorage.setItem = originalSet;
     return {
       restored,
@@ -758,7 +1584,7 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
   assert(restoreRollback.storageSame && restoreRollback.settingsSame, "failed backup restore preserves the prior persisted data and settings");
 
   resetApp("emptyData()");
-  const vaultDisableRollback = appEval(`(() => {
+  const vaultDisableRollback = await appEval(`(async () => {
     settings.localEncryptionEnabled = true;
     settings.localEncryptionHint = "keep";
     vaultPassphrase = "synthetic-passphrase";
@@ -773,7 +1599,7 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
       if (key === COPY_KEY) throw new Error("synthetic plaintext quota");
       return originalSet.call(localStorage, key, value);
     };
-    const disabled = disableLocalEncryptionRecord();
+    const disabled = await disableLocalEncryptionRecord();
     localStorage.setItem = originalSet;
     return {
       disabled,
@@ -794,7 +1620,19 @@ async function testAiApprovalWaitsForDurablePersistence() {
     settings.enableAutoSave = true;
     settings.localEncryptionEnabled = true;
     vaultPassphrase = "synthetic-vault-passphrase";
-    memoryVaultCache = { version: 1, snapshots: [{ id: "memory-before", label: "Before approval" }] };
+    memoryVaultCache = {
+      version: 1,
+      updatedAt: "2026-07-20T00:00:00.000Z",
+      snapshots: [{
+        id: "memory-before",
+        savedAt: "2026-07-20T00:00:00.000Z",
+        label: "Before approval",
+        appVersion: "synthetic-v38",
+        summary: "Fictional empty state",
+        signature: "fictional-memory-before",
+        payload: cloneJson({ ...currentPortablePayload(), exportedAt: "2026-07-20T00:00:00.000Z" })
+      }]
+    };
     const person = createPerson("Durable Approval Person");
     const proposal = emptyAiProposal({
       id: "durable-pending-proposal",
@@ -870,7 +1708,19 @@ async function testAiApprovalWaitsForDurablePersistence() {
     settings.enableAutoSave = true;
     settings.localEncryptionEnabled = true;
     vaultPassphrase = "synthetic-vault-passphrase";
-    memoryVaultCache = { version: 1, snapshots: [{ id: "memory-failure", label: "Failure baseline" }] };
+    memoryVaultCache = {
+      version: 1,
+      updatedAt: "2026-07-20T00:00:00.000Z",
+      snapshots: [{
+        id: "memory-failure",
+        savedAt: "2026-07-20T00:00:00.000Z",
+        label: "Failure baseline",
+        appVersion: "synthetic-v38",
+        summary: "Fictional empty state",
+        signature: "fictional-memory-failure",
+        payload: cloneJson({ ...currentPortablePayload(), exportedAt: "2026-07-20T00:00:00.000Z" })
+      }]
+    };
     const person = createPerson("Failure Approval Person");
     const proposal = emptyAiProposal({
       id: "durable-failure-proposal",
@@ -966,6 +1816,97 @@ async function testAiApprovalWaitsForDurablePersistence() {
   const plainWrites = appEval("__plainStorageWrites");
   appEval("persistPlainRecord = __originalPersistPlainRecord");
   assert(plainFirst === true && plainSecond === false && db().tasks.length === 1 && plainWrites === 1, "plain-mode AI approval persists selected actions exactly once and rejects re-entry");
+}
+
+async function testRestoreAndUndoTransactions() {
+  resetApp("emptyData()");
+  const original = appEval(`(() => {
+    settings.enableAutoSave = true;
+    settings.autoMemoryVaultEnabled = false;
+    settings.launchScreen = "today";
+    db.people = [{ id: "person_before_restore", name: "Before Restore" }];
+    customCopy = { "brand.title": "Before copy" };
+    const drafts = { "capture:main": { fields: { "quick-text": "Before draft" } } };
+    saveSettings();
+    saveData();
+    saveCustomCopy();
+    saveAutosaveDrafts(drafts);
+    return {
+      db: JSON.stringify(db),
+      settings: JSON.stringify(settings),
+      copy: JSON.stringify(customCopy),
+      drafts: JSON.stringify(loadAutosaveDrafts())
+    };
+  })()`);
+  sandbox.__restorePayload = appEval(`(() => {
+    const payload = cloneJson(currentPortablePayload());
+    payload.data.people = [{ id: "person_after_restore", name: "After Restore" }];
+    payload.settings = { ...payload.settings, launchScreen: "people", enableAutoSave: true, enableUndo: true, autoMemoryVaultEnabled: false };
+    payload.customCopy = { "brand.title": "Imported copy" };
+    payload.autosaveDrafts = { "capture:main": { fields: { "quick-text": "Imported draft" } } };
+    return payload;
+  })()`);
+  const restored = await appEval("applyRestoredPayload(__restorePayload)");
+  const undone = await appEval("undoLast()");
+  const afterUndo = appEval(`({
+    db: JSON.stringify(db),
+    settings: JSON.stringify(settings),
+    copy: JSON.stringify(customCopy),
+    drafts: JSON.stringify(loadAutosaveDrafts()),
+    undoCount: undoStack.length
+  })`);
+  assert(restored === true && undone === true && afterUndo.db === original.db && afterUndo.settings === original.settings && afterUndo.copy === original.copy && afterUndo.drafts === original.drafts, "backup restore followed by Undo restores the exact prior records, settings, wording, and draft");
+  assert(afterUndo.undoCount === 0, "successful restore Undo consumes exactly its one owned entry");
+
+  resetApp("emptyData()");
+  const ordinaryDraft = await appEval(`(async () => {
+    settings.enableAutoSave = true;
+    settings.autoMemoryVaultEnabled = false;
+    db.people = [{ id: "ordinary_person", name: "Before ordinary edit" }];
+    recordUndo("ordinary record edit");
+    db.people[0].name = "After ordinary edit";
+    saveAutosaveDrafts({ "capture:main": { fields: { "quick-text": "New unrelated draft" } } });
+    const result = await undoLast();
+    return { result, name: db.people[0].name, draft: loadAutosaveDrafts()["capture:main"]?.fields?.["quick-text"] };
+  })()`);
+  assert(ordinaryDraft.result === true && ordinaryDraft.name === "Before ordinary edit" && ordinaryDraft.draft === "New unrelated draft", "ordinary record Undo preserves a newer unrelated draft");
+
+  resetApp("emptyData()");
+  const failedRestore = await appEval(`(async () => {
+    settings.autoMemoryVaultEnabled = false;
+    db.people = [{ id: "restore_failure_person", name: "Restore failure baseline" }];
+    undoStack = [{ label: "existing undo", db: cloneJson(db), settings: cloneJson(settings), customCopy: {} }];
+    const beforeUndo = JSON.stringify(undoStack);
+    const payload = cloneJson(currentPortablePayload());
+    payload.data.people = [{ id: "replacement_failure_person", name: "Must not persist" }];
+    const originalSet = localStorage.setItem;
+    localStorage.setItem = function(key, value) {
+      if (key === STORAGE_KEY) throw new Error("synthetic restore failure");
+      return originalSet.call(localStorage, key, value);
+    };
+    let result = false;
+    try { result = await applyRestoredPayload(payload, { captureBefore: false }); } finally { localStorage.setItem = originalSet; }
+    return { result, beforeUndo, afterUndo: JSON.stringify(undoStack) };
+  })()`);
+  assert(failedRestore.result === false && failedRestore.afterUndo === failedRestore.beforeUndo, "forced restore failure leaves the prior Undo stack byte-identical");
+
+  resetApp("emptyData()");
+  const plainUndoFailure = await appEval(`(async () => {
+    settings.autoMemoryVaultEnabled = false;
+    db.people = [{ id: "plain_retry", name: "Current state" }];
+    undoStack = [{ label: "plain retry", db: normalizeData({ ...emptyData(), people: [{ id: "plain_retry", name: "Undo target" }] }), settings: cloneJson(settings), customCopy: {} }];
+    saveData();
+    const before = { db: JSON.stringify(db), undo: JSON.stringify(undoStack), storage: localStorage.getItem(STORAGE_KEY) };
+    const originalSet = localStorage.setItem;
+    localStorage.setItem = function(key, value) {
+      if (key === STORAGE_KEY) throw new Error("synthetic undo persistence failure");
+      return originalSet.call(localStorage, key, value);
+    };
+    let result = false;
+    try { result = await undoLast(); } catch (error) { result = false; } finally { localStorage.setItem = originalSet; }
+    return { result, before, after: { db: JSON.stringify(db), undo: JSON.stringify(undoStack), storage: localStorage.getItem(STORAGE_KEY) } };
+  })()`);
+  assert(plainUndoFailure.result === false && JSON.stringify(plainUndoFailure.after) === JSON.stringify(plainUndoFailure.before), "plain Undo persistence failure restores exact state and leaves the same entry retryable");
 }
 
 function testCoreLocalActions() {
@@ -1558,20 +2499,220 @@ function testExportAndPrivacyHelpers() {
 
   const backupHealthMarkup = appEval("renderBackupHealthCard()");
   assert(backupHealthMarkup.includes("Backup Health"), "backup health card renders in settings");
-  assert(appEval("backupHealthState().label") === "No backup yet", "backup health notices missing backup");
+  assert(appEval("backupHealthState().label") === "No download initiated", "backup health truthfully notices missing download initiation");
   assert(appEval("backupHealthState().action") === "export-encrypted-json", "backup health chooses encrypted action for sensitive data");
 
+  appEval(`settings.backupReminderDays = "7"`);
   appEval("exportJson()");
   assert(downloadEvents.length === 1 && downloadEvents[0].download.includes("ruf-ministry-hub-export-"), "JSON export triggers a download");
   assert(appEval("settings.lastBackupAt") !== "", "JSON export records backup timestamp");
-  assert(appEval("backupHealthState().label") !== "No backup yet", "backup health updates after export");
+  assert(appEval("backupHealthState().label") === "Download initiated today", "backup health records only the browser download initiation after export");
+
+  const readinessBackupRow = markup => {
+    const start = markup.indexOf("Backup Rhythm");
+    const end = markup.indexOf("</article>", start);
+    return start < 0 || end < 0 ? "" : markup.slice(start, end);
+  };
+  const readinessCases = [
+    { label: "missing backup with reminder off", reminder: "0", last: "", ready: false, text: "Reminder Off" },
+    { label: "missing backup with reminder on", reminder: "7", last: "", ready: false },
+    { label: "malformed backup timestamp", reminder: "7", last: "not-a-date", ready: false },
+    { label: "stale backup with reminder on", reminder: "7", last: appEval("daysAgo(8)"), ready: false },
+    { label: "fresh backup with reminder off", reminder: "0", last: appEval("nowISO()"), ready: false, text: "Reminder Off" },
+    { label: "fresh backup with reminder on", reminder: "7", last: appEval("nowISO()"), ready: true }
+  ];
+  readinessCases.forEach(fixture => {
+    sandbox.__readinessFixture = fixture;
+    const row = readinessBackupRow(appEval(`
+      settings.backupReminderDays = globalThis.__readinessFixture.reminder;
+      settings.lastBackupAt = globalThis.__readinessFixture.last;
+      renderReadinessCheck();
+    `));
+    assert(row.includes(fixture.ready ? "Ready" : "Needs Work"), `iPhone readiness classifies ${fixture.label} truthfully`);
+    if (fixture.text) assert(row.includes(fixture.text), `iPhone readiness explains ${fixture.label}`);
+  });
+
+  const backupTruthCases = [
+    { label: "absent initiation", reminder: "7", last: "", healthLabel: "No download initiated", healthTone: "rose", status: "No backup download initiation has been recorded" },
+    { label: "invalid initiation", reminder: "7", last: "not-a-date", healthLabel: "No download initiated", healthTone: "rose", status: "No valid backup download initiation has been recorded" },
+    { label: "reminder off", reminder: "0", last: appEval("nowISO()"), healthLabel: "Reminder off", healthTone: "gray", status: "Backup download initiated" },
+    { label: "initiation due", reminder: "7", last: appEval("daysAgo(8)"), healthLabel: "Download initiation due", healthTone: "gold", status: "Backup download initiated" },
+    { label: "current initiation", reminder: "7", last: appEval("nowISO()"), healthLabel: "Download initiated today", healthTone: "green", status: "Backup download initiated" }
+  ];
+  const forbiddenBackupClaims = ["Backed up today", "Backup current", "Last export", "current or off"];
+  backupTruthCases.forEach(fixture => {
+    sandbox.__backupTruthFixture = fixture;
+    const copy = appEval(`(() => {
+      settings.backupReminderDays = globalThis.__backupTruthFixture.reminder;
+      settings.lastBackupAt = globalThis.__backupTruthFixture.last;
+      const health = backupHealthState();
+      const recordsByCollection = weeklyResetAllowedRecordsByCollection();
+      const findings = weeklyResetFindings(recordsByCollection);
+      const context = buildWeeklyResetContextReview();
+      const plan = weeklyResetPlanFromFindings(findings, context);
+      return {
+        health,
+        status: backupStatusText(),
+        weekly: [
+          weeklyResetContextSummary(recordsByCollection, findings),
+          context.used.find(item => item.label === "Backup status")?.summary || "",
+          context.warnings.find(item => /backup/i.test(item)) || "",
+          plan.tenMinutePlan.at(-1),
+          plan.thirtyMinutePlan.at(-1),
+          plan.adminCleanup.at(-1),
+          plan.backupReminder,
+          plan.contextSummary
+        ]
+      };
+    })()`);
+    const allBackupCopy = JSON.stringify(copy);
+    assert(copy.health.label === fixture.healthLabel && copy.health.tone === fixture.healthTone, `Backup Health distinguishes ${fixture.label}`);
+    assert(copy.status.includes(fixture.status), `backup status identifies ${fixture.label} as initiation metadata`);
+    assert(copy.health.detail.includes("Files") && copy.weekly.filter(Boolean).every(value => value.includes("Files")), `Backup Health and Weekly Reset direct ${fixture.label} confirmation to Files`);
+    assert(forbiddenBackupClaims.every(claim => !allBackupCopy.includes(claim)), `Backup Health and Weekly Reset avoid durable-file claims for ${fixture.label}`);
+  });
+
+  const appManual = appEval("renderAppManual()");
+  const backupGuideStart = appManual.indexOf("Back up and restore");
+  const backupGuideEnd = appManual.indexOf("Install on iPhone Home Screen", backupGuideStart);
+  const backupGuide = backupGuideStart >= 0 && backupGuideEnd > backupGuideStart
+    ? appManual.slice(backupGuideStart, backupGuideEnd)
+    : "";
+  assert(backupGuide.includes("download-initiation status") && backupGuide.includes("browser to start a JSON backup download") && backupGuide.includes("browser to start an encrypted backup download"), "complete in-app backup guide describes export only as browser download initiation");
+  assert(backupGuide.includes("confirm the expected non-zero file appears in Files before relying on it"), "complete in-app backup guide requires Files confirmation before reliance");
+  assert(backupGuide.includes("To restore, choose a JSON backup file with Restore from backup file.") && backupGuide.includes("If the file is encrypted, enter the backup passphrase."), "backup guide preserves selected-file restore and encrypted-import wording");
+  ["a backup is missing, due, current", "normal backup file", "make a protected backup file"].forEach(claim => {
+    assert(!backupGuide.includes(claim), `complete in-app backup guide avoids stale file-existence claim: ${claim}`);
+  });
+
+  const originalCreateElement = sandbox.document.createElement;
+  const originalAppendChild = sandbox.document.body.appendChild;
+  const originalCreateObjectURL = sandbox.URL.createObjectURL;
+  const originalRevokeObjectURL = sandbox.URL.revokeObjectURL;
+  const cleanup = { remove: 0, revoke: 0, click: 0 };
+  sandbox.document.createElement = () => ({
+    href: "",
+    download: "",
+    click() { cleanup.click += 1; },
+    remove() { cleanup.remove += 1; }
+  });
+  sandbox.document.body.appendChild = value => value;
+  sandbox.URL.createObjectURL = () => "blob:cleanup-success";
+  sandbox.URL.revokeObjectURL = () => { cleanup.revoke += 1; };
+  try {
+    appEval(`downloadJson({ fixture: "synthetic" }, "synthetic.json")`);
+    assert(cleanup.click === 1 && cleanup.remove === 1 && cleanup.revoke === 1, "download helper removes its anchor and revokes its URL exactly once after success");
+    cleanup.remove = 0;
+    cleanup.revoke = 0;
+    cleanup.click = 0;
+    sandbox.document.createElement = () => ({
+      href: "",
+      download: "",
+      click() { cleanup.click += 1; throw new Error("synthetic click failure"); },
+      remove() { cleanup.remove += 1; }
+    });
+    const failedCleanup = appEval(`(() => { try { downloadJson({ fixture: "synthetic" }, "synthetic.json"); return false; } catch (error) { return true; } })()`);
+    assert(failedCleanup && cleanup.click === 1 && cleanup.remove === 1 && cleanup.revoke === 1, "download helper removes its anchor and revokes its URL exactly once when click throws");
+    cleanup.remove = 0;
+    cleanup.revoke = 0;
+    cleanup.click = 0;
+    sandbox.URL.createObjectURL = () => { throw new Error("synthetic object URL failure"); };
+    const failedObjectUrl = appEval(`(() => { try { downloadJson({ fixture: "synthetic" }, "synthetic.json"); return false; } catch (error) { return true; } })()`);
+    assert(failedObjectUrl && cleanup.click === 0 && cleanup.remove === 0 && cleanup.revoke === 0, "download helper creates no cleanup debt when object URL creation fails");
+    cleanup.remove = 0;
+    cleanup.revoke = 0;
+    cleanup.click = 0;
+    sandbox.URL.createObjectURL = () => "blob:cleanup-append-failure";
+    sandbox.document.body.appendChild = () => { throw new Error("synthetic anchor insertion failure"); };
+    const failedAppend = appEval(`(() => { try { downloadJson({ fixture: "synthetic" }, "synthetic.json"); return false; } catch (error) { return true; } })()`);
+    assert(failedAppend && cleanup.click === 0 && cleanup.remove === 1 && cleanup.revoke === 1, "download helper cleans its anchor and object URL exactly once when insertion fails");
+  } finally {
+    sandbox.document.createElement = originalCreateElement;
+    sandbox.document.body.appendChild = originalAppendChild;
+    sandbox.URL.createObjectURL = originalCreateObjectURL;
+    sandbox.URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+
+  resetApp("demoData()");
+  appEval(`settings.lastBackupAt = "2026-01-02T03:04:05.000Z"; saveSettings();`);
+  const plainFailureBefore = appEval(`JSON.stringify({
+    settings,
+    persistedSettings: localStorage.getItem(SETTINGS_KEY),
+    db,
+    undoStack,
+    autoMemory: loadAutoMemoryVault(),
+    vaultSaveRequestedRevision,
+    vaultSaveCompletedRevision,
+    vaultPayloadGeneration
+  })`);
+  const plainFailure = appEval(`(() => {
+    const originalDownloadJson = downloadJson;
+    downloadJson = () => { throw new Error("synthetic download initiation failure"); };
+    try {
+      try { return { result: exportJson(), threw: false }; }
+      catch (error) { return { result: null, threw: true }; }
+    } finally {
+      downloadJson = originalDownloadJson;
+    }
+  })()`);
+  const plainFailureAfter = appEval(`JSON.stringify({
+    settings,
+    persistedSettings: localStorage.getItem(SETTINGS_KEY),
+    db,
+    undoStack,
+    autoMemory: loadAutoMemoryVault(),
+    vaultSaveRequestedRevision,
+    vaultSaveCompletedRevision,
+    vaultPayloadGeneration
+  })`);
+  assert(!plainFailure.threw && plainFailure.result === false, "plain export reports a failed download initiation without throwing");
+  assert(plainFailureAfter === plainFailureBefore, "plain export initiation failure preserves live and persisted backup state exactly");
+
+  const exportOrder = appEval(`(() => {
+    const originalDownloadJson = downloadJson;
+    const originalSetItem = localStorage.setItem;
+    const events = [];
+    downloadJson = () => { events.push("download"); return true; };
+    localStorage.setItem = (key, value) => {
+      if (key === SETTINGS_KEY) events.push("settings");
+      return originalSetItem.call(localStorage, key, value);
+    };
+    try { return { result: exportJson(), events, toast: document.getElementById("toast").textContent }; }
+    finally { downloadJson = originalDownloadJson; localStorage.setItem = originalSetItem; }
+  })()`);
+  assert(exportOrder.result === true && exportOrder.events.join("|") === "download|settings", "plain export initiates the download before recording backup status");
+  assert(exportOrder.toast === "Backup download started. Confirm the file appears in Files.", "plain export uses truthful confirmation copy");
+
+  resetApp("demoData()");
+  appEval(`settings.lastBackupAt = "2026-02-03T04:05:06.000Z"; saveSettings();`);
+  const partialBefore = appEval(`({ live: JSON.stringify(settings), persisted: localStorage.getItem(SETTINGS_KEY) })`);
+  const partialResult = appEval(`(() => {
+    const originalDownloadJson = downloadJson;
+    const originalSetItem = localStorage.setItem;
+    const events = [];
+    let failed = false;
+    downloadJson = () => { events.push("download"); return true; };
+    localStorage.setItem = (key, value) => {
+      if (key === SETTINGS_KEY && !failed) {
+        failed = true;
+        events.push("settings");
+        throw new Error("synthetic backup status persistence failure");
+      }
+      return originalSetItem.call(localStorage, key, value);
+    };
+    try { return { result: exportJson(), events, toast: document.getElementById("toast").textContent, live: JSON.stringify(settings), persisted: localStorage.getItem(SETTINGS_KEY) }; }
+    finally { downloadJson = originalDownloadJson; localStorage.setItem = originalSetItem; }
+  })()`);
+  assert(partialResult.result === false && partialResult.events.join("|") === "download|settings", "plain export treats post-download status persistence failure as partial success");
+  assert(partialResult.live === partialBefore.live && partialResult.persisted === partialBefore.persisted, "plain export rolls failed backup-status persistence back exactly");
+  assert(partialResult.toast === "Backup download may have started, but its status was not recorded.", "plain export explains partial success without claiming a recorded backup");
 
   assert(appEval('maskedText(true, "Hidden", "Visible")') === "Hidden", "sensitive previews are masked when enabled");
   appEval("settings.maskSensitivePreviews = false");
   assert(appEval('maskedText(true, "Hidden", "Visible")') === "Visible", "sensitive previews can be revealed by setting");
 }
 
-function testAutoMemoryVault() {
+async function testAutoMemoryVault() {
   resetApp("emptyData()");
   assert(appEval("settings.autoMemoryVaultEnabled") === true, "Auto Memory Vault is on by default");
   assert(appEval("autoMemoryVaultState().label") === "Waiting", "Auto Memory starts waiting for first saved change");
@@ -1590,16 +2731,16 @@ function testAutoMemoryVault() {
   assert(listMarkup.includes("Auto Memory Vault") && listMarkup.includes("Restore"), "Auto Memory restore list renders");
 
   appEval(`openAutoMemorySheet("restore", "${firstSnapshotId}")`);
-  appEval(`submitAutoMemorySheet("restore", "${firstSnapshotId}")`);
+  await appEval(`submitAutoMemorySheet("restore", "${firstSnapshotId}")`);
   assert(db().people.length === 2, "Auto Memory restore sheet blocks unchecked restore");
   makeElement("sheet-auto-memory-confirm").checked = true;
-  appEval(`submitAutoMemorySheet("restore", "${firstSnapshotId}")`);
+  await appEval(`submitAutoMemorySheet("restore", "${firstSnapshotId}")`);
   assert(db().people.length === 1 && db().people[0].name === "Saved Person", "Auto Memory restore replaces current local app state");
 
   const deleteSnapshotId = appEval("loadAutoMemoryVault().snapshots[0].id");
   appEval(`openAutoMemorySheet("delete", "${deleteSnapshotId}")`);
   makeElement("sheet-auto-memory-confirm").checked = true;
-  appEval(`submitAutoMemorySheet("delete", "${deleteSnapshotId}")`);
+  await appEval(`submitAutoMemorySheet("delete", "${deleteSnapshotId}")`);
   assert(appEval(`!loadAutoMemoryVault().snapshots.some(snapshot => snapshot.id === "${deleteSnapshotId}")`), "Auto Memory can delete one restore point");
 
   appEval(`
@@ -1675,6 +2816,129 @@ async function testDataSafetySheets() {
   await appEval('submitDataSafetySheet("encrypted-export")');
   assert(downloadEvents.length === 1 && downloadEvents[0].download.includes("ruf-ministry-hub-encrypted-backup-"), "encrypted export sheet triggers encrypted download");
   assert(view().sheet === null, "encrypted export sheet closes after download");
+
+  resetApp("demoData()");
+  appEval('openDataSafetySheet("encrypted-export")');
+  makeElement("sheet-export-passphrase").value = "synthetic-passphrase";
+  makeElement("sheet-export-confirm").value = "synthetic-passphrase";
+  let resolveProtectedExport;
+  sandbox.__protectedExportGate = new Promise(resolve => { resolveProtectedExport = resolve; });
+  appEval(`
+    globalThis.__originalProtectedEncryptPayload = encryptPayload;
+    globalThis.__originalProtectedDownloadJson = downloadJson;
+    globalThis.__protectedEncryptCalls = 0;
+    globalThis.__protectedDownloads = 0;
+    encryptPayload = () => {
+      globalThis.__protectedEncryptCalls += 1;
+      return globalThis.__protectedExportGate;
+    };
+    downloadJson = () => { globalThis.__protectedDownloads += 1; return true; };
+  `);
+  try {
+    const firstProtectedExport = appEval('submitDataSafetySheet("encrypted-export")');
+    const busyMarkup = appEval("renderSheet()");
+    const secondProtectedExport = await appEval('submitDataSafetySheet("encrypted-export")');
+    const closeWhileBusy = appEval("closeSheet()");
+    assert(appEval("globalThis.__protectedEncryptCalls") === 1 && secondProtectedExport === false, "protected export rejects rapid reentry before a second encryption or download");
+    assert(appEval("Boolean(view.sheet?.backupExportOwnerId) && view.sheet.backupExportOwnerId === activeProtectedBackupExport?.id") && busyMarkup.includes('aria-busy="true"') && busyMarkup.includes("disabled"), "protected export exposes one accessible busy owner and disables its controls");
+    assert(closeWhileBusy === false && view().sheet?.kind === "encrypted-export", "protected export cannot be closed while its current operation owns the sheet");
+    resolveProtectedExport({ kind: "ruf-ministry-hub-encrypted-backup", encryptedAt: "synthetic" });
+    assert(await firstProtectedExport === true, "protected export current owner completes successfully");
+    assert(appEval("globalThis.__protectedDownloads") === 1 && view().sheet === null && !appEval("activeProtectedBackupExport"), "protected export downloads once, clears its owner, and closes only its own sheet");
+    assert(appEval("document.getElementById('toast').textContent") === "Backup download started. Confirm the file appears in Files.", "protected export uses truthful confirmation copy");
+  } finally {
+    appEval(`
+      encryptPayload = globalThis.__originalProtectedEncryptPayload;
+      downloadJson = globalThis.__originalProtectedDownloadJson;
+      delete globalThis.__originalProtectedEncryptPayload;
+      delete globalThis.__originalProtectedDownloadJson;
+      delete globalThis.__protectedEncryptCalls;
+      delete globalThis.__protectedDownloads;
+      delete globalThis.__protectedExportGate;
+    `);
+  }
+
+  resetApp("demoData()");
+  appEval('openDataSafetySheet("encrypted-export")');
+  makeElement("sheet-export-passphrase").value = "retry-passphrase";
+  makeElement("sheet-export-confirm").value = "retry-passphrase";
+  const protectedWarnings = [];
+  const originalWarn = sandbox.console.warn;
+  sandbox.console.warn = (...args) => protectedWarnings.push(args.map(value => String(value)).join(" "));
+  appEval(`
+    globalThis.__originalRetryEncryptPayload = encryptPayload;
+    globalThis.__originalRetryDownloadJson = downloadJson;
+    globalThis.__retryEncryptCalls = 0;
+    globalThis.__retryDownloads = 0;
+    encryptPayload = () => {
+      globalThis.__retryEncryptCalls += 1;
+      if (globalThis.__retryEncryptCalls === 1) return Promise.reject(new Error("synthetic-private-export-marker"));
+      return Promise.resolve({ kind: "ruf-ministry-hub-encrypted-backup", encryptedAt: "synthetic" });
+    };
+    downloadJson = () => { globalThis.__retryDownloads += 1; return true; };
+  `);
+  try {
+    assert(await appEval('submitDataSafetySheet("encrypted-export")') === false, "protected export reports one generic current-owner failure");
+    assert(view().sheet?.kind === "encrypted-export" && !view().sheet?.backupExportOwnerId && !appEval("activeProtectedBackupExport"), "protected export failure clears only the current owner and leaves one retry surface");
+    assert(!protectedWarnings.join("|").includes("synthetic-private-export-marker") && !appEval("document.getElementById('toast').textContent").includes("synthetic-private-export-marker"), "protected export failure emits no content-bearing diagnostic");
+    makeElement("sheet-export-passphrase").value = "retry-passphrase";
+    makeElement("sheet-export-confirm").value = "retry-passphrase";
+    assert(await appEval('submitDataSafetySheet("encrypted-export")') === true, "protected export allows one healthy retry after failure");
+    assert(appEval("globalThis.__retryEncryptCalls === 2 && globalThis.__retryDownloads === 1") && view().sheet === null, "protected export retry creates one new generation and one download");
+  } finally {
+    sandbox.console.warn = originalWarn;
+    appEval(`
+      encryptPayload = globalThis.__originalRetryEncryptPayload;
+      downloadJson = globalThis.__originalRetryDownloadJson;
+      delete globalThis.__originalRetryEncryptPayload;
+      delete globalThis.__originalRetryDownloadJson;
+      delete globalThis.__retryEncryptCalls;
+      delete globalThis.__retryDownloads;
+    `);
+  }
+
+  resetApp("demoData()");
+  appEval(`settings.lastBackupAt = "2026-03-04T05:06:07.000Z"; saveSettings(); openDataSafetySheet("encrypted-export")`);
+  makeElement("sheet-export-passphrase").value = "partial-passphrase";
+  makeElement("sheet-export-confirm").value = "partial-passphrase";
+  const encryptedPartialBefore = appEval(`({ live: JSON.stringify(settings), persisted: localStorage.getItem(SETTINGS_KEY) })`);
+  const encryptedPartial = await appEval(`(async () => {
+    const originalEncryptPayload = encryptPayload;
+    const originalDownloadJson = downloadJson;
+    const originalSetItem = localStorage.setItem;
+    let failed = false;
+    let downloads = 0;
+    encryptPayload = () => Promise.resolve({ kind: "ruf-ministry-hub-encrypted-backup", encryptedAt: "synthetic" });
+    downloadJson = () => { downloads += 1; return true; };
+    localStorage.setItem = (key, value) => {
+      if (key === SETTINGS_KEY && !failed) {
+        failed = true;
+        throw new Error("synthetic encrypted status failure");
+      }
+      return originalSetItem.call(localStorage, key, value);
+    };
+    try {
+      const result = await submitDataSafetySheet("encrypted-export");
+      return {
+        result,
+        downloads,
+        live: JSON.stringify(settings),
+        persisted: localStorage.getItem(SETTINGS_KEY),
+        owner: Boolean(activeProtectedBackupExport),
+        sheetKind: view.sheet?.kind || "",
+        sheetOwner: view.sheet?.backupExportOwnerId || "",
+        toast: document.getElementById("toast").textContent
+      };
+    } finally {
+      encryptPayload = originalEncryptPayload;
+      downloadJson = originalDownloadJson;
+      localStorage.setItem = originalSetItem;
+    }
+  })()`);
+  assert(encryptedPartial.result === false && encryptedPartial.downloads === 1, "encrypted export treats status failure after one accepted click as partial success");
+  assert(encryptedPartial.live === encryptedPartialBefore.live && encryptedPartial.persisted === encryptedPartialBefore.persisted, "encrypted export rolls failed status metadata back exactly");
+  assert(!encryptedPartial.owner && encryptedPartial.sheetKind === "encrypted-export" && !encryptedPartial.sheetOwner, "encrypted partial success clears only its owner and returns one retry surface");
+  assert(encryptedPartial.toast === "Backup download may have started, but its status was not recorded.", "encrypted export uses truthful partial-success copy");
 
   resetApp("emptyData()");
   appEval('settings.resetProtection = false; createPerson("Keep Before Reset", "555-0000"); openDataSafetySheet("reset-demo");');
@@ -1752,7 +3016,170 @@ function testBackupValidationBoundary() {
   assert(!/data-(?:id|person-id|from|to)="\$\{(?!escapeHtml\()/.test(html), "dynamic record identifiers are escaped before HTML attribute interpolation");
 }
 
-function testContextualDatesAndLegacyProfileCompatibility() {
+async function testPortableSchemaClassificationBoundary() {
+  resetApp("emptyData()");
+  const result = await appEval(`(async () => {
+    const base = cloneJson(currentPortablePayload());
+    base.data.people = [{ id: "portable_schema_current", name: "Current fictional record" }];
+    const withoutMarker = (topMarker, nestedMarker) => {
+      const payload = cloneJson(base);
+      delete payload.dataSchemaVersion;
+      delete payload.data.dataSchemaVersion;
+      if (topMarker !== "__absent__") payload.dataSchemaVersion = topMarker;
+      if (nestedMarker !== "__absent__") payload.data.dataSchemaVersion = nestedMarker;
+      return payload;
+    };
+    const positives = [
+      ["absent-absent", "__absent__", "__absent__", null, false, false],
+      ["top-schema-2", 2, "__absent__", 2, true, false],
+      ["nested-schema-2", "__absent__", 2, 2, false, true],
+      ["matching-schema-2", 2, 2, 2, true, true],
+      ["top-schema-3", 3, "__absent__", 3, true, false],
+      ["nested-schema-3", "__absent__", 3, 3, false, true],
+      ["matching-schema-3", 3, 3, 3, true, true]
+    ].map(([name, top, nested, schemaVersion, topPresent, nestedPresent]) => {
+      const payload = withoutMarker(top, nested);
+      if (name === "matching-schema-3") delete payload.data.aiProposals;
+      try {
+        const classification = classifyPortableBackupSchema(payload);
+        validateBackupPayload(payload);
+        return {
+          name,
+          passed: classification.schemaVersion === schemaVersion
+            && classification.topPresent === topPresent
+            && classification.nestedPresent === nestedPresent
+        };
+      } catch (error) {
+        return { name, passed: false, message: error?.message || "" };
+      }
+    });
+    const negatives = [
+      ["string-envelope", payload => { payload.version = "2"; }, "Backup app or version is not supported."],
+      ["schema-1", payload => { payload.dataSchemaVersion = 1; }, "Backup data schema is not supported."],
+      ["future-schema", payload => { payload.dataSchemaVersion = 999; payload.data.dataSchemaVersion = 999; payload.data.unknownFutureCollection = [{ id: "future_unknown" }]; }, "Backup data schema is not supported."],
+      ["mismatched-schema", payload => { payload.dataSchemaVersion = 2; payload.data.dataSchemaVersion = 3; }, "Backup data schema is not supported."],
+      ["reverse-mismatched-schema", payload => { payload.dataSchemaVersion = 3; payload.data.dataSchemaVersion = 2; }, "Backup data schema is not supported."],
+      ["string-schema", payload => { payload.data.dataSchemaVersion = "3"; }, "Backup data schema is not supported."],
+      ["null-schema", payload => { payload.dataSchemaVersion = null; }, "Backup data schema is not supported."],
+      ["boolean-schema", payload => { payload.data.dataSchemaVersion = true; }, "Backup data schema is not supported."],
+      ["object-schema", payload => { payload.dataSchemaVersion = {}; }, "Backup data schema is not supported."],
+      ["array-schema", payload => { payload.data.dataSchemaVersion = []; }, "Backup data schema is not supported."],
+      ["float-schema", payload => { payload.dataSchemaVersion = 2.5; }, "Backup data schema is not supported."],
+      ["nan-schema", payload => { payload.data.dataSchemaVersion = NaN; }, "Backup data schema is not supported."],
+      ["infinite-schema", payload => { payload.dataSchemaVersion = Infinity; }, "Backup data schema is not supported."]
+    ].map(([name, mutate, expectedMessage]) => {
+      const payload = withoutMarker(3, 3);
+      mutate(payload);
+      try {
+        validateBackupPayload(payload);
+        return { name, rejected: false, fixedMessage: false };
+      } catch (error) {
+        return { name, rejected: true, fixedMessage: error?.message === expectedMessage };
+      }
+    });
+
+    db = normalizeData({ ...emptyData(), people: [{ id: "portable_schema_before", name: "Before rejected restore" }] });
+    settings = normalizeSettings({ ...DEFAULT_SETTINGS, enableUndo: true, autoMemoryVaultEnabled: true });
+    customCopy = { "brand.title": "Before rejected restore" };
+    autosaveDraftsCache = { "capture:main": { fields: { "quick-text": "Before rejected restore" } } };
+    memoryVaultCache = { version: 1, updatedAt: "2026-07-19T00:00:00.000Z", snapshots: [] };
+    recordUndo("portable schema before");
+    view = { ...view, screen: "quick", sheet: { type: "data-safety", kind: "import" } };
+    const future = withoutMarker(999, 999);
+    future.data.people = [{ id: "portable_schema_future", name: "Must never replace" }];
+    future.data.unknownFutureCollection = [{ id: "future_unknown_collection" }];
+    const portableStateSnapshot = () => {
+      const state = captureRecoveryTransactionState();
+      state.localStorage = Array.from(state.localStorage.entries()).sort(([left], [right]) => left.localeCompare(right));
+      return JSON.stringify({ state, epoch: recoveryEpoch, pending: recoveryTransactionPending, kind: recoveryTransactionKind });
+    };
+    const before = portableStateSnapshot();
+    const originalBeginRecoveryTransaction = beginRecoveryTransaction;
+    const originalNormalizeData = normalizeData;
+    let beginCalls = 0;
+    let normalizeCalls = 0;
+    beginRecoveryTransaction = (...args) => { beginCalls += 1; return originalBeginRecoveryTransaction(...args); };
+    normalizeData = (...args) => { normalizeCalls += 1; return originalNormalizeData(...args); };
+    let applyRejected = false;
+    let applyMessage = "";
+    try {
+      await applyRestoredPayload(future);
+    } catch (error) {
+      applyRejected = true;
+      applyMessage = error?.message || "";
+    } finally {
+      beginRecoveryTransaction = originalBeginRecoveryTransaction;
+      normalizeData = originalNormalizeData;
+    }
+    const after = portableStateSnapshot();
+    return { positives, negatives, applyRejected, applyMessage, beginCalls, normalizeCalls, unchanged: before === after };
+  })()`);
+  assert(result.positives.every(item => item.passed), "portable classifier supports absent markers and schema 2/3 in top-only, nested-only, or matching positions");
+  assert(result.negatives.every(item => item.rejected && item.fixedMessage), "portable classifier rejects coercible envelope and every unsupported, mismatched, or malformed schema with fixed content-free errors");
+  assert(result.applyRejected && result.applyMessage === "Backup data schema is not supported." && result.beginCalls === 0 && result.normalizeCalls === 0 && result.unchanged, "direct future-schema restore rejects before normalization, recovery ownership, or live/durable/Undo/Auto Memory mutation");
+}
+
+async function testStoredDataSchemaClassificationBoundary() {
+  resetApp("emptyData()");
+  const result = await appEval(`(() => {
+    const graph = marker => {
+      const value = cloneJson(emptyData());
+      value.people = [{ id: "stored_schema_classifier", name: "Stored schema classifier" }];
+      if (marker === "__absent__") delete value.dataSchemaVersion;
+      else value.dataSchemaVersion = marker;
+      return value;
+    };
+    const positives = [
+      ["missing", "__absent__", null, false],
+      ["schema-2", 2, 2, true],
+      ["current-3", 3, 3, true]
+    ].map(([name, marker, expectedVersion, present]) => {
+      try {
+        const classification = classifyStoredDataSchema(graph(marker));
+        return { name, passed: classification.schemaVersion === expectedVersion && classification.present === present };
+      } catch (error) {
+        return { name, passed: false, message: error?.message || "" };
+      }
+    });
+    const negatives = [
+      ["schema-1", 1],
+      ["future", 999],
+      ["string", "3"],
+      ["null", null],
+      ["boolean", true],
+      ["object", { version: 3 }],
+      ["array", [3]],
+      ["fractional", 3.5],
+      ["nan", NaN],
+      ["infinity", Infinity]
+    ].map(([name, marker]) => {
+      try {
+        classifyStoredDataSchema(graph(marker));
+        return { name, rejected: false, fixedMessage: false };
+      } catch (error) {
+        return { name, rejected: true, fixedMessage: error?.message === "Saved ministry data schema is not supported." };
+      }
+    });
+    const prior = localStorage.getItem(STORAGE_KEY);
+    let canonicalRetryRejected = false;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(graph(999)));
+      canonicalIndexedDbValue(STORAGE_KEY);
+    } catch (error) {
+      canonicalRetryRejected = error?.message === "Canonical local value for " + STORAGE_KEY + " is invalid.";
+    } finally {
+      if (prior === null) localStorage.removeItem(STORAGE_KEY);
+      else localStorage.setItem(STORAGE_KEY, prior);
+    }
+    return { positives, negatives, canonicalRetryRejected };
+  })()`);
+
+  assert(result.positives.every(item => item.passed), "stored-data schema classifier supports only missing, exact schema 2, and exact current schema 3 records");
+  assert(result.negatives.every(item => item.rejected && item.fixedMessage), "stored-data schema classifier rejects old, future, coercible, malformed, fractional, and non-finite markers with one fixed message");
+  assert(result.canonicalRetryRejected, "canonical IndexedDB retry refuses an unsupported local data marker");
+}
+
+async function testContextualDatesAndLegacyProfileCompatibility() {
   const dates = appEval(`(() => {
     const reference = new Date(2026, 6, 15, 12, 0, 0);
     return {
@@ -1780,7 +3207,7 @@ function testContextualDatesAndLegacyProfileCompatibility() {
   assert(dates.dateOnlyParts.year === 2026 && dates.dateOnlyParts.month === 1 && dates.dateOnlyParts.day === 1, "date-only values do not shift across timezone boundaries");
 
   resetApp("emptyData()");
-  const compatibility = appEval(`(() => {
+  const compatibility = await appEval(`(async () => {
     const legacy = {
       app: "RUF Ministry Hub",
       version: 2,
@@ -1801,7 +3228,7 @@ function testContextualDatesAndLegacyProfileCompatibility() {
       }
     };
     validateBackupPayload(legacy);
-    applyRestoredPayload(legacy, { captureBefore: false, toast: "Legacy restored." });
+    await applyRestoredPayload(legacy, { captureBefore: false, toast: "Legacy restored." });
     const restoredLegacyValue = db.people[0].preferredContactMethod;
     const exported = currentPortablePayload();
     const roundTripped = normalizeData(JSON.parse(JSON.stringify(exported.data)));
@@ -1828,7 +3255,7 @@ function testContextualDatesAndLegacyProfileCompatibility() {
   assert(!compatibility.personMarkup.includes("Created:") && !compatibility.peopleMarkup.includes("Updated:"), "normal profile and people UI hide administrative timestamps");
 
   resetApp("emptyData()");
-  const unnamedCompatibility = appEval(`(() => {
+  const unnamedCompatibility = await appEval(`(async () => {
     const legacy = {
       app: "RUF Ministry Hub",
       version: 2,
@@ -1837,7 +3264,7 @@ function testContextualDatesAndLegacyProfileCompatibility() {
         quickGrabs: [], notes: [], meetingNotes: [], prayerRequests: [], tasks: []
       }
     };
-    const restored = applyRestoredPayload(legacy, { captureBefore: false });
+    const restored = await applyRestoredPayload(legacy, { captureBefore: false });
     const capture = makeQuickGrab("Met someone for coffee", [], "Whenever", db.people);
     const card = renderPersonListCard(db.people[0]);
     const exported = JSON.parse(JSON.stringify(currentPortablePayload()));
@@ -1849,6 +3276,50 @@ function testContextualDatesAndLegacyProfileCompatibility() {
 
 function testServiceWorkerShape() {
   assert(/const APP_VERSION = "2026\.07\.\d{2}-calm-os-[^"]+"/.test(html), "deploy app version is in the Calm OS release family");
+  assert(html.includes('const APP_VERSION = "2026.07.20-calm-os-core-v38"'), "deploy app declares the reviewed v38 Auto Memory boundary");
+  assert(serviceWorkerSource.includes('const CACHE_NAME = "ruf-ministry-hub-v87-calm-os-core-v38"'), "service worker cache identity matches the reviewed v38 app");
+  const appUnlockSource = html.slice(html.indexOf("function unlockApp()"), html.indexOf("async function unlockVault()"));
+  assert(
+    appUnlockSource.indexOf('showToast("Unlocked.")') < appUnlockSource.indexOf("requestPageHeadingFocus()")
+      && appUnlockSource.indexOf("requestPageHeadingFocus()") < appUnlockSource.indexOf("render()"),
+    "successful App Lock unlock requests current page-heading focus once before rendering"
+  );
+  const vaultUnlockSource = html.slice(html.indexOf("async function unlockVault()"), html.indexOf("async function enableLocalEncryption()"));
+  assert(
+    vaultUnlockSource.includes("const unlockAttemptId = ++vaultUnlockAttemptSequence")
+      && vaultUnlockSource.includes("unlockAttemptId !== vaultUnlockAttemptSequence")
+      && vaultUnlockSource.includes("localStorage.getItem(ENCRYPTED_STORAGE_KEY)")
+      && vaultUnlockSource.includes("!== rawEnvelope"),
+    "Device Vault unlock binds every nonempty attempt to the latest in-memory owner and exact raw envelope"
+  );
+  assert(
+    vaultUnlockSource.indexOf("classifyStoredDataSchema(payload?.data)") < vaultUnlockSource.indexOf("stagedData = normalizeData(payload.data)")
+      && vaultUnlockSource.indexOf("classifyAutoMemoryVault(rawAutoMemory)") < vaultUnlockSource.indexOf("stagedData = normalizeData(payload.data)")
+      && vaultUnlockSource.indexOf("const publicationOwnership = ownership()") < vaultUnlockSource.indexOf("db = stagedData")
+      && vaultUnlockSource.includes("VAULT_SCHEMA_RETRY_MESSAGE")
+      && vaultUnlockSource.includes("VAULT_ENVELOPE_RETRY_MESSAGE"),
+    "Device Vault unlock classifies decrypted main and Auto Memory payloads before staging, then rechecks ownership before publication"
+  );
+  const autoMemorySource = html.slice(html.indexOf("function autoMemorySchemaError()"), html.indexOf("function loadAutoMemoryVault()"));
+  assert(
+    html.includes("const MAX_AUTO_MEMORY_RAW_SNAPSHOTS = 50")
+      && autoMemorySource.includes("function classifyAutoMemorySnapshotPayload(payload)")
+      && autoMemorySource.includes("ownsData === ownsLegacyData")
+      && autoMemorySource.includes("topVersion !== nestedVersion")
+      && autoMemorySource.includes("raw.snapshots.length > MAX_AUTO_MEMORY_RAW_SNAPSHOTS")
+      && autoMemorySource.indexOf("classifyAutoMemoryVault(raw)") < autoMemorySource.indexOf(".map(snapshot =>"),
+    "Auto Memory uses one strict snapshot classifier and rejects an oversized raw vault before per-snapshot work"
+  );
+  assert(
+    html.includes('const VAULT_SCHEMA_RETRY_MESSAGE = "Encrypted storage could not be opened safely. It was not changed."')
+      && html.includes('const VAULT_ENVELOPE_RETRY_MESSAGE = "Encrypted storage changed. Try again."'),
+    "Device Vault storage retry messages are fixed and contain no marker, record, passphrase, ciphertext, or error detail"
+  );
+  assert(
+    vaultUnlockSource.indexOf("view.locked = Boolean(settings.appLockEnabled && settings.pinHash)") < vaultUnlockSource.indexOf("if (!view.locked) requestPageHeadingFocus();")
+      && vaultUnlockSource.indexOf("if (!view.locked) requestPageHeadingFocus();") < vaultUnlockSource.indexOf("render()"),
+    "successful Device Vault unlock requests heading focus only when the effective App Lock screen is absent"
+  );
   assert(/ruf-ministry-hub-v(?:3[5-9]|[4-9]\d+)-calm-os-[^"']+/.test(serviceWorkerSource), "service worker cache version is bumped for Calm OS");
   assert(serviceWorkerSource.includes('"index.html"'), "service worker caches redirect entry point");
   assert(serviceWorkerSource.includes("ruf-ministry-hub-icon.svg"), "service worker caches the SVG icon");
@@ -1873,7 +3344,7 @@ function testServiceWorkerShape() {
 }
 
 function testRedirectAndServiceWorkerRouting() {
-  assert(indexSource.includes('window.location.replace("./ruf-ministry-hub" + window.location.search + window.location.hash)'), "index enters the native extensionless Pages route");
+  assert(indexSource.includes('window.location.replace("./ruf-ministry-hub"') && indexSource.includes("legacyCaptureQueryKeys") && indexSource.includes("new URLSearchParams(window.location.search)"), "index enters the native extensionless Pages route only after filtering legacy capture query keys");
   assert(redirectsSource.includes("/app /ruf-ministry-hub 302"), "Cloudflare redirects the app alias to the extensionless route");
   assert(!/^\/ruf-ministry-hub\s/m.test(redirectsSource), "Cloudflare leaves the native extensionless route unmodified");
   assert(manifestSource.includes('"start_url": "./ruf-ministry-hub"'), "installed app starts at the native extensionless route");
@@ -1890,17 +3361,22 @@ function testCurrentDocsDoNotClaimRemovedScreens() {
     assert(!testingDoc.includes(removedLabel), `TESTING.md does not claim ${removedLabel}`);
     assert(!manualDoc.includes(removedLabel), `manual QA does not claim ${removedLabel}`);
   });
+  assert(manualDoc.includes("browser is asked to start the JSON download") && manualDoc.includes("download-initiation status"), "manual QA distinguishes browser download initiation from a saved file");
+  assert(manualDoc.includes("expected non-zero JSON file appears in Downloads/Files before relying on it"), "manual QA requires Files confirmation before relying on an export");
+  assert(!manualDoc.includes("Confirm Backup Health changes after export."), "manual QA does not imply an export created a durable file");
 }
 
 async function run() {
   testCurrentScreensRender();
   testCalmPrimaryNavigation();
   testCleanupAndLargeDataPaths();
-  testQuickGrabSharedUrlImport();
+  testQuickGrabFragmentPrivacyBoundary();
+  await testDictationPrivacyBoundary();
   testUnifiedCaptureAndProposalSafety();
   testProposalActionsDoNotHidePersonDateUpdates();
   await testAdversarialApprovalAndPersistenceBoundaries();
   await testAiApprovalWaitsForDurablePersistence();
+  await testRestoreAndUndoTransactions();
   testCoreLocalActions();
   testAdhdModeAndTodaySectionVisibility();
   testAutopilotAndAttentionPresets();
@@ -1910,11 +3386,13 @@ async function run() {
   await testUnavailableCaptureProcessing();
   testCalmProfileContract();
   testExportAndPrivacyHelpers();
-  testAutoMemoryVault();
+  await testAutoMemoryVault();
   await testSecuritySheets();
   await testDataSafetySheets();
   testBackupValidationBoundary();
-  testContextualDatesAndLegacyProfileCompatibility();
+  await testStoredDataSchemaClassificationBoundary();
+  await testPortableSchemaClassificationBoundary();
+  await testContextualDatesAndLegacyProfileCompatibility();
   testServiceWorkerShape();
   testRedirectAndServiceWorkerRouting();
   testCurrentDocsDoNotClaimRemovedScreens();

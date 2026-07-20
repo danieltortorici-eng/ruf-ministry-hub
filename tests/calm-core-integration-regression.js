@@ -277,7 +277,7 @@ async function run() {
   const beforeFollowUp = appEval("JSON.stringify(db)");
   assert(await appEval(`markFollowedUp("${firstId}")`) === true, "explicit followed-up action saves through the existing local path");
   assert(db().people.find(person => person.id === firstId).nextFollowUpDate === "", "a person with no recurring cadence remains intentionally open-ended");
-  appEval("undoLast()");
+  await appEval("undoLast()");
   assert(appEval("JSON.stringify(db)") === beforeFollowUp, "Undo restores the exact person state after a followed-up action");
 
   const expectedNext = appEval('proposedFollowUpDate("Weekly", "", todayISO())');

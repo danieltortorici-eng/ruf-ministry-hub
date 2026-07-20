@@ -63,6 +63,30 @@ check(html.includes('<fieldset class="field-group">') && html.includes("<legend>
 
 check(html.includes('role="status" aria-live="polite" aria-atomic="true"'), "status changes use a polite live region");
 check(html.includes('toast.setAttribute?.("role", isError ? "alert" : "status")'), "validation failures switch to assertive alert semantics");
+const toastFunction = html.match(/function showToast\(message, severity = ""\) \{([\s\S]*?)\n    \}\n\n    function reportFieldError/)?.[1] || "";
+check(html.includes("let toastGeneration = 0;"), "toast replacement uses one monotonic in-memory generation");
+check(toastFunction.includes("could not") && !/\|unlock\|/.test(toastFunction), "the prose heuristic retains Could not errors without misclassifying successful unlock messages");
+check(
+  toastFunction.indexOf('toast.setAttribute?.("role", isError ? "alert" : "status")') >= 0
+    && toastFunction.indexOf('toast.setAttribute?.("role", isError ? "alert" : "status")') < toastFunction.indexOf("toast.textContent = message"),
+  "toast semantics are applied before live-region text changes"
+);
+check(
+  toastFunction.includes("const generation = ++toastGeneration;")
+    && toastFunction.includes("const timer = window.setTimeout(() => {")
+    && toastFunction.includes("if (generation !== toastGeneration || toastTimer !== timer) return;")
+    && toastFunction.includes("toastTimer = timer;"),
+  "each toast deadline is bound to both its generation and exact timer handle"
+);
+check(
+  toastFunction.includes('toast.classList.remove("show");')
+    && toastFunction.includes('toast.setAttribute?.("role", "status");')
+    && toastFunction.includes('toast.setAttribute?.("aria-live", "polite");')
+    && toastFunction.includes('toast.textContent = "";')
+    && toastFunction.includes("if (toastTimer === timer) toastTimer = null;"),
+  "owned dismissal hides and clears the toast before releasing only its own handle"
+);
+check(toastFunction.includes("isError ? 5000 : 2800"), "toast success and error durations remain exactly 2,800 and 5,000 ms");
 check(html.includes('field.setAttribute?.("aria-invalid", "true")') && html.includes("reportFieldError"), "blocking field errors mark and focus the invalid control");
 check(html.includes('document.querySelectorAll(".notice.danger")') && html.includes('notice.setAttribute("role", "alert")'), "rendered blocking notices are announced");
 

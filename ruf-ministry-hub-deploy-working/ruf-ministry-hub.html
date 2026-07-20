@@ -1738,7 +1738,7 @@
     window.addEventListener("keydown", revealSkipLinkForKeyboard, true);
 
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.18-calm-os-core-v12";
+    const APP_VERSION = "2026.07.20-calm-os-core-v38";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
@@ -1759,9 +1759,19 @@
     const AUTOSAVE_KEY = "ruf_ministry_hub_autosave_drafts_v1";
     const ACTIVE_WORKFLOW_DRAFT_KEY = "workflow:active";
     const AUTO_MEMORY_KEY = "ruf_ministry_hub_auto_memory_v1";
+    const MAX_AUTO_MEMORY_RAW_SNAPSHOTS = 50;
+    const AUTO_MEMORY_SCHEMA_RETRY_MESSAGE = "Auto Memory restore point data is not supported.";
     const ENCRYPTED_STORAGE_KEY = "ruf_ministry_hub_encrypted_storage_v1";
+    const VAULT_SCHEMA_RETRY_MESSAGE = "Encrypted storage could not be opened safely. It was not changed.";
+    const VAULT_ENVELOPE_RETRY_MESSAGE = "Encrypted storage changed. Try again.";
     const IDB_NAME = "ruf_ministry_hub_local_store";
     const IDB_STORE = "keyval";
+    // Local persistence must fail closed instead of holding startup/recovery forever.
+    const IDB_DEADLINE_MS = 4000;
+    const RECOVERY_CRYPTO_DEADLINE_MS = 4000;
+    const VOICE_CAPTURE_DISCLOSURE_VERSION = "voice-capture-disclosure-v1";
+    const DICTATION_SESSION_DEADLINE_MS = 30000;
+    const MAX_DICTATION_TRANSCRIPT_CHARACTERS = 6000;
     const AI_PROPOSAL_SOURCE_TYPES = ["quickGrab", "person", "prayerRequest", "meetingNote", "followUpTask", "weeklyReset", "donorUpdate", "dataJanitor", "manual"];
     const AI_PROPOSAL_TYPES = ["quickGrabParse", "personBriefing", "followUpDraft", "prayerSteward", "dataJanitor", "weeklyReset", "donorUpdate", "privacyRedaction"];
     const AI_PROPOSAL_STATUSES = ["pending", "approved", "partiallyApproved", "rejected", "edited", "archived"];
@@ -1799,7 +1809,8 @@
       notificationDigest: "gentle",
       lastNotificationDate: "",
       reviewBatchSize: "3",
-      enableVoiceCapture: true,
+      enableVoiceCapture: false,
+      voiceCaptureDisclosureVersion: "",
       enableUrlQuickGrab: true,
       enableUndo: true,
       enableAutoSave: true,
@@ -1843,6 +1854,7 @@
     let initialSettingsWasInvalid = false;
     let initialDataNeedsRecovery = false;
     let initialDataWasInvalid = false;
+    let initialDataSchemaUnsupported = false;
     let initialCopyNeedsRecovery = false;
     let initialCopyWasInvalid = false;
     let settings = loadSettings();
@@ -1867,6 +1879,7 @@
       peopleVisibleLimit: PEOPLE_BATCH_SIZE,
       searchVisibleLimits: {},
       quickGrabDraftText: "",
+	      todayCaptureDraftText: "",
 	      profileCaptureOwnerId: "",
 	      profileCapturePersonId: "",
 	      profileCaptureDraftText: "",
@@ -1886,24 +1899,46 @@
     };
     let undoStack = [];
     let vaultPassphrase = "";
+    let vaultUnlockAttemptSequence = 0;
     let vaultSaveTimer = null;
     let vaultSaveInFlight = null;
     let vaultSaveRequestedRevision = 0;
     let vaultSaveCompletedRevision = 0;
+    let vaultPayloadGeneration = 0;
+    let vaultFlushLeaseSequence = 0;
+    let trustedRevokedVaultFlushLeaseId = 0;
+    let activeVaultFlushLease = null;
+    let revokedVaultFlushSettlement = null;
     let autosaveTimer = null;
     let autosaveDraftsCache = null;
+    let autosaveRestoreSkipTargetId = "";
     let memoryVaultCache = null;
+    let recoveryTransactionPending = false;
+    let recoveryTransactionKind = "";
+    let recoveryEpoch = 0;
+    let undoGeneration = 0;
+    let activeMutationSequence = 0;
+    const activeMutations = new Map();
+    let indexedDbQueueTail = Promise.resolve();
+    let indexedDbQueueSequence = 0;
+    let indexedDbPendingCount = 0;
+    const indexedDbFailedKeys = new Map();
+    let sharedFragmentImportDeferred = false;
     let serviceWorkerRegistration = null;
     let updateAvailable = false;
     let reloadingForUpdate = false;
-    let pendingUrlQuickGrabText = "";
-    let pendingUrlQuickGrabParams = null;
+    let pendingFragmentQuickGrabText = "";
     let startupBootstrapPromise = null;
     let sheetReturnFocusDescriptor = null;
     let pendingFocusDescriptor = null;
     let pendingPageHeadingFocus = false;
     let toastTimer = null;
+    let toastGeneration = 0;
     let globalSearchTimer = null;
+    let dictationSessionSequence = 0;
+    let activeDictationSession = null;
+    let protectedBackupExportSequence = 0;
+    let activeProtectedBackupExport = null;
 
     function uid(prefix) {
       return prefix + "_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
@@ -2091,17 +2126,21 @@
 
     function registerServiceWorker() {
       if (!canUseServiceWorker()) return;
+      const registrationEpoch = recoveryEpoch;
       const hadControllerAtRegistration = Boolean(navigator.serviceWorker.controller);
       navigator.serviceWorker.register("ruf-ministry-hub-sw.js").then(registration => {
+        if (!recoveryEpochIsCurrent(registrationEpoch)) return;
         serviceWorkerRegistration = registration;
         if (registration.waiting) {
           updateAvailable = true;
           showToast("App update ready. Finish what you are typing, then choose Update now from Today.");
         }
         registration.addEventListener("updatefound", () => {
+          const updateFoundEpoch = recoveryEpoch;
           const installing = registration.installing;
           if (!installing) return;
           installing.addEventListener("statechange", () => {
+            if (!recoveryEpochIsCurrent(updateFoundEpoch)) return;
             if (installing.state === "installed" && navigator.serviceWorker.controller) {
               updateAvailable = true;
               showToast("App update ready. Finish what you are typing, then choose Update now from Today.");
@@ -2110,6 +2149,7 @@
         });
       }).catch(error => console.warn("Could not register service worker", error));
       navigator.serviceWorker.addEventListener("controllerchange", async () => {
+        const controllerEpoch = recoveryEpoch;
         if (!hadControllerAtRegistration && !updateAvailable) return;
         if (reloadingForUpdate) return;
         reloadingForUpdate = true;
@@ -2118,6 +2158,10 @@
           recoveryFlushed = await flushRecoveryState();
         } catch (error) {
           console.warn("Could not secure recovery state before an active update", error);
+        }
+        if (!recoveryEpochIsCurrent(controllerEpoch)) {
+          reloadingForUpdate = false;
+          return;
         }
         if (!recoveryFlushed) {
           reloadingForUpdate = false;
@@ -2129,6 +2173,7 @@
     }
 
     async function applyAppUpdate() {
+      const updateEpoch = recoveryEpoch;
       const waiting = serviceWorkerRegistration && serviceWorkerRegistration.waiting;
       const updateButtons = typeof document !== "undefined"
         ? Array.from(document.querySelectorAll('[data-action="app-update"]'))
@@ -2144,6 +2189,7 @@
       } catch (error) {
         console.warn("Could not secure recovery state before update", error);
       }
+      if (!recoveryEpochIsCurrent(updateEpoch)) return false;
       if (!recoveryFlushed) {
         updateButtons.forEach(button => {
           button.disabled = false;
@@ -2166,10 +2212,14 @@
         showToast(canUseServiceWorker() ? "Offline updater is still starting." : "Serve over HTTPS or localhost for update checks.");
         return;
       }
+      const updateEpoch = recoveryEpoch;
       serviceWorkerRegistration.update().then(() => {
+        if (!recoveryEpochIsCurrent(updateEpoch)) return;
         showToast(updateAvailable ? "Update ready." : "No update found.");
         render();
-      }).catch(() => showToast("Could not check for updates."));
+      }).catch(() => {
+        if (recoveryEpochIsCurrent(updateEpoch)) showToast("Could not check for updates.");
+      });
     }
 
     function normalizeSettings(raw = {}) {
@@ -2177,6 +2227,9 @@
       merged.pinnedPersonIds = Array.isArray(merged.pinnedPersonIds) ? merged.pinnedPersonIds : [];
       merged.recentPersonIds = Array.isArray(merged.recentPersonIds) ? merged.recentPersonIds : [];
       merged.appCoachDismissed = merged.appCoachDismissed && typeof merged.appCoachDismissed === "object" && !Array.isArray(merged.appCoachDismissed) ? merged.appCoachDismissed : {};
+      const voiceDisclosureIsCurrent = raw?.voiceCaptureDisclosureVersion === VOICE_CAPTURE_DISCLOSURE_VERSION;
+      merged.enableVoiceCapture = raw?.enableVoiceCapture === true && voiceDisclosureIsCurrent;
+      merged.voiceCaptureDisclosureVersion = voiceDisclosureIsCurrent ? VOICE_CAPTURE_DISCLOSURE_VERSION : "";
       merged.todayRecommendationDeferrals = merged.todayRecommendationDeferrals && typeof merged.todayRecommendationDeferrals === "object" && !Array.isArray(merged.todayRecommendationDeferrals)
         ? merged.todayRecommendationDeferrals
         : {};
@@ -2444,6 +2497,35 @@
         && CORE_DATA_COLLECTIONS.every(collection => Array.isArray(value[collection])));
     }
 
+    function classifyStoredDataSchema(value) {
+      if (!hasHistoricalDataShape(value)) {
+        throw new Error("Saved ministry data is structurally incomplete.");
+      }
+      const present = Object.prototype.hasOwnProperty.call(value, "dataSchemaVersion");
+      const schemaVersion = present ? value.dataSchemaVersion : null;
+      if (present && !(
+        typeof schemaVersion === "number"
+        && Number.isFinite(schemaVersion)
+        && Number.isInteger(schemaVersion)
+        && (schemaVersion === 2 || schemaVersion === DATA_SCHEMA_VERSION)
+      )) {
+        const error = new Error("Saved ministry data schema is not supported.");
+        error.code = "UNSUPPORTED_STORED_DATA_SCHEMA";
+        throw error;
+      }
+      return { schemaVersion, present };
+    }
+
+    function isUnsupportedStoredDataSchemaError(error) {
+      return error?.code === "UNSUPPORTED_STORED_DATA_SCHEMA";
+    }
+
+    function hasCurrentDataShape(value) {
+      return Boolean(isPlainBackupObject(value)
+        && value.dataSchemaVersion === DATA_SCHEMA_VERSION
+        && DATA_COLLECTIONS.every(collection => Array.isArray(value[collection])));
+    }
+
     function isPlainBackupObject(value) {
       if (!value || typeof value !== "object" || Array.isArray(value)) return false;
       const prototype = Object.getPrototypeOf(value);
@@ -2479,12 +2561,36 @@
       });
     }
 
-    function validateBackupPayload(payload) {
+    function classifyPortableBackupSchema(payload) {
       if (!isPlainBackupObject(payload)) throw new Error("Backup must be a JSON object.");
-      if (payload.app !== "RUF Ministry Hub" || Number(payload.version) !== 2) {
+      if (payload.app !== "RUF Ministry Hub" || payload.version !== 2) {
         throw new Error("Backup app or version is not supported.");
       }
       if (!isPlainBackupObject(payload.data)) throw new Error("Backup data is missing.");
+      const topPresent = Object.prototype.hasOwnProperty.call(payload, "dataSchemaVersion");
+      const nestedPresent = Object.prototype.hasOwnProperty.call(payload.data, "dataSchemaVersion");
+      const topVersion = topPresent ? payload.dataSchemaVersion : null;
+      const nestedVersion = nestedPresent ? payload.data.dataSchemaVersion : null;
+      const supportedVersion = value => typeof value === "number"
+        && Number.isFinite(value)
+        && Number.isInteger(value)
+        && (value === 2 || value === DATA_SCHEMA_VERSION);
+      if (
+        (topPresent && !supportedVersion(topVersion))
+        || (nestedPresent && !supportedVersion(nestedVersion))
+        || (topPresent && nestedPresent && topVersion !== nestedVersion)
+      ) {
+        throw new Error("Backup data schema is not supported.");
+      }
+      return {
+        schemaVersion: topPresent ? topVersion : nestedPresent ? nestedVersion : null,
+        topPresent,
+        nestedPresent
+      };
+    }
+
+    function validateBackupPayload(payload) {
+      classifyPortableBackupSchema(payload);
       const expectedCollections = DATA_COLLECTIONS;
       let totalRecords = 0;
       const seenIds = new Set();
@@ -2615,12 +2721,14 @@
     }
 
     function saveSettings() {
+      if (recoveryMutationBlocked()) return false;
       writeLocalStorageBatch([
         [SETTINGS_KEY, JSON.stringify(settings)],
         [CALM_MODE_KEY, settings.calmMode ? "on" : "off"]
       ]);
       mirrorToIndexedDb(SETTINGS_KEY, cloneJson(settings));
       captureAutoMemorySnapshot("Settings update");
+      return true;
     }
 
     function loadCustomCopy() {
@@ -2644,14 +2752,16 @@
     }
 
     function saveCustomCopy() {
+      if (recoveryMutationBlocked()) return false;
       if (settings?.localEncryptionEnabled) {
         localStorage.removeItem(COPY_KEY);
         captureAutoMemorySnapshot("Wording update");
         scheduleVaultSave();
-        return;
+        return true;
       }
       persistPlainRecord(COPY_KEY, customCopy);
       captureAutoMemorySnapshot("Wording update");
+      return true;
     }
 
     function slugifyCopyKey(value) {
@@ -2673,37 +2783,44 @@
     }
 
     function saveData() {
+      if (recoveryMutationBlocked()) return false;
       if (settings?.localEncryptionEnabled) {
         localStorage.removeItem(STORAGE_KEY);
         captureAutoMemorySnapshot("Auto save");
         scheduleVaultSave();
-        return;
+        return true;
       }
       persistPlainRecord(STORAGE_KEY, db);
       captureAutoMemorySnapshot("Auto save");
+      return true;
     }
 
     function loadData() {
       if (settings?.localEncryptionEnabled && encryptedVaultExists()) {
         initialDataNeedsRecovery = false;
         initialDataWasInvalid = false;
+        initialDataSchemaUnsupported = false;
         return emptyData();
       }
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (!hasHistoricalDataShape(parsed)) throw new Error("Saved ministry data is structurally incomplete.");
+          classifyStoredDataSchema(parsed);
           initialDataNeedsRecovery = false;
           initialDataWasInvalid = false;
+          initialDataSchemaUnsupported = false;
           return normalizeData(parsed);
         }
         initialDataNeedsRecovery = true;
         initialDataWasInvalid = false;
+        initialDataSchemaUnsupported = false;
       } catch (error) {
         initialDataNeedsRecovery = true;
         initialDataWasInvalid = true;
+        initialDataSchemaUnsupported = isUnsupportedStoredDataSchemaError(error);
         console.warn("Could not load saved Ministry Hub data", error);
+        if (initialDataSchemaUnsupported) return emptyData();
       }
       return normalizeData(demoData());
     }
@@ -2712,32 +2829,258 @@
       return typeof indexedDB !== "undefined";
     }
 
+    function storageSetTimeout(callback, delay) {
+      const schedule = typeof window !== "undefined" && window.setTimeout ? window.setTimeout : setTimeout;
+      return schedule(callback, delay);
+    }
+
+    function storageClearTimeout(timer) {
+      const clear = typeof window !== "undefined" && window.clearTimeout ? window.clearTimeout : clearTimeout;
+      clear(timer);
+    }
+
+    function vaultFlushLeaseIsCurrent(lease) {
+      return Boolean(lease && activeVaultFlushLease === lease && !lease.revoked);
+    }
+
+    function restoreVaultFlushLeaseLocalSnapshot(lease) {
+      if (!lease?.localCommitted || !lease.localSnapshot) return false;
+      restoreLocalStorageSnapshot(lease.localSnapshot);
+      lease.localCommitted = false;
+      return true;
+    }
+
+    function revokeVaultFlushLease(lease) {
+      if (!lease || activeVaultFlushLease !== lease) return false;
+      if (lease.revoked) return true;
+      lease.revoked = true;
+      lease.allowFollowup = false;
+      trustedRevokedVaultFlushLeaseId = lease.id;
+      const transaction = lease.indexedDbTransaction;
+      if (lease.localCommitted || (transaction && !lease.indexedDbSettled)) {
+        revokedVaultFlushSettlement = {
+          leaseId: lease.id,
+          recoveryEpoch: lease.recoveryEpoch,
+          passphrase: lease.passphrase,
+          targetRevision: lease.targetRevision,
+          payloadGeneration: lease.payloadGeneration
+        };
+      } else {
+        revokedVaultFlushSettlement = null;
+      }
+      restoreVaultFlushLeaseLocalSnapshot(lease);
+      if (transaction && !lease.indexedDbSettled) {
+        try { transaction.abort?.(); } catch (error) {}
+      }
+      return true;
+    }
+
+    function revokeVaultFlushLeaseForRecoverySettlement(settlement) {
+      const lease = activeVaultFlushLease;
+      if (!lease || !settlement || !recoveryTransactionPending) return false;
+      const ownsInitialLease = settlement.initialLeaseId !== null && lease.id === settlement.initialLeaseId;
+      const ownsFreshLease = lease.id > settlement.leaseSequenceAtStart
+        && lease.recoveryEpoch === settlement.recoveryEpoch;
+      if (!ownsInitialLease && !ownsFreshLease) return false;
+      if (recoveryEpoch !== settlement.recoveryEpoch
+        || vaultPassphrase !== settlement.passphrase
+        || vaultSaveRequestedRevision !== settlement.targetRevision
+        || vaultPayloadGeneration !== settlement.payloadGeneration
+        || lease.passphrase !== settlement.passphrase
+        || lease.targetRevision !== settlement.targetRevision
+        || lease.payloadGeneration !== settlement.payloadGeneration) return false;
+      return revokeVaultFlushLease(lease);
+    }
+
+    function settleRecoveryOperationWithinDeadline(operation, label, options = {}) {
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        let timer = null;
+        const finish = (callback, value) => {
+          if (settled) return;
+          settled = true;
+          if (timer !== null) storageClearTimeout(timer);
+          callback(value);
+        };
+        timer = storageSetTimeout(() => {
+          try { options.onTimeout?.(); } catch (error) {}
+          finish(reject, new Error(`${label} timed out.`));
+        }, RECOVERY_CRYPTO_DEADLINE_MS);
+        Promise.resolve()
+          .then(operation)
+          .then(value => finish(resolve, value), error => finish(reject, error));
+      });
+    }
+
     function openIndexedDb() {
       return new Promise((resolve, reject) => {
         if (!canUseIndexedDb()) {
           reject(new Error("IndexedDB unavailable"));
           return;
         }
+        let settled = false;
         const request = indexedDB.open(IDB_NAME, 1);
+        const timer = storageSetTimeout(() => {
+          if (settled) return;
+          settled = true;
+          reject(new Error("IndexedDB open timed out."));
+        }, IDB_DEADLINE_MS);
         request.onupgradeneeded = () => {
           const database = request.result;
           if (!database.objectStoreNames.contains(IDB_STORE)) database.createObjectStore(IDB_STORE);
         };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          if (settled) {
+            request.result?.close?.();
+            return;
+          }
+          settled = true;
+          storageClearTimeout(timer);
+          resolve(request.result);
+        };
+        request.onerror = () => {
+          if (settled) return;
+          settled = true;
+          storageClearTimeout(timer);
+          reject(request.error || new Error("IndexedDB open failed."));
+        };
+        request.onblocked = () => {
+          if (settled) return;
+          settled = true;
+          storageClearTimeout(timer);
+          reject(new Error("IndexedDB open was blocked."));
+        };
       });
     }
 
-    function idbTransaction(mode, key, value) {
+    function enqueueIndexedDbWork(label, keys, operation, options = {}) {
+      if (!canUseIndexedDb()) return Promise.resolve(options.unavailableValue ?? false);
+      const sequence = ++indexedDbQueueSequence;
+      const affectedKeys = Array.from(new Set(keys || []));
+      const tracksFailure = options.tracksFailure !== false;
+      indexedDbPendingCount += 1;
+      const run = indexedDbQueueTail.then(() => operation());
+      const exposed = run.then(value => {
+        if (tracksFailure) {
+          affectedKeys.forEach(key => {
+            const prior = indexedDbFailedKeys.get(key);
+            if (!prior || prior.sequence <= sequence) indexedDbFailedKeys.delete(key);
+          });
+        }
+        return value;
+      }, error => {
+        if (tracksFailure) affectedKeys.forEach(key => indexedDbFailedKeys.set(key, { sequence, label, error }));
+        throw error;
+      });
+      indexedDbQueueTail = exposed.then(() => undefined, () => undefined).finally(() => {
+        indexedDbPendingCount = Math.max(0, indexedDbPendingCount - 1);
+      });
+      return exposed;
+    }
+
+    async function waitForStableIndexedDbQueue() {
+      if (!canUseIndexedDb()) return true;
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const ceiling = indexedDbQueueTail;
+        await ceiling;
+        if (ceiling === indexedDbQueueTail && indexedDbPendingCount === 0) return true;
+      }
+      throw new Error("IndexedDB queue did not reach a stable ceiling.");
+    }
+
+    function canonicalIndexedDbValue(key) {
+      if (!recoveryPersistenceKeys().includes(key)) throw new Error("IndexedDB retry key is outside the canonical local boundary.");
+      const raw = localStorage.getItem(key);
+      if (raw === null) return undefined;
+      if (key === CALM_MODE_KEY) {
+        if (raw !== "on" && raw !== "off") throw new Error("Canonical Calm mode value is invalid.");
+        return raw;
+      }
+      try {
+        const value = JSON.parse(raw);
+        if (key === SETTINGS_KEY && !isPlainBackupObject(value)) {
+          throw new Error("Canonical settings must be an object.");
+        }
+        if (key === STORAGE_KEY) classifyStoredDataSchema(value);
+        if ([COPY_KEY, AUTOSAVE_KEY].includes(key) && !isPlainBackupObject(value)) {
+          throw new Error("Canonical local wording or drafts must be an object.");
+        }
+        if (key === AUTO_MEMORY_KEY && !hasMaintainedAutoMemoryVaultShape(value)) {
+          throw new Error("Canonical Auto Memory data is structurally incomplete.");
+        }
+        if (key === ENCRYPTED_STORAGE_KEY && !hasMaintainedEncryptedEnvelopeShape(value)) {
+          throw new Error("Canonical Device Vault data is structurally incomplete.");
+        }
+        return value;
+      } catch (error) {
+        throw new Error(`Canonical local value for ${key} is invalid.`);
+      }
+    }
+
+    function hasMaintainedAutoMemoryVaultShape(value) {
+      try {
+        classifyAutoMemoryVault(value);
+        if (typeof value.updatedAt !== "string" || (value.snapshots.length && !value.updatedAt.trim())) return false;
+        return value.snapshots.every(snapshot => {
+          if (!isPlainBackupObject(snapshot)
+            || ![snapshot.id, snapshot.savedAt, snapshot.label, snapshot.appVersion, snapshot.summary, snapshot.signature].every(field => typeof field === "string" && field.trim().length > 0)
+            || !isPlainBackupObject(snapshot.payload)) return false;
+          classifyAutoMemorySnapshotPayload(snapshot.payload);
+          const payload = snapshot.payload;
+          return typeof payload.exportedAt === "string" && payload.exportedAt.trim().length > 0
+            && isPlainBackupObject(payload.settings)
+            && isPlainBackupObject(payload.customCopy)
+            && isPlainBackupObject(payload.autosaveDrafts);
+        });
+      } catch (_error) {
+        return false;
+      }
+    }
+
+    function hasMaintainedEncryptedEnvelopeShape(value) {
+      return Boolean(isPlainBackupObject(value)
+        && value.kind === "ruf-ministry-hub-encrypted"
+        && value.version === 1
+        && value.algorithm === "AES-GCM"
+        && value.kdf === "PBKDF2-SHA-256"
+        && value.iterations === 150000
+        && [value.salt, value.iv, value.ciphertext, value.encryptedAt].every(field => typeof field === "string" && field.length > 0));
+    }
+
+    async function reconcileFailedIndexedDbKeys() {
+      const failedKeys = Array.from(indexedDbFailedKeys.keys());
+      if (!failedKeys.length) return true;
+      const entries = failedKeys.map(key => [key, canonicalIndexedDbValue(key)]);
+      await writeIndexedDbBatch(entries);
+      await waitForStableIndexedDbQueue();
+      return failedKeys.every(key => !indexedDbFailedKeys.has(key));
+    }
+
+    async function drainIndexedDbCoordinator(options = {}) {
+      if (!canUseIndexedDb()) return true;
+      await waitForStableIndexedDbQueue();
+      if (indexedDbFailedKeys.size && options.reconcileFailures) {
+        if (!(await reconcileFailedIndexedDbKeys())) return false;
+        await waitForStableIndexedDbQueue();
+      }
+      return indexedDbFailedKeys.size === 0;
+    }
+
+    function runIndexedDbTransaction(mode, key, value) {
       return openIndexedDb().then(database => new Promise((resolve, reject) => {
         const transaction = database.transaction(IDB_STORE, mode);
         const store = transaction.objectStore(IDB_STORE);
         const request = mode === "readonly" ? store.get(key) : store.put(value, key);
         let requestResult;
         let settled = false;
+        const timer = storageSetTimeout(() => {
+          try { transaction.abort?.(); } catch (error) {}
+          fail(new Error("IndexedDB transaction timed out."));
+        }, IDB_DEADLINE_MS);
         const fail = error => {
           if (settled) return;
           settled = true;
+          storageClearTimeout(timer);
           database.close();
           reject(error || new Error("IndexedDB transaction failed."));
         };
@@ -2748,6 +3091,7 @@
         transaction.oncomplete = () => {
           if (settled) return;
           settled = true;
+          storageClearTimeout(timer);
           database.close();
           resolve(requestResult);
         };
@@ -2756,20 +3100,34 @@
       }));
     }
 
-    function mirrorToIndexedDb(key, value) {
-      if (!canUseIndexedDb()) return;
-      idbTransaction("readwrite", key, value).catch(() => {});
+    function idbTransaction(mode, key, value) {
+      const operationValue = mode === "readonly" || value === undefined ? value : cloneJson(value);
+      return enqueueIndexedDbWork(
+        `${mode} ${key}`,
+        [key],
+        () => runIndexedDbTransaction(mode, key, operationValue),
+        { tracksFailure: mode !== "readonly", unavailableValue: undefined }
+      );
     }
 
-    function deleteFromIndexedDb(key) {
+    function mirrorToIndexedDb(key, value) {
       if (!canUseIndexedDb()) return Promise.resolve(false);
+      return idbTransaction("readwrite", key, value).then(() => true, () => false);
+    }
+
+    function runDeleteFromIndexedDb(key) {
       return openIndexedDb().then(database => new Promise((resolve, reject) => {
         const transaction = database.transaction(IDB_STORE, "readwrite");
         const request = transaction.objectStore(IDB_STORE).delete(key);
         let settled = false;
+        const timer = storageSetTimeout(() => {
+          try { transaction.abort?.(); } catch (error) {}
+          fail(new Error("IndexedDB delete timed out."));
+        }, IDB_DEADLINE_MS);
         const fail = error => {
           if (settled) return;
           settled = true;
+          storageClearTimeout(timer);
           database.close();
           reject(error || new Error("IndexedDB delete failed."));
         };
@@ -2778,6 +3136,7 @@
         transaction.oncomplete = () => {
           if (settled) return;
           settled = true;
+          storageClearTimeout(timer);
           database.close();
           resolve(true);
         };
@@ -2788,15 +3147,119 @@
       }));
     }
 
-    function commitEncryptedVaultToIndexedDb(envelope, nextSettings) {
-      if (!canUseIndexedDb()) return Promise.resolve(false);
+    function deleteFromIndexedDb(key) {
+      return enqueueIndexedDbWork(`delete ${key}`, [key], () => runDeleteFromIndexedDb(key));
+    }
+
+    function runReadIndexedDbSnapshot(keys) {
+      const uniqueKeys = Array.from(new Set(keys));
+      return openIndexedDb().then(database => new Promise((resolve, reject) => {
+        const transaction = database.transaction(IDB_STORE, "readonly");
+        const store = transaction.objectStore(IDB_STORE);
+        const snapshot = new Map();
+        let settled = false;
+        const timer = storageSetTimeout(() => {
+          try { transaction.abort?.(); } catch (error) {}
+          finish(new Error("Recovery snapshot timed out."));
+        }, IDB_DEADLINE_MS);
+        const finish = (error, value = snapshot) => {
+          if (settled) return;
+          settled = true;
+          storageClearTimeout(timer);
+          database.close();
+          if (error) reject(error); else resolve(value);
+        };
+        transaction.oncomplete = () => finish(null, snapshot);
+        transaction.onerror = () => finish(transaction.error || new Error("Recovery snapshot failed."));
+        transaction.onabort = () => finish(transaction.error || new Error("Recovery snapshot was aborted."));
+        try {
+          uniqueKeys.forEach(key => {
+            const request = store.get(key);
+            request.onsuccess = () => snapshot.set(key, request.result === undefined ? undefined : cloneJson(request.result));
+            request.onerror = () => finish(request.error || new Error("Recovery snapshot read failed."));
+          });
+        } catch (error) {
+          finish(error);
+        }
+      }));
+    }
+
+    function readIndexedDbSnapshot(keys) {
+      if (!canUseIndexedDb()) return Promise.resolve(null);
+      const uniqueKeys = Array.from(new Set(keys));
+      return enqueueIndexedDbWork("recovery snapshot", uniqueKeys, () => runReadIndexedDbSnapshot(uniqueKeys), { tracksFailure: false, unavailableValue: null });
+    }
+
+    function runWriteIndexedDbBatch(entries) {
       return openIndexedDb().then(database => new Promise((resolve, reject) => {
         const transaction = database.transaction(IDB_STORE, "readwrite");
         const store = transaction.objectStore(IDB_STORE);
         let settled = false;
+        const timer = storageSetTimeout(() => {
+          try { transaction.abort?.(); } catch (error) {}
+          finish(new Error("Recovery transaction timed out."));
+        }, IDB_DEADLINE_MS);
         const finish = (error, value = true) => {
           if (settled) return;
           settled = true;
+          storageClearTimeout(timer);
+          database.close();
+          if (error) reject(error); else resolve(value);
+        };
+        transaction.oncomplete = () => finish(null, true);
+        transaction.onerror = () => finish(transaction.error || new Error("Recovery transaction failed."));
+        transaction.onabort = () => finish(transaction.error || new Error("Recovery transaction was aborted."));
+        try {
+          new Map(entries).forEach((value, key) => {
+            if (value === undefined) store.delete(key);
+            else store.put(cloneJson(value), key);
+          });
+        } catch (error) {
+          finish(error);
+        }
+      }));
+    }
+
+    function writeIndexedDbBatch(entries) {
+      if (!canUseIndexedDb()) return Promise.resolve(false);
+      const normalizedEntries = Array.from(
+        new Map(entries).entries(),
+        ([key, value]) => [key, value === undefined ? undefined : cloneJson(value)]
+      );
+      return enqueueIndexedDbWork("IndexedDB batch", normalizedEntries.map(([key]) => key), () => runWriteIndexedDbBatch(normalizedEntries));
+    }
+
+    function restoreIndexedDbSnapshot(snapshot) {
+      if (!snapshot) return Promise.resolve(false);
+      return writeIndexedDbBatch(Array.from(snapshot.entries()));
+    }
+
+    function runCommitEncryptedVaultToIndexedDb(envelope, nextSettings, flushLease = null) {
+      return openIndexedDb().then(database => new Promise((resolve, reject) => {
+        if (flushLease && !vaultFlushLeaseIsCurrent(flushLease)) {
+          database.close();
+          reject(new Error("Encrypted vault flush lease was revoked before its transaction began."));
+          return;
+        }
+        const transaction = database.transaction(IDB_STORE, "readwrite");
+        if (flushLease) {
+          flushLease.indexedDbTransaction = transaction;
+          flushLease.indexedDbSettled = false;
+        }
+        const store = transaction.objectStore(IDB_STORE);
+        let settled = false;
+        const timer = storageSetTimeout(() => {
+          try { transaction.abort?.(); } catch (error) {}
+          finish(new Error("Encrypted vault transaction timed out."));
+        }, IDB_DEADLINE_MS);
+        const finish = (error, value = true) => {
+          if (settled) return;
+          settled = true;
+          if (flushLease?.indexedDbTransaction === transaction) {
+            flushLease.indexedDbTransaction = null;
+            flushLease.indexedDbSettled = true;
+          }
+          storageClearTimeout(timer);
           database.close();
           if (error) reject(error); else resolve(value);
         };
@@ -2813,6 +3276,14 @@
       }));
     }
 
+    function commitEncryptedVaultToIndexedDb(envelope, nextSettings, flushLease = null) {
+      if (!canUseIndexedDb()) return Promise.resolve(false);
+      const stagedEnvelope = cloneJson(envelope);
+      const stagedSettings = cloneJson(nextSettings);
+      const keys = [ENCRYPTED_STORAGE_KEY, SETTINGS_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, AUTO_MEMORY_KEY];
+      return enqueueIndexedDbWork("encrypted vault commit", keys, () => runCommitEncryptedVaultToIndexedDb(stagedEnvelope, stagedSettings, flushLease));
+    }
+
     function localObjectState(key) {
       try {
         const raw = localStorage.getItem(key);
@@ -2826,10 +3297,12 @@
     }
 
     async function hydrateFromIndexedDb() {
+      return withActiveMutation("startup-hydration", async () => {
       view.startupRecoveryError = "";
       const localEnvelopeState = localObjectState(ENCRYPTED_STORAGE_KEY);
+      const localAutoMemoryState = localObjectState(AUTO_MEMORY_KEY);
       if (!canUseIndexedDb()) {
-        const orphanEnvelope = localEnvelopeState.state === "valid" && initialDataNeedsRecovery;
+        const orphanEnvelope = localEnvelopeState.state === "valid" && initialDataNeedsRecovery && !initialDataSchemaUnsupported;
         if (settings.localEncryptionEnabled || orphanEnvelope) {
           if (localEnvelopeState.state !== "valid") {
             view.startupRecoveryError = "Encrypted storage is enabled, but its local vault could not be recovered. Nothing was replaced.";
@@ -2853,7 +3326,23 @@
           initialSettingsWasInvalid = false;
           initialDataNeedsRecovery = false;
           initialDataWasInvalid = false;
+          initialDataSchemaUnsupported = false;
           return true;
+        }
+        if (localAutoMemoryState.state === "valid") {
+          try {
+            normalizeAutoMemoryVault(localAutoMemoryState.value);
+          } catch (_error) {
+            view.startupRecoveryError = "Local recovery could not finish. Calm OS did not replace your ministry data. Retry before making changes.";
+            return false;
+          }
+        } else if (localAutoMemoryState.state === "invalid") {
+          view.startupRecoveryError = "Local data is present but could not be read, and no recovery store is available. Nothing was replaced.";
+          return false;
+        }
+        if (initialDataSchemaUnsupported) {
+          view.startupRecoveryError = "Local recovery could not finish. Calm OS did not replace your ministry data. Retry before making changes.";
+          return false;
         }
         if (initialSettingsWasInvalid || initialDataWasInvalid || initialCopyWasInvalid) {
           view.startupRecoveryError = "Local data is present but could not be read, and no recovery store is available. Nothing was replaced.";
@@ -2918,7 +3407,7 @@
           }
         }
 
-        const orphanEnvelope = Boolean(staged.envelope && initialDataNeedsRecovery);
+        const orphanEnvelope = Boolean(staged.envelope && initialDataNeedsRecovery && !initialDataSchemaUnsupported);
         if (staged.settings.localEncryptionEnabled || orphanEnvelope) {
           if (!staged.envelope) throw new Error("Encrypted storage is enabled, but the encrypted vault could not be recovered.");
           staged.settings = normalizeSettings({ ...staged.settings, localEncryptionEnabled: true });
@@ -2945,12 +3434,21 @@
           initialSettingsWasInvalid = false;
           initialDataNeedsRecovery = false;
           initialDataWasInvalid = false;
+          initialDataSchemaUnsupported = false;
           return true;
         }
 
+        if (initialDataSchemaUnsupported) {
+          view.startupRecoveryError = "Local recovery could not finish. Calm OS did not replace your ministry data. Retry before making changes.";
+          return false;
+        }
+
+        if (localAutoMemoryState.state === "valid") normalizeAutoMemoryVault(localAutoMemoryState.value);
+
         if (initialDataNeedsRecovery) {
           const storedDb = await idbTransaction("readonly", STORAGE_KEY);
-          if (hasHistoricalDataShape(storedDb)) {
+          if (storedDb !== undefined) {
+            classifyStoredDataSchema(storedDb);
             staged.data = normalizeData(storedDb);
             staged.writeData = true;
           } else if (initialDataWasInvalid) {
@@ -2972,13 +3470,12 @@
           }
         }
 
-        const localAutoMemory = localObjectState(AUTO_MEMORY_KEY);
-        if (localAutoMemory.state !== "valid") {
+        if (localAutoMemoryState.state !== "valid") {
           const storedAutoMemory = await idbTransaction("readonly", AUTO_MEMORY_KEY);
           if (storedAutoMemory && typeof storedAutoMemory === "object") {
             staged.autoMemory = normalizeAutoMemoryVault(storedAutoMemory);
             staged.writeAutoMemory = true;
-          } else if (localAutoMemory.state === "invalid") {
+          } else if (localAutoMemoryState.state === "invalid") {
             throw new Error("Saved restore points are unreadable and no valid recovery copy exists.");
           }
         }
@@ -3013,6 +3510,7 @@
         initialSettingsWasInvalid = false;
         initialDataNeedsRecovery = false;
         initialDataWasInvalid = false;
+        initialDataSchemaUnsupported = false;
         initialCopyNeedsRecovery = false;
         initialCopyWasInvalid = false;
         view.screen = calmLaunchScreen(settings.launchScreen);
@@ -3021,10 +3519,15 @@
         view.encryptionLocked = false;
         return true;
       } catch (error) {
+        if (isUnsupportedStoredDataSchemaError(error)) {
+          initialDataSchemaUnsupported = true;
+          db = emptyData();
+        }
         console.warn("Could not hydrate from IndexedDB", error);
         view.startupRecoveryError = "Local recovery could not finish. Calm OS did not replace your ministry data. Retry before making changes.";
         return false;
       }
+      });
     }
 
 
@@ -3032,33 +3535,381 @@
       return JSON.parse(JSON.stringify(value));
     }
 
-    function recordUndo(label = "last change") {
-      if (!settings.enableUndo) return;
-      undoStack.unshift({
+    function recoveryPersistenceKeys() {
+      return [SETTINGS_KEY, CALM_MODE_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, ENCRYPTED_STORAGE_KEY, AUTO_MEMORY_KEY];
+    }
+
+    function retainedRecoveryOwner() {
+      return Array.from(activeMutations.values()).find(mutation => mutation.cancelNeedsRetry) || null;
+    }
+
+    function recoveryRetryRequired() {
+      return Boolean(retainedRecoveryOwner());
+    }
+
+    function recoveryMutationBlocked() {
+      return recoveryTransactionPending || recoveryRetryRequired();
+    }
+
+    function currentUndoRetryClaim() {
+      const selected = undoStack[0];
+      if (!selected) return null;
+      return Object.freeze({
+        kind: "undo",
+        undoId: String(selected.id || ""),
+        undoEntryGeneration: Number(selected.generation),
+        undoGeneration: Number(undoGeneration)
+      });
+    }
+
+    function recoveryRetryClaimMatches(mutation) {
+      const selected = undoStack[0];
+      const claim = mutation?.retryClaim;
+      return Boolean(claim
+        && claim.kind === "undo"
+        && claim.undoId
+        && selected
+        && String(selected.id || "") === claim.undoId
+        && Number(selected.generation) === claim.undoEntryGeneration
+        && Number(undoGeneration) === claim.undoGeneration);
+    }
+
+    function registerActiveMutation(kind, options = {}) {
+      const mutation = {
+        id: `mutation_${++activeMutationSequence}`,
+        kind,
+        epoch: recoveryEpoch,
+        blocking: options.blocking !== false,
+        cancel: typeof options.cancel === "function" ? options.cancel : null,
+        cancelled: false,
+        cancelNeedsRetry: false,
+        operationSettled: false
+      };
+      activeMutations.set(mutation.id, mutation);
+      return mutation;
+    }
+
+    function finishActiveMutation(mutation) {
+      if (!mutation) return;
+      mutation.operationSettled = true;
+      if (mutation.cancelNeedsRetry) return;
+      if (activeMutations.get(mutation.id) === mutation) activeMutations.delete(mutation.id);
+    }
+
+    async function withActiveMutation(kind, callback) {
+      if (recoveryMutationBlocked()) return false;
+      const mutation = registerActiveMutation(kind);
+      try {
+        return await callback(mutation);
+      } finally {
+        finishActiveMutation(mutation);
+      }
+    }
+
+    function activeMutationIsCurrent(mutation) {
+      return Boolean(mutation && !mutation.cancelled && mutation.epoch === recoveryEpoch && activeMutations.get(mutation.id) === mutation);
+    }
+
+    function recoveryEpochIsCurrent(epoch) {
+      return epoch === recoveryEpoch && !recoveryMutationBlocked();
+    }
+
+    function hasBlockingActiveMutation() {
+      return Array.from(activeMutations.values()).some(mutation => mutation.blocking && !mutation.cancelled);
+    }
+
+    async function cancelDiscardableActiveMutations() {
+      const discardable = Array.from(activeMutations.values()).filter(mutation => !mutation.blocking && (!mutation.cancelled || mutation.cancelNeedsRetry));
+      for (const mutation of discardable) {
+        if (recoveryTransactionKind !== "undo") return false;
+        if (!mutation.retryClaim) {
+          Object.defineProperty(mutation, "retryClaim", {
+            value: currentUndoRetryClaim(),
+            enumerable: true,
+            configurable: false,
+            writable: false
+          });
+        }
+        if (!recoveryRetryClaimMatches(mutation)) return false;
+        mutation.cancelled = true;
+        mutation.cancelNeedsRetry = true;
+        try {
+          if (mutation.cancel && !(await mutation.cancel())) return false;
+          mutation.cancelNeedsRetry = false;
+          if (activeMutations.get(mutation.id) === mutation) activeMutations.delete(mutation.id);
+        } catch (error) {
+          console.warn(`Could not cancel ${mutation.kind} before recovery`, error);
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function cancelRecoveryTimers() {
+      const clear = window.clearTimeout || clearTimeout;
+      if (autosaveTimer) {
+        clear(autosaveTimer);
+        autosaveTimer = null;
+      }
+      if (vaultSaveTimer) {
+        clear(vaultSaveTimer);
+        vaultSaveTimer = null;
+      }
+      if (globalSearchTimer) {
+        clear(globalSearchTimer);
+        globalSearchTimer = null;
+      }
+    }
+
+    async function settleVaultBeforeRecovery() {
+      if (!settings.localEncryptionEnabled || !vaultPassphrase) return true;
+      const revokedSettlement = revokedVaultFlushSettlement;
+      const revokedSettlementMatches = () => Boolean(revokedSettlement
+        && recoveryTransactionPending
+        && revokedSettlement.leaseId === trustedRevokedVaultFlushLeaseId
+        && recoveryEpoch >= revokedSettlement.recoveryEpoch + 1
+        && vaultPassphrase === revokedSettlement.passphrase
+        && vaultSaveRequestedRevision === revokedSettlement.targetRevision
+        && vaultPayloadGeneration === revokedSettlement.payloadGeneration
+        && vaultSaveCompletedRevision < revokedSettlement.targetRevision);
+      if (vaultSaveInFlight) {
+        const settled = await vaultSaveInFlight;
+        if (!settled && !revokedSettlementMatches()) return false;
+      }
+      if (revokedSettlement) {
+        if (!revokedSettlementMatches()) return false;
+        if (revokedVaultFlushSettlement === revokedSettlement) {
+          revokedVaultFlushSettlement = null;
+          trustedRevokedVaultFlushLeaseId = 0;
+        }
+      }
+      let attempts = 0;
+      while (vaultSaveCompletedRevision < vaultSaveRequestedRevision && attempts < 8) {
+        attempts += 1;
+        const ceiling = vaultSaveRequestedRevision;
+        if (!(await confirmCareVaultRevision(ceiling))) return false;
+      }
+      return vaultSaveCompletedRevision === vaultSaveRequestedRevision;
+    }
+
+    function beginRecoveryTransaction(kind) {
+      if (recoveryTransactionPending) return false;
+      if (hasBlockingActiveMutation()) {
+        showToast("Finish the current save before starting recovery.", "error");
+        return false;
+      }
+      try {
+        invalidateProtectedBackupExport();
+        cancelActiveDictation({ announce: false });
+        if (autosaveTimer) {
+          const clear = window.clearTimeout || clearTimeout;
+          clear(autosaveTimer);
+          autosaveTimer = null;
+          saveCurrentDraftNow();
+        }
+        recoveryTransactionPending = true;
+        recoveryEpoch += 1;
+        recoveryTransactionKind = kind === "restore" ? "restore" : "undo";
+        view.undoSaving = recoveryTransactionKind === "undo";
+        view.restoreSaving = recoveryTransactionKind === "restore";
+        cancelRecoveryTimers();
+        render();
+        const needsAsyncPreparation = activeMutations.size > 0 || canUseIndexedDb() || (settings.localEncryptionEnabled && vaultPassphrase);
+        if (!needsAsyncPreparation) return true;
+        return (async () => {
+          if (!(await cancelDiscardableActiveMutations())) throw new Error("Pending asynchronous work could not be cancelled before recovery.");
+          if (canUseIndexedDb() && !(await drainIndexedDbCoordinator({ reconcileFailures: true }))) throw new Error("A prior IndexedDB mirror failed and must be retried before recovery.");
+          if (!(await settleVaultBeforeRecovery())) throw new Error("Pending encrypted work could not settle before recovery.");
+          if (canUseIndexedDb() && !(await drainIndexedDbCoordinator({ reconcileFailures: true }))) throw new Error("IndexedDB did not reach a stable recovery ceiling.");
+          return true;
+        })()
+          .then(() => {
+            return true;
+          })
+          .catch(error => {
+            finishRecoveryTransaction();
+            console.warn("Recovery could not claim a stable persistence boundary", error);
+            showToast("Recovery could not start because earlier local work is not durable yet. Retry when storage is ready.", "error");
+            render();
+            return false;
+          });
+      } catch (error) {
+        finishRecoveryTransaction();
+        console.warn("Recovery could not claim a stable persistence boundary", error);
+        showToast("Recovery could not start because earlier local work is not durable yet. Retry when storage is ready.", "error");
+        render();
+        return false;
+      }
+    }
+
+    function finishRecoveryTransaction() {
+      recoveryTransactionPending = false;
+      recoveryTransactionKind = "";
+      view.undoSaving = false;
+      view.restoreSaving = false;
+      if (sharedFragmentImportDeferred && !recoveryRetryRequired()) {
+        if (!sharedFragmentQuickGrabEnabled()) {
+          activatePendingFragmentQuickGrab();
+          return;
+        }
+        const epoch = recoveryEpoch;
+        Promise.resolve().then(() => {
+          if (recoveryEpochIsCurrent(epoch)) activatePendingFragmentQuickGrab();
+        });
+      }
+    }
+
+    async function confirmStableRecoveryRevision() {
+      let attempts = 0;
+      while (attempts < 8) {
+        attempts += 1;
+        const ceiling = vaultSaveRequestedRevision;
+        if (!(await confirmCareVaultRevision(ceiling))) return false;
+        if (vaultSaveRequestedRevision === ceiling && vaultSaveCompletedRevision === ceiling) return true;
+      }
+      return false;
+    }
+
+    function captureRecoveryTransactionState() {
+      return {
+        db: cloneJson(db),
+        settings: cloneJson(settings),
+        customCopy: cloneJson(customCopy),
+        autosaveDrafts: cloneJson(loadAutosaveDrafts()),
+        autoMemoryVault: cloneJson(loadAutoMemoryVault()),
+        undoStack: cloneJson(undoStack),
+        undoGeneration,
+        view: cloneJson(view),
+        revisions: { requested: vaultSaveRequestedRevision, completed: vaultSaveCompletedRevision },
+        localStorage: localStorageSnapshot(recoveryPersistenceKeys()),
+        indexedDb: null
+      };
+    }
+
+    async function restoreRecoveryTransactionState(snapshot) {
+      db = cloneJson(snapshot.db);
+      settings = normalizeSettings(snapshot.settings);
+      customCopy = cloneJson(snapshot.customCopy);
+      autosaveDraftsCache = cloneJson(snapshot.autosaveDrafts);
+      memoryVaultCache = normalizeAutoMemoryVault(snapshot.autoMemoryVault);
+      undoStack = cloneJson(snapshot.undoStack);
+      undoGeneration = Number(snapshot.undoGeneration) || 0;
+      view = cloneJson(snapshot.view);
+      vaultSaveRequestedRevision = snapshot.revisions.requested;
+      vaultSaveCompletedRevision = snapshot.revisions.completed;
+      restoreLocalStorageSnapshot(snapshot.localStorage);
+      if (snapshot.indexedDb) await restoreIndexedDbSnapshot(snapshot.indexedDb);
+    }
+
+    async function persistPlainRecoveryState(drafts, autoMemoryVault) {
+      const normalizedDrafts = cloneJson(drafts || {});
+      const normalizedMemory = normalizeAutoMemoryVault(autoMemoryVault || emptyAutoMemoryVault());
+      const localEntries = [
+        [SETTINGS_KEY, JSON.stringify(settings)],
+        [CALM_MODE_KEY, settings.calmMode ? "on" : "off"],
+        [STORAGE_KEY, JSON.stringify(db)],
+        [COPY_KEY, JSON.stringify(customCopy)],
+        [AUTOSAVE_KEY, JSON.stringify(normalizedDrafts)],
+        [AUTO_MEMORY_KEY, JSON.stringify(normalizedMemory)]
+      ];
+      const localSnapshot = writeLocalStorageBatch(localEntries);
+      try {
+        if (canUseIndexedDb()) {
+          await writeIndexedDbBatch([
+            [SETTINGS_KEY, settings],
+            [STORAGE_KEY, db],
+            [COPY_KEY, customCopy],
+            [AUTOSAVE_KEY, normalizedDrafts],
+            [AUTO_MEMORY_KEY, normalizedMemory]
+          ]);
+        }
+      } catch (error) {
+        restoreLocalStorageSnapshot(localSnapshot);
+        throw error;
+      }
+    }
+
+    function recordUndo(label = "last change", restoreRecovery = null, options = {}) {
+      if (recoveryMutationBlocked() && options.allowDuringRecovery !== true) return false;
+      if (!settings.enableUndo) return false;
+      const entry = {
+        id: uid("undo"),
+        generation: ++undoGeneration,
         label,
         db: cloneJson(db),
         settings: cloneJson(settings),
         customCopy: cloneJson(customCopy)
-      });
+      };
+      if (restoreRecovery) entry.restoreRecovery = cloneJson(restoreRecovery);
+      undoStack.unshift(entry);
       undoStack = undoStack.slice(0, 5);
+      return true;
     }
 
-    function undoLast() {
-      const snapshot = undoStack.shift();
-      if (!snapshot) {
+    async function undoLast() {
+      if (recoveryTransactionPending || view.undoSaving) return false;
+      const selected = undoStack[0];
+      if (!selected) {
         showToast("Nothing to undo.");
-        return;
+        return false;
       }
-      db = cloneJson(snapshot.db);
-      settings = normalizeSettings(snapshot.settings);
-      customCopy = cloneJson(snapshot.customCopy);
-      view.focusMode = true;
-      view.locked = false;
-      saveData();
-      saveSettings();
-      saveCustomCopy();
-      showToast("Undid " + snapshot.label + ".");
-      render();
+      const snapshot = cloneJson(selected);
+      const selectedUndoGeneration = undoGeneration;
+      const previousView = cloneJson(view);
+      const started = beginRecoveryTransaction("undo");
+      if (started && typeof started.then === "function") {
+        if (!(await started)) return false;
+      } else if (!started) {
+        return false;
+      }
+      const before = captureRecoveryTransactionState();
+      before.view = previousView;
+      try {
+        if (canUseIndexedDb()) before.indexedDb = await readIndexedDbSnapshot(recoveryPersistenceKeys());
+        if (Boolean(snapshot.settings?.localEncryptionEnabled) !== Boolean(before.settings.localEncryptionEnabled)) {
+          throw new Error("Undo cannot cross a Device Vault security transition.");
+        }
+        db = cloneJson(snapshot.db);
+        settings = normalizeSettings(snapshot.settings);
+        customCopy = cloneJson(snapshot.customCopy);
+        const restoreRecovery = snapshot.restoreRecovery || null;
+        const targetDrafts = restoreRecovery ? cloneJson(restoreRecovery.autosaveDrafts || {}) : cloneJson(before.autosaveDrafts);
+        const targetMemory = restoreRecovery ? normalizeAutoMemoryVault(restoreRecovery.autoMemoryVault) : normalizeAutoMemoryVault(before.autoMemoryVault);
+        if (restoreRecovery?.view) view = cloneJson(restoreRecovery.view);
+        view.focusMode = true;
+        view.locked = false;
+        view.undoSaving = true;
+        autosaveDraftsCache = targetDrafts;
+        memoryVaultCache = targetMemory;
+        if (settings.localEncryptionEnabled) {
+          scheduleVaultSave(true);
+          if (!(await confirmStableRecoveryRevision())) throw new Error("Encrypted Undo could not finish at a stable revision.");
+        } else {
+          await persistPlainRecoveryState(targetDrafts, targetMemory);
+        }
+        const targetIndex = undoStack.indexOf(selected);
+        if (undoGeneration !== selectedUndoGeneration || targetIndex !== 0 || undoStack[0] !== selected) {
+          throw new Error("Undo ownership changed before durability completed.");
+        }
+        undoStack.splice(targetIndex, 1);
+        undoGeneration += 1;
+        finishRecoveryTransaction();
+        showToast("Undid " + snapshot.label + ".");
+        render();
+        return true;
+      } catch (error) {
+        cancelRecoveryTimers();
+        try {
+          await restoreRecoveryTransactionState(before);
+        } catch (restoreError) {
+          console.warn("Could not fully restore Undo persistence", restoreError);
+        }
+        finishRecoveryTransaction();
+        console.warn("Undo was rolled back because local persistence failed", error);
+        showToast("Undo could not be saved. Your previous data remains in place; retry when storage is ready.", "error");
+        render();
+        return false;
+      }
     }
 
     function backupReminderDue() {
@@ -3071,8 +3922,9 @@
     }
 
     function backupStatusText() {
-      if (!settings.lastBackupAt) return "No export has been recorded yet.";
-      return "Last export: " + dateTimeLabel(settings.lastBackupAt) + ".";
+      if (!settings.lastBackupAt) return "No backup download initiation has been recorded. Start a backup download, then confirm the file appears in Files before relying on it.";
+      if (backupAgeDays() === null) return "No valid backup download initiation has been recorded. Start a backup download, then confirm the file appears in Files before relying on it.";
+      return "Backup download initiated: " + dateTimeLabel(settings.lastBackupAt) + ". Confirm the file appears in Files before relying on it.";
     }
 
     function backupAgeDays() {
@@ -3085,14 +3937,14 @@
     function backupHealthState() {
       const reminderDays = Number(settings.backupReminderDays || 0);
       const ageDays = backupAgeDays();
-      const hasBackup = Boolean(settings.lastBackupAt && ageDays !== null);
+      const hasInitiation = Boolean(settings.lastBackupAt && ageDays !== null);
       const due = backupReminderDue();
       const saferEncrypted = settings.localEncryptionEnabled || sensitiveRecordCount() > 0;
-      if (!hasBackup) {
+      if (!hasInitiation) {
         return {
           tone: "rose",
-          label: "No backup yet",
-          detail: "Export a backup before relying on this device for ministry memory.",
+          label: "No download initiated",
+          detail: backupStatusText(),
           action: saferEncrypted ? "export-encrypted-json" : "export-json",
           actionLabel: saferEncrypted ? "Encrypted Backup" : "Export Backup"
         };
@@ -3109,18 +3961,33 @@
       if (due) {
         return {
           tone: "gold",
-          label: "Backup due",
-          detail: `${backupStatusText()} Your ${reminderDays}-day backup rhythm is due.`,
+          label: "Download initiation due",
+          detail: `${backupStatusText()} Your ${reminderDays}-day download-initiation reminder is due.`,
           action: saferEncrypted ? "export-encrypted-json" : "export-json",
           actionLabel: saferEncrypted ? "Encrypted Backup" : "Export Backup"
         };
       }
       return {
         tone: "green",
-        label: ageDays === 0 ? "Backed up today" : "Backup current",
-        detail: `${backupStatusText()} Your ${reminderDays}-day backup rhythm is current.`,
+        label: ageDays === 0 ? "Download initiated today" : "Recent download initiation",
+        detail: `${backupStatusText()} Your ${reminderDays}-day download-initiation reminder is current.`,
         action: saferEncrypted ? "export-encrypted-json" : "export-json",
         actionLabel: saferEncrypted ? "Encrypted Backup" : "Export Backup"
+      };
+    }
+
+    function backupReadinessState() {
+      const reminderDays = Number(settings.backupReminderDays || 0);
+      const health = backupHealthState();
+      if (!Number.isFinite(reminderDays) || reminderDays <= 0) {
+        return {
+          ready: false,
+          detail: `Reminder Off. ${backupStatusText()} Turn on a positive backup reminder before daily use.`
+        };
+      }
+      return {
+        ready: health.tone === "green",
+        detail: health.detail
       };
     }
 
@@ -3208,7 +4075,7 @@
     }
 
     function shortcutTemplateUrl() {
-      return appBaseUrl() + "?quickgrab=[Shortcut Input]";
+      return appBaseUrl() + "#quickgrab=[Shortcut Input]";
     }
 
     function copyShortcutUrl() {
@@ -3285,18 +4152,23 @@
       return JSON.parse(new TextDecoder().decode(decrypted));
     }
 
-    function scheduleVaultSave() {
+    function scheduleVaultSave(allowDuringRecovery = false) {
+      if (recoveryMutationBlocked() && !allowDuringRecovery) return false;
       if (!settings.localEncryptionEnabled || !vaultPassphrase) return;
       vaultSaveRequestedRevision += 1;
+      vaultPayloadGeneration += 1;
       if (vaultSaveTimer) {
         const clear = window.clearTimeout || clearTimeout;
         clear(vaultSaveTimer);
       }
       const delay = window.setTimeout || setTimeout;
+      const scheduledEpoch = recoveryEpoch;
       vaultSaveTimer = delay(() => {
         vaultSaveTimer = null;
+        if (!allowDuringRecovery && !recoveryEpochIsCurrent(scheduledEpoch)) return;
         flushEncryptedVaultSaves();
       }, 250);
+      return true;
     }
 
     function encryptedVaultPayloadSnapshot() {
@@ -3314,16 +4186,40 @@
       let allowFollowup = true;
       vaultSaveInFlight = (async () => {
         let saved = false;
+        const flushEpoch = recoveryEpoch;
         while (settings.localEncryptionEnabled && vaultPassphrase && vaultSaveCompletedRevision < vaultSaveRequestedRevision) {
           const targetRevision = vaultSaveRequestedRevision;
+          const payloadGeneration = vaultPayloadGeneration;
           const passphrase = vaultPassphrase;
           const payload = encryptedVaultPayloadSnapshot();
+          const flushLease = {
+            id: ++vaultFlushLeaseSequence,
+            recoveryEpoch: flushEpoch,
+            passphrase,
+            targetRevision,
+            payloadGeneration,
+            revoked: false,
+            allowFollowup: true,
+            localSnapshot: null,
+            localCommitted: false,
+            indexedDbTransaction: null,
+            indexedDbSettled: true
+          };
+          activeVaultFlushLease = flushLease;
+          const flushOwnershipIsCurrent = () => vaultFlushLeaseIsCurrent(flushLease)
+            && (recoveryEpoch === flushLease.recoveryEpoch || (recoveryTransactionPending && recoveryEpoch === flushLease.recoveryEpoch + 1))
+            && settings.localEncryptionEnabled
+            && Boolean(vaultPassphrase)
+            && flushLease.passphrase === vaultPassphrase;
+          const payloadOwnershipIsCurrent = () => flushLease.targetRevision === vaultSaveRequestedRevision
+            && flushLease.payloadGeneration === vaultPayloadGeneration;
           try {
-            const envelope = await encryptPayload(payload, passphrase);
-            if (!settings.localEncryptionEnabled || !vaultPassphrase || passphrase !== vaultPassphrase) {
+            const envelope = await encryptPayload(payload, flushLease.passphrase);
+            if (!flushOwnershipIsCurrent()) {
               allowFollowup = false;
               break;
             }
+            if (!payloadOwnershipIsCurrent()) continue;
             const nextSettings = { ...settings, localEncryptionUpdatedAt: envelope.encryptedAt };
             const localEntries = [
               [ENCRYPTED_STORAGE_KEY, JSON.stringify(envelope)],
@@ -3333,24 +4229,34 @@
               [AUTO_MEMORY_KEY, null],
               [SETTINGS_KEY, JSON.stringify(nextSettings)]
             ];
-            const localSnapshot = localStorageSnapshot(localEntries.map(([key]) => key));
-            let localCommitted = false;
+            flushLease.localSnapshot = localStorageSnapshot(localEntries.map(([key]) => key));
             writeLocalStorageBatch(localEntries);
-            localCommitted = true;
+            flushLease.localCommitted = true;
             try {
-              if (canUseIndexedDb()) await commitEncryptedVaultToIndexedDb(envelope, nextSettings);
+              if (canUseIndexedDb()) await commitEncryptedVaultToIndexedDb(envelope, nextSettings, flushLease);
             } catch (error) {
-              if (localCommitted) restoreLocalStorageSnapshot(localSnapshot);
+              restoreVaultFlushLeaseLocalSnapshot(flushLease);
               throw error;
             }
+            if (!flushOwnershipIsCurrent()) throw new Error("Encrypted vault flush lease changed before final publication.");
             settings.localEncryptionUpdatedAt = envelope.encryptedAt;
-            vaultSaveCompletedRevision = targetRevision;
+            vaultSaveCompletedRevision = flushLease.targetRevision;
+            flushLease.localCommitted = false;
             saved = true;
           } catch (error) {
+            restoreVaultFlushLeaseLocalSnapshot(flushLease);
+            if (flushLease.revoked || !flushOwnershipIsCurrent()) {
+              allowFollowup = false;
+              break;
+            }
+            if (!payloadOwnershipIsCurrent()) continue;
             allowFollowup = false;
             console.warn("Could not save encrypted vault", error);
             showToast("Encrypted save failed.");
             break;
+          } finally {
+            if (!flushLease.allowFollowup) allowFollowup = false;
+            if (activeVaultFlushLease === flushLease) activeVaultFlushLease = null;
           }
         }
         return saved;
@@ -3367,9 +4273,11 @@
       return vaultSaveInFlight;
     }
 
-    function persistEncryptedVault() {
+    function persistEncryptedVault(allowDuringRecovery = false) {
+      if (recoveryMutationBlocked() && !allowDuringRecovery) return Promise.resolve(false);
       if (!settings.localEncryptionEnabled || !vaultPassphrase) return Promise.resolve(false);
       vaultSaveRequestedRevision += 1;
+      vaultPayloadGeneration += 1;
       if (vaultSaveTimer) {
         const clear = window.clearTimeout || clearTimeout;
         clear(vaultSaveTimer);
@@ -3435,36 +4343,79 @@
       }
     }
 
-    function normalizeAutoMemoryPayload(payload) {
-      if (!payload || typeof payload !== "object") return null;
-      const data = payload.data || payload.db;
-      if (!hasHistoricalDataShape(data)) return null;
-      if (payload.app === "RUF Ministry Hub" && Number(payload.version) === 2) {
-        return { ...payload, data };
+    function autoMemorySchemaError() {
+      return new Error(AUTO_MEMORY_SCHEMA_RETRY_MESSAGE);
+    }
+
+    function classifyAutoMemorySnapshotPayload(payload) {
+      if (!isPlainBackupObject(payload)) throw autoMemorySchemaError();
+      const ownsData = Object.prototype.hasOwnProperty.call(payload, "data");
+      const ownsLegacyData = Object.prototype.hasOwnProperty.call(payload, "db");
+      if (ownsData === ownsLegacyData) throw autoMemorySchemaError();
+      const data = ownsData ? payload.data : payload.db;
+      if (!isPlainBackupObject(data) || !hasHistoricalDataShape(data)) throw autoMemorySchemaError();
+      const topPresent = Object.prototype.hasOwnProperty.call(payload, "dataSchemaVersion");
+      const nestedPresent = Object.prototype.hasOwnProperty.call(data, "dataSchemaVersion");
+      const topVersion = topPresent ? payload.dataSchemaVersion : null;
+      const nestedVersion = nestedPresent ? data.dataSchemaVersion : null;
+      const supportedVersion = value => typeof value === "number"
+        && Number.isFinite(value)
+        && Number.isInteger(value)
+        && (value === 2 || value === DATA_SCHEMA_VERSION);
+      if ((topPresent && !supportedVersion(topVersion))
+        || (nestedPresent && !supportedVersion(nestedVersion))
+        || (topPresent && nestedPresent && topVersion !== nestedVersion)) throw autoMemorySchemaError();
+      const schemaVersion = topPresent ? topVersion : nestedPresent ? nestedVersion : null;
+      if (schemaVersion === DATA_SCHEMA_VERSION && !DATA_COLLECTIONS.every(collection => Array.isArray(data[collection]))) {
+        throw autoMemorySchemaError();
       }
-      return {
+      if (schemaVersion !== DATA_SCHEMA_VERSION && data.aiProposals !== undefined && !Array.isArray(data.aiProposals)) {
+        throw autoMemorySchemaError();
+      }
+      const ownsApp = Object.prototype.hasOwnProperty.call(payload, "app");
+      const ownsVersion = Object.prototype.hasOwnProperty.call(payload, "version");
+      if (ownsApp !== ownsVersion || (ownsApp && (payload.app !== "RUF Ministry Hub" || payload.version !== 2))) {
+        throw autoMemorySchemaError();
+      }
+      for (const key of ["settings", "customCopy", "autosaveDrafts"]) {
+        if (Object.prototype.hasOwnProperty.call(payload, key) && !isPlainBackupObject(payload[key])) throw autoMemorySchemaError();
+      }
+      return { data, source: ownsData ? "data" : "db", schemaVersion, topPresent, nestedPresent };
+    }
+
+    function classifyAutoMemoryVault(raw) {
+      if (!isPlainBackupObject(raw)
+        || raw.version !== 1
+        || !Array.isArray(raw.snapshots)
+        || raw.snapshots.length > MAX_AUTO_MEMORY_RAW_SNAPSHOTS) throw autoMemorySchemaError();
+      return raw;
+    }
+
+    function normalizeAutoMemoryPayload(payload) {
+      const classification = classifyAutoMemorySnapshotPayload(payload);
+      const normalized = {
+        ...payload,
         exportedAt: payload.exportedAt || payload.savedAt || nowISO(),
         app: "RUF Ministry Hub",
         version: 2,
-        dataSchemaVersion: DATA_SCHEMA_VERSION,
-        data,
-        settings: payload.settings && typeof payload.settings === "object" ? payload.settings : {},
-        customCopy: payload.customCopy && typeof payload.customCopy === "object" ? payload.customCopy : {},
-        autosaveDrafts: payload.autosaveDrafts && typeof payload.autosaveDrafts === "object" ? payload.autosaveDrafts : {}
+        data: classification.data,
+        settings: payload.settings || {},
+        customCopy: payload.customCopy || {},
+        autosaveDrafts: payload.autosaveDrafts || {}
       };
+      if (classification.source === "db") delete normalized.db;
+      return normalized;
     }
 
     function normalizeAutoMemoryVault(raw = {}) {
+      classifyAutoMemoryVault(raw);
       const normalized = emptyAutoMemoryVault();
-      if (!raw || typeof raw !== "object") return normalized;
-      normalized.version = Number(raw.version || 1);
+      normalized.version = raw.version;
       normalized.updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : "";
-      const snapshots = Array.isArray(raw.snapshots) ? raw.snapshots : [];
-      normalized.snapshots = snapshots
-        .filter(snapshot => snapshot && typeof snapshot === "object" && snapshot.payload && (snapshot.payload.data || snapshot.payload.db))
+      normalized.snapshots = raw.snapshots
         .map(snapshot => {
+          if (!isPlainBackupObject(snapshot)) throw autoMemorySchemaError();
           const payload = normalizeAutoMemoryPayload(snapshot.payload);
-          if (!payload) return null;
           return {
             id: snapshot.id || uid("memory"),
             savedAt: snapshot.savedAt || snapshot.createdAt || payload.exportedAt || nowISO(),
@@ -3475,7 +4426,6 @@
             payload
           };
         })
-        .filter(Boolean)
         .sort((a, b) => String(b.savedAt || "").localeCompare(String(a.savedAt || "")))
         .slice(0, autoMemoryLimit());
       return normalized;
@@ -3519,7 +4469,7 @@
     function captureAutoMemorySnapshot(label = "Auto save", options = {}) {
       if (!settings?.autoMemoryVaultEnabled) return null;
       if (typeof db === "undefined" || !db) return null;
-      const payload = currentPortablePayload();
+      const payload = cloneJson(currentPortablePayload());
       payload.exportedAt = nowISO();
       const signature = autoMemorySignature(payload);
       const vault = loadAutoMemoryVault();
@@ -3607,7 +4557,8 @@
         showToast("That restore point is no longer available.");
         return false;
       }
-      return applyRestoredPayload(snapshot.payload, {
+      const restorePayload = cloneJson(snapshot.payload);
+      return applyRestoredPayload(restorePayload, {
         undoLabel: "auto memory restore",
         beforeLabel: "Before Auto Memory restore",
         toast: "Auto Memory restored."
@@ -3622,15 +4573,49 @@
     }
 
     function downloadJson(payload, filename) {
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      let url = "";
+      let anchor = null;
+      let appendAttempted = false;
+      let clickReturned = false;
+      let failure = null;
+      try {
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        url = URL.createObjectURL(blob);
+        anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        appendAttempted = true;
+        document.body.appendChild(anchor);
+        anchor.click();
+        clickReturned = true;
+      } catch (error) {
+        failure = new Error("Backup download could not be initiated safely.");
+      } finally {
+        if (anchor && appendAttempted) {
+          try {
+            anchor.remove();
+          } catch (error) {
+            if (!failure) failure = new Error("Backup download cleanup could not finish safely.");
+          }
+        }
+        if (url) {
+          try {
+            URL.revokeObjectURL(url);
+          } catch (error) {
+            if (!failure) failure = new Error("Backup download cleanup could not finish safely.");
+          }
+        }
+      }
+      if (failure) {
+        Object.defineProperty(failure, "downloadMayHaveStarted", {
+          value: clickReturned,
+          enumerable: false,
+          configurable: false,
+          writable: false
+        });
+        throw failure;
+      }
+      return true;
     }
 
     function resetViewAfterRestore() {
@@ -3647,10 +4632,13 @@
         aiConfirmPersonChoice: {},
         aiConfirmValidationErrors: [],
         aiConfirmValidationWarnings: [],
+        undoSaving: false,
+        restoreSaving: false,
         search: "",
         peopleVisibleLimit: PEOPLE_BATCH_SIZE,
         searchVisibleLimits: {},
         quickGrabDraftText: "",
+        todayCaptureDraftText: "",
         profileCaptureOwnerId: "",
         profileCapturePersonId: "",
         profileCaptureDraftText: "",
@@ -3668,100 +4656,94 @@
       };
     }
 
-    async function applyEncryptedRestoredPayload(payload, options = {}) {
-      const previous = { db, settings: cloneJson(settings), customCopy, autosaveDraftsCache, memoryVaultCache, view: cloneJson(view) };
-      const previousRevisions = { requested: vaultSaveRequestedRevision, completed: vaultSaveCompletedRevision };
-      const persistenceKeys = [SETTINGS_KEY, CALM_MODE_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, ENCRYPTED_STORAGE_KEY, AUTO_MEMORY_KEY];
-      const persistenceSnapshot = localStorageSnapshot(persistenceKeys);
-      if (!await persistEncryptedVault()) {
-        showToast("Backup restore could not secure the current encrypted vault.", "error");
-        return false;
-      }
-      const applied = applyRestoredPayload(payload, { ...options, skipEncryptedPersistence: true });
-      if (!applied) return false;
-      if (await persistEncryptedVault()) return true;
-      db = previous.db;
-      settings = previous.settings;
-      customCopy = previous.customCopy;
-      autosaveDraftsCache = previous.autosaveDraftsCache;
-      memoryVaultCache = previous.memoryVaultCache;
-      view = previous.view;
-      vaultSaveRequestedRevision = previousRevisions.requested;
-      vaultSaveCompletedRevision = previousRevisions.completed;
-      restoreLocalStorageSnapshot(persistenceSnapshot);
-      if (canUseIndexedDb()) {
-        try {
-          const previousEnvelope = persistenceSnapshot.get(ENCRYPTED_STORAGE_KEY);
-          if (previousEnvelope) await idbTransaction("readwrite", ENCRYPTED_STORAGE_KEY, JSON.parse(previousEnvelope));
-          else await deleteFromIndexedDb(ENCRYPTED_STORAGE_KEY);
-          await idbTransaction("readwrite", SETTINGS_KEY, previous.settings);
-          await Promise.all([
-            deleteFromIndexedDb(STORAGE_KEY),
-            deleteFromIndexedDb(COPY_KEY),
-            deleteFromIndexedDb(AUTOSAVE_KEY),
-            deleteFromIndexedDb(AUTO_MEMORY_KEY)
-          ]);
-        } catch (restoreError) {
-          console.warn("Could not fully roll back encrypted backup restore in IndexedDB", restoreError);
-        }
-      }
-      showToast("Backup restore could not be saved. Your previous data remains in place.", "error");
-      render();
-      return false;
+    function stagedRestoreMemoryVault(previous, label) {
+      const vault = normalizeAutoMemoryVault(previous.autoMemoryVault);
+      if (!previous.settings.autoMemoryVaultEnabled) return vault;
+      const payload = {
+        exportedAt: nowISO(),
+        app: "RUF Ministry Hub",
+        version: 2,
+        dataSchemaVersion: DATA_SCHEMA_VERSION,
+        data: cloneJson(previous.db),
+        settings: cloneJson(previous.settings),
+        customCopy: cloneJson(previous.customCopy),
+        autosaveDrafts: cloneJson(previous.autosaveDrafts)
+      };
+      const signature = autoMemorySignature(payload);
+      const snapshot = {
+        id: uid("memory"),
+        savedAt: payload.exportedAt,
+        label: String(label || "Before backup restore").slice(0, 80),
+        appVersion: APP_VERSION,
+        summary: dataSummaryText(payload.data),
+        signature,
+        payload
+      };
+      vault.snapshots = [snapshot, ...vault.snapshots.filter(item => item.signature !== signature)].slice(0, autoMemoryLimit());
+      vault.updatedAt = snapshot.savedAt;
+      return vault;
     }
 
     function applyRestoredPayload(payload, options = {}) {
-      if (settings.localEncryptionEnabled && vaultPassphrase && !options.skipEncryptedPersistence) {
-        return applyEncryptedRestoredPayload(payload, options);
-      }
+      if (recoveryMutationBlocked()) return Promise.resolve(false);
       const validatedPayload = validateBackupPayload(payload);
-      const restoredData = normalizeData(validatedPayload.data);
-      const incomingSettings = normalizeSettings(validatedPayload.settings || {});
-      const keepVault = {
-        localEncryptionEnabled: settings.localEncryptionEnabled,
-        localEncryptionHint: settings.localEncryptionHint,
-        localEncryptionUpdatedAt: settings.localEncryptionUpdatedAt
-      };
-      const previous = {
-        db,
-        settings,
-        customCopy,
-        autosaveDraftsCache,
-        view
-      };
-      const persistenceKeys = [SETTINGS_KEY, CALM_MODE_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, ENCRYPTED_STORAGE_KEY, AUTO_MEMORY_KEY];
-      const persistenceSnapshot = localStorageSnapshot(persistenceKeys);
-      try {
-        if (options.captureBefore !== false) captureAutoMemorySnapshot(options.beforeLabel || "Before backup restore", { force: true });
-        recordUndo(options.undoLabel || "backup restore");
-        db = restoredData;
-        settings = normalizeSettings({ ...incomingSettings, ...keepVault });
-        customCopy = validatedPayload.customCopy && typeof validatedPayload.customCopy === "object" ? validatedPayload.customCopy : {};
-        autosaveDraftsCache = validatedPayload.autosaveDrafts && typeof validatedPayload.autosaveDrafts === "object" ? validatedPayload.autosaveDrafts : {};
-        saveSettings();
-        saveData();
-        saveCustomCopy();
-        saveAutosaveDrafts(autosaveDraftsCache || {});
-        resetViewAfterRestore();
-        showToast(options.toast || "Backup restored.");
-        render();
-        return true;
-      } catch (error) {
-        db = previous.db;
-        settings = previous.settings;
-        customCopy = previous.customCopy;
-        autosaveDraftsCache = previous.autosaveDraftsCache;
-        view = previous.view;
-        restoreLocalStorageSnapshot(persistenceSnapshot);
-        mirrorToIndexedDb(SETTINGS_KEY, settings);
-        mirrorToIndexedDb(STORAGE_KEY, db);
-        mirrorToIndexedDb(COPY_KEY, customCopy);
-        mirrorToIndexedDb(AUTOSAVE_KEY, autosaveDraftsCache || {});
-        console.warn("Backup restore was rolled back because local persistence failed", error);
-        showToast("Backup restore could not be saved. Your previous data remains in place.", "error");
-        render();
-        return false;
-      }
+      const previousView = cloneJson(view);
+      return (async () => {
+        const started = beginRecoveryTransaction("restore");
+        if (started && typeof started.then === "function") {
+          if (!(await started)) return false;
+        } else if (!started) {
+          return false;
+        }
+        const previous = captureRecoveryTransactionState();
+        previous.view = previousView;
+        try {
+          if (canUseIndexedDb()) previous.indexedDb = await readIndexedDbSnapshot(recoveryPersistenceKeys());
+          const restoredData = normalizeData(validatedPayload.data);
+          const incomingSettings = normalizeSettings(validatedPayload.settings || {});
+          const keepVault = {
+            localEncryptionEnabled: previous.settings.localEncryptionEnabled,
+            localEncryptionHint: previous.settings.localEncryptionHint,
+            localEncryptionUpdatedAt: previous.settings.localEncryptionUpdatedAt
+          };
+          const targetMemory = options.captureBefore === false
+            ? normalizeAutoMemoryVault(previous.autoMemoryVault)
+            : stagedRestoreMemoryVault(previous, options.beforeLabel);
+          recordUndo(options.undoLabel || "backup restore", {
+            autosaveDrafts: previous.autosaveDrafts,
+            autoMemoryVault: previous.autoMemoryVault,
+            view: previous.view
+          }, { allowDuringRecovery: true });
+          db = restoredData;
+          settings = normalizeSettings({ ...incomingSettings, ...keepVault });
+          customCopy = validatedPayload.customCopy && typeof validatedPayload.customCopy === "object" ? validatedPayload.customCopy : {};
+          autosaveDraftsCache = validatedPayload.autosaveDrafts && typeof validatedPayload.autosaveDrafts === "object" ? validatedPayload.autosaveDrafts : {};
+          memoryVaultCache = targetMemory;
+          resetViewAfterRestore();
+          if (settings.localEncryptionEnabled) {
+            scheduleVaultSave(true);
+            if (!(await confirmStableRecoveryRevision())) throw new Error("Encrypted backup restore could not finish at a stable revision.");
+          } else {
+            await persistPlainRecoveryState(autosaveDraftsCache, targetMemory);
+          }
+          finishRecoveryTransaction();
+          showToast(options.toast || "Backup restored.");
+          render();
+          return true;
+        } catch (error) {
+          cancelRecoveryTimers();
+          try {
+            await restoreRecoveryTransactionState(previous);
+          } catch (restoreError) {
+            console.warn("Could not fully roll back backup restore persistence", restoreError);
+          }
+          finishRecoveryTransaction();
+          console.warn("Backup restore was rolled back because local persistence failed", error);
+          showToast("Backup restore could not be saved. Your previous data remains in place.", "error");
+          render();
+          return false;
+        }
+      })();
     }
 
     function loadAutosaveDrafts() {
@@ -3776,14 +4758,16 @@
     }
 
     function saveAutosaveDrafts(drafts) {
+      if (recoveryMutationBlocked()) return false;
       if (settings?.localEncryptionEnabled) {
         autosaveDraftsCache = cloneJson(drafts || {});
         localStorage.removeItem(AUTOSAVE_KEY);
         deleteFromIndexedDb(AUTOSAVE_KEY).catch(() => {});
         scheduleVaultSave();
-        return;
+        return true;
       }
       persistPlainRecord(AUTOSAVE_KEY, drafts);
+      return true;
     }
 
     function autosaveDraftKey() {
@@ -3830,9 +4814,9 @@
     }
 
     function saveCurrentDraftNow() {
-      if (!settings.enableAutoSave) return;
+      if (recoveryMutationBlocked() || !settings.enableAutoSave) return false;
       const draft = collectAutosaveDraft();
-      if (!draft) return;
+      if (!draft) return false;
       const drafts = loadAutosaveDrafts();
       const workflowDraft = draft.key.startsWith("workflow:");
       if (workflowDraft || hasDraftContent(draft.fields)) drafts[draft.key] = draft;
@@ -3846,16 +4830,23 @@
         };
       }
       saveAutosaveDrafts(drafts);
+      return true;
     }
 
     function scheduleAutosave() {
-      if (!settings.enableAutoSave) return;
+      if (recoveryMutationBlocked() || !settings.enableAutoSave) return false;
       if (autosaveTimer) {
         const clear = window.clearTimeout || clearTimeout;
         clear(autosaveTimer);
       }
       const delay = window.setTimeout || setTimeout;
-      autosaveTimer = delay(saveCurrentDraftNow, 180);
+      const scheduledEpoch = recoveryEpoch;
+      autosaveTimer = delay(() => {
+        autosaveTimer = null;
+        if (!recoveryEpochIsCurrent(scheduledEpoch)) return;
+        saveCurrentDraftNow();
+      }, 180);
+      return true;
     }
 
     function restoreAutosaveDraft() {
@@ -3866,6 +4857,7 @@
       const draft = drafts[key] || (key === "capture:main" ? drafts["screen:quick"] : null);
       if (!draft || !draft.fields) return;
       Object.entries(draft.fields).forEach(([id, value]) => {
+        if (id === autosaveRestoreSkipTargetId) return;
         const el = document.getElementById(id);
         if (!isAutosaveField(el)) return;
         if (el.type === "checkbox") el.checked = Boolean(value);
@@ -3873,6 +4865,8 @@
       });
       const quickText = document.getElementById("quick-text");
       if (quickText) view.quickGrabDraftText = quickText.value;
+      const todayText = document.getElementById("today-capture-text");
+      if (todayText) view.todayCaptureDraftText = todayText.value;
     }
 
     function clearAutosaveDraft(key = autosaveDraftKey()) {
@@ -4443,7 +5437,7 @@
       });
       const controls = focusableControls();
       const preferred = typeof panel.querySelector === "function"
-        ? panel.querySelector("[autofocus], textarea, input, select")
+        ? panel.querySelector("[autofocus]:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled])")
         : null;
       const target = preferred || controls[0] || panel;
       if (target && typeof target.focus === "function") target.focus({ preventScroll: true });
@@ -4607,6 +5601,7 @@
       }
       view.locked = false;
       showToast("Unlocked.");
+      requestPageHeadingFocus();
       render();
     }
 
@@ -4617,13 +5612,59 @@
         reportFieldError(input, "Enter your vault passphrase.");
         return;
       }
+      const unlockAttemptId = ++vaultUnlockAttemptSequence;
+      const unlockEpoch = recoveryEpoch;
+      let rawEnvelope = "";
+      const ownership = () => {
+        if (!recoveryEpochIsCurrent(unlockEpoch) || unlockAttemptId !== vaultUnlockAttemptSequence) return "stale";
+        try {
+          if ((localStorage.getItem(ENCRYPTED_STORAGE_KEY) || "") !== rawEnvelope) return "changed";
+        } catch (_error) {
+          return "changed";
+        }
+        return "current";
+      };
+      const reportStorageRetry = message => {
+        input?.removeAttribute?.("aria-invalid");
+        input?.focus?.({ preventScroll: false });
+        showToast(message, "error");
+        return false;
+      };
       try {
-        const envelope = JSON.parse(localStorage.getItem(ENCRYPTED_STORAGE_KEY) || "{}");
+        rawEnvelope = localStorage.getItem(ENCRYPTED_STORAGE_KEY) || "";
+        const envelope = JSON.parse(rawEnvelope || "{}");
         const payload = await decryptPayload(envelope, passphrase);
-        db = normalizeData(payload.data);
-        customCopy = payload.customCopy && typeof payload.customCopy === "object" ? payload.customCopy : {};
-        autosaveDraftsCache = payload.autosaveDrafts && typeof payload.autosaveDrafts === "object" ? payload.autosaveDrafts : {};
-        memoryVaultCache = normalizeAutoMemoryVault(payload.autoMemoryVault || emptyAutoMemoryVault());
+        const currentOwnership = ownership();
+        if (currentOwnership === "stale") return false;
+        if (currentOwnership === "changed") return reportStorageRetry(VAULT_ENVELOPE_RETRY_MESSAGE);
+        let stagedData;
+        let stagedCopy;
+        let stagedDrafts;
+        let stagedAutoMemory;
+        try {
+          classifyStoredDataSchema(payload?.data);
+          const ownsAutoMemory = isPlainBackupObject(payload)
+            && Object.prototype.hasOwnProperty.call(payload, "autoMemoryVault");
+          const rawAutoMemory = ownsAutoMemory ? payload.autoMemoryVault : emptyAutoMemoryVault();
+          classifyAutoMemoryVault(rawAutoMemory);
+          rawAutoMemory.snapshots.forEach(snapshot => {
+            if (!isPlainBackupObject(snapshot)) throw autoMemorySchemaError();
+            classifyAutoMemorySnapshotPayload(snapshot.payload);
+          });
+          stagedData = normalizeData(payload.data);
+          stagedCopy = payload.customCopy && typeof payload.customCopy === "object" ? payload.customCopy : {};
+          stagedDrafts = payload.autosaveDrafts && typeof payload.autosaveDrafts === "object" ? payload.autosaveDrafts : {};
+          stagedAutoMemory = normalizeAutoMemoryVault(rawAutoMemory);
+        } catch (_error) {
+          return reportStorageRetry(VAULT_SCHEMA_RETRY_MESSAGE);
+        }
+        const publicationOwnership = ownership();
+        if (publicationOwnership === "stale") return false;
+        if (publicationOwnership === "changed") return reportStorageRetry(VAULT_ENVELOPE_RETRY_MESSAGE);
+        db = stagedData;
+        customCopy = stagedCopy;
+        autosaveDraftsCache = stagedDrafts;
+        memoryVaultCache = stagedAutoMemory;
         vaultPassphrase = passphrase;
         view.encryptionLocked = false;
         view.locked = Boolean(settings.appLockEnabled && settings.pinHash);
@@ -4633,10 +5674,16 @@
         restoreInterruptedWorkflow();
         initializeAutoMemoryVault();
         showToast("Encrypted storage unlocked.");
+        if (!view.locked) requestPageHeadingFocus();
         render();
+        return true;
       } catch (error) {
+        const currentOwnership = ownership();
+        if (currentOwnership === "stale") return false;
+        if (currentOwnership === "changed") return reportStorageRetry(VAULT_ENVELOPE_RETRY_MESSAGE);
         console.warn("Could not unlock encrypted storage", error);
         reportFieldError(input, "Passphrase did not unlock storage.");
+        return false;
       }
     }
 
@@ -4672,6 +5719,7 @@
         showToast("Use at least 8 characters.");
         return false;
       }
+      return withActiveMutation("device-vault-enable", async () => {
       const previous = {
         settings: cloneJson(settings),
         autosaveDraftsCache,
@@ -4717,10 +5765,14 @@
         showToast("Encrypted storage could not be enabled.");
         return false;
       }
+      undoStack = [];
+      undoGeneration += 1;
       return true;
+      });
     }
 
-    function disableLocalEncryptionRecord() {
+    async function disableLocalEncryptionRecord() {
+      return withActiveMutation("device-vault-disable", async () => {
       const autoMemoryVault = normalizeAutoMemoryVault(memoryVaultCache || emptyAutoMemoryVault());
       const nextSettings = normalizeSettings({
         ...settings,
@@ -4728,32 +5780,43 @@
         localEncryptionHint: "",
         localEncryptionUpdatedAt: ""
       });
+      const drafts = autosaveDraftsCache && Object.keys(autosaveDraftsCache).length ? cloneJson(autosaveDraftsCache) : null;
+      const memory = autoMemoryVault.snapshots.length ? cloneJson(autoMemoryVault) : null;
+      let localSnapshot = null;
       try {
-        writeLocalStorageBatch([
+        localSnapshot = writeLocalStorageBatch([
           [STORAGE_KEY, JSON.stringify(db)],
           [COPY_KEY, JSON.stringify(customCopy)],
-          [AUTOSAVE_KEY, autosaveDraftsCache && Object.keys(autosaveDraftsCache).length ? JSON.stringify(autosaveDraftsCache) : null],
-          [AUTO_MEMORY_KEY, autoMemoryVault.snapshots.length ? JSON.stringify(autoMemoryVault) : null],
+          [AUTOSAVE_KEY, drafts ? JSON.stringify(drafts) : null],
+          [AUTO_MEMORY_KEY, memory ? JSON.stringify(memory) : null],
           [SETTINGS_KEY, JSON.stringify(nextSettings)],
           [CALM_MODE_KEY, nextSettings.calmMode ? "on" : "off"],
           [ENCRYPTED_STORAGE_KEY, null]
         ]);
+        if (canUseIndexedDb()) {
+          await writeIndexedDbBatch([
+            [STORAGE_KEY, db],
+            [COPY_KEY, customCopy],
+            [AUTOSAVE_KEY, drafts || undefined],
+            [AUTO_MEMORY_KEY, memory || undefined],
+            [SETTINGS_KEY, nextSettings],
+            [ENCRYPTED_STORAGE_KEY, undefined]
+          ]);
+        }
       } catch (error) {
+        if (localSnapshot) restoreLocalStorageSnapshot(localSnapshot);
         console.warn("Could not stage plaintext records while disabling encrypted storage", error);
         showToast("Encrypted storage remains on because plaintext records could not be saved.", "error");
         return false;
       }
       settings = nextSettings;
       vaultPassphrase = "";
-      mirrorToIndexedDb(STORAGE_KEY, db);
-      mirrorToIndexedDb(COPY_KEY, customCopy);
-      if (autosaveDraftsCache && Object.keys(autosaveDraftsCache).length) mirrorToIndexedDb(AUTOSAVE_KEY, autosaveDraftsCache);
-      if (autoMemoryVault.snapshots.length) mirrorToIndexedDb(AUTO_MEMORY_KEY, autoMemoryVault);
-      mirrorToIndexedDb(SETTINGS_KEY, settings);
       autosaveDraftsCache = null;
       memoryVaultCache = null;
-      deleteFromIndexedDb(ENCRYPTED_STORAGE_KEY).catch(() => {});
+      undoStack = [];
+      undoGeneration += 1;
       return true;
+      });
     }
 
     function setAppPinRecord(pin) {
@@ -4795,6 +5858,7 @@
     }
 
     async function requestNotifications() {
+      if (recoveryMutationBlocked()) return false;
       if (typeof window === "undefined" || !("Notification" in window)) {
         settings.notificationsEnabled = false;
         saveSettings();
@@ -4802,12 +5866,15 @@
         render();
         return;
       }
+      const permissionEpoch = recoveryEpoch;
       let permission = Notification.permission;
       if (permission === "default") permission = await Notification.requestPermission();
+      if (!recoveryEpochIsCurrent(permissionEpoch)) return false;
       settings.notificationsEnabled = permission === "granted";
       saveSettings();
       showToast(settings.notificationsEnabled ? "Reminders enabled." : "Notifications were not enabled.");
       render();
+      return true;
     }
 
     function maybeSendReminderNotification() {
@@ -4825,60 +5892,127 @@
       new Notification("RUF Ministry Hub", { body, tag: "ruf-ministry-hub-digest" });
     }
 
-    function cleanQuickGrabUrlParams(params) {
-      params.delete("quickgrab");
-      params.delete("text");
-      params.delete("note");
-      params.delete("quickgrabCategory");
-      params.delete("category");
-      params.delete("tag");
-      params.delete("tags");
-      params.delete("quickgrabUrgency");
-      params.delete("urgency");
-      if (typeof window === "undefined" || !window.history || !window.history.replaceState) return;
+    const LEGACY_QUICK_GRAB_QUERY_KEYS = [
+      "quickgrab",
+      "text",
+      "note",
+      "quickgrabCategory",
+      "category",
+      "tag",
+      "tags",
+      "quickgrabUrgency",
+      "urgency"
+    ];
+    const MAX_SHARED_QUICK_GRAB_CHARACTERS = 6000;
+
+    function replaceCurrentSharedCaptureUrl(search, hash) {
+      if (typeof window === "undefined" || !window.location || !window.history || typeof window.history.replaceState !== "function") return false;
       try {
-        const cleaned = window.location.pathname + (params.toString() ? "?" + params.toString() : "") + window.location.hash;
-        window.history.replaceState({}, "", cleaned);
+        const cleaned = window.location.pathname + (search ? "?" + search : "") + (hash || "");
+        window.history.replaceState(window.history.state, "", cleaned);
+        return true;
       } catch (error) {
-        console.warn("Could not clean Quick Grab URL", error);
+        console.warn("Could not clean the shared capture URL.");
+        return false;
       }
     }
 
-    function decodeSharedUrlText(value) {
-      const text = String(value || "");
-      if (!/%[0-9a-f]{2}/i.test(text)) return text;
-      try {
-        return decodeURIComponent(text);
-      } catch (error) {
-        return text;
-      }
+    function scrubLegacyQuickGrabQuery() {
+      if (typeof window === "undefined" || !window.location) return true;
+      const params = new URLSearchParams(window.location.search || "");
+      let changed = false;
+      LEGACY_QUICK_GRAB_QUERY_KEYS.forEach(key => {
+        if (!params.has(key)) return;
+        params.delete(key);
+        changed = true;
+      });
+      if (!changed) return true;
+      return replaceCurrentSharedCaptureUrl(params.toString(), window.location.hash || "");
     }
 
-    function captureQuickGrabFromUrl() {
-      if (!settings.enableUrlQuickGrab || typeof window === "undefined" || !window.location || !window.location.search) return false;
-      const params = new URLSearchParams(window.location.search);
-      const imported = params.get("quickgrab") || params.get("text") || params.get("note") || "";
-      const sharedText = decodeSharedUrlText(imported).trim();
-      if (!sharedText) return false;
-      pendingUrlQuickGrabText = sharedText;
-      pendingUrlQuickGrabParams = params;
+    function currentQuickGrabFragment() {
+      if (typeof window === "undefined" || !window.location) return { kind: "none" };
+      const hash = String(window.location.hash || "");
+      if (hash !== "#quickgrab" && !hash.startsWith("#quickgrab=")) return { kind: "none" };
+      const body = hash.slice(1);
+      if (/%(?![0-9a-f]{2})/i.test(body)) return { kind: "invalid" };
+      const params = new URLSearchParams(body);
+      const entries = Array.from(params.entries());
+      if (entries.length !== 1 || entries[0][0] !== "quickgrab" || params.getAll("quickgrab").length !== 1) return { kind: "invalid" };
+      const text = entries[0][1];
+      if (!text.trim() || text.length > MAX_SHARED_QUICK_GRAB_CHARACTERS) return { kind: "invalid" };
+      return { kind: "capture", text };
+    }
+
+    function sharedFragmentQuickGrabEnabled() {
+      return normalizeSettings(settings).enableUrlQuickGrab === true;
+    }
+
+    function clearPendingFragmentQuickGrab() {
+      pendingFragmentQuickGrabText = "";
+      sharedFragmentImportDeferred = false;
+    }
+
+    function activatePendingFragmentQuickGrab() {
+      if (!sharedFragmentQuickGrabEnabled()) {
+        clearPendingFragmentQuickGrab();
+        return false;
+      }
+      if (view.startupHydrating) {
+        sharedFragmentImportDeferred = Boolean(pendingFragmentQuickGrabText);
+        return false;
+      }
+      if (view.startupRecoveryError) {
+        sharedFragmentImportDeferred = Boolean(pendingFragmentQuickGrabText);
+        return false;
+      }
+      if (recoveryMutationBlocked()) {
+        sharedFragmentImportDeferred = Boolean(pendingFragmentQuickGrabText);
+        return false;
+      }
+      if (!pendingFragmentQuickGrabText) {
+        sharedFragmentImportDeferred = false;
+        return false;
+      }
+      sharedFragmentImportDeferred = false;
       view.quickGrabDraftSource = "shared";
       view.screen = "quick";
       view.quickGrabId = null;
+      render();
       return true;
     }
 
-    function importQuickGrabFromCurrentUrl() {
-      if (captureQuickGrabFromUrl()) render();
+    function importQuickGrabFromCurrentFragment() {
+      if (typeof window === "undefined" || !window.location) return false;
+      if (!scrubLegacyQuickGrabQuery()) {
+        showToast("Shared text could not be opened safely.", "error");
+        return false;
+      }
+      const fragment = currentQuickGrabFragment();
+      if (fragment.kind === "none") return false;
+      if (!replaceCurrentSharedCaptureUrl(new URLSearchParams(window.location.search || "").toString(), "")) {
+        showToast("Shared text could not be opened safely.", "error");
+        return false;
+      }
+      if (fragment.kind !== "capture") {
+        showToast("Shared text could not be opened safely.", "error");
+        return false;
+      }
+      if (!sharedFragmentQuickGrabEnabled()) {
+        clearPendingFragmentQuickGrab();
+        return false;
+      }
+      pendingFragmentQuickGrabText = fragment.text;
+      return activatePendingFragmentQuickGrab();
     }
 
     function appendQuickGrabDraft(existing, imported) {
       const current = String(existing || "");
-      const incoming = String(imported || "").trim();
-      if (!incoming) return current;
-      if (!current.trim()) return incoming;
+      const incoming = String(imported || "");
+      if (!incoming.trim()) return current;
+      if (!current) return incoming;
       const existingBlocks = current.split(/\n{2,}/).map(block => block.trim()).filter(Boolean);
-      if (existingBlocks.includes(incoming)) return current;
+      if (current === incoming || existingBlocks.includes(incoming)) return current;
       return current.replace(/\s+$/, "") + "\n\n" + incoming;
     }
 
@@ -4898,44 +6032,316 @@
       defer(callback, 0);
     }
 
-    function applyPendingUrlQuickGrabText() {
-      if (!pendingUrlQuickGrabText || view.screen !== "quick") return;
+    function applyPendingFragmentQuickGrabText() {
+      if (!sharedFragmentQuickGrabEnabled()) {
+        clearPendingFragmentQuickGrab();
+        return false;
+      }
+      if (recoveryMutationBlocked()) return false;
+      if (!pendingFragmentQuickGrabText || view.screen !== "quick") return false;
       const textarea = document.getElementById("quick-text");
-      if (!textarea) return;
-      const nextText = appendQuickGrabDraft(textarea.value || view.quickGrabDraftText, pendingUrlQuickGrabText);
-      pendingUrlQuickGrabText = "";
+      if (!textarea) return false;
+      const nextText = appendQuickGrabDraft(textarea.value || view.quickGrabDraftText, pendingFragmentQuickGrabText);
+      pendingFragmentQuickGrabText = "";
       view.quickGrabDraftText = nextText;
       textarea.value = nextText;
       scheduleAutosave();
       focusQuickGrabTextareaAtEnd(textarea);
-      if (pendingUrlQuickGrabParams) {
-        cleanQuickGrabUrlParams(pendingUrlQuickGrabParams);
-        pendingUrlQuickGrabParams = null;
-      }
       afterVisibleTextareaUpdate(() => showToast("Shared text added to Quick Grab draft."));
+      return true;
+    }
+
+    function voiceCaptureIsEnabled(value = settings) {
+      return Boolean(value?.enableVoiceCapture === true
+        && value?.voiceCaptureDisclosureVersion === VOICE_CAPTURE_DISCLOSURE_VERSION);
+    }
+
+    function dictationCaptureContext(targetId = "quick-text") {
+      return {
+        targetId: String(targetId || "quick-text"),
+        screen: String(view.screen || ""),
+        draftKey: String(autosaveDraftKey() || ""),
+        personId: String(view.personId || ""),
+        profileCapturePersonId: String(view.profileCapturePersonId || ""),
+        profileCaptureDraftTargetId: String(view.profileCaptureDraftTargetId || "")
+      };
+    }
+
+    function dictationCaptureContextMatches(expected = {}) {
+      const current = dictationCaptureContext(expected.targetId);
+      return Object.keys(current).every(key => current[key] === expected[key]);
+    }
+
+    function clearDictationSession(session) {
+      if (!session) return;
+      if (session.deadlineTimer) {
+        const clear = window.clearTimeout || clearTimeout;
+        clear(session.deadlineTimer);
+        session.deadlineTimer = null;
+      }
+      if (session.recognition) {
+        try {
+          session.recognition.onresult = null;
+          session.recognition.onerror = null;
+          session.recognition.onend = null;
+        } catch (error) {
+          // Some browser speech implementations expose non-writable handlers.
+        }
+      }
+      if (activeDictationSession === session) activeDictationSession = null;
+    }
+
+    function bestEffortAbortDictation(session) {
+      try {
+        if (typeof session?.recognition?.abort === "function") session.recognition.abort();
+      } catch (error) {
+        // Browser/device behavior is not verified; app state is already detached.
+      }
+    }
+
+    function failDictationSession(session, options = {}) {
+      if (!session || session.finished || activeDictationSession !== session) return false;
+      session.finished = true;
+      session.transcript = "";
+      clearDictationSession(session);
+      bestEffortAbortDictation(session);
+      if (options.announce !== false) showToast(options.message || "Could not add dictation. Nothing was saved.", "error");
+      return false;
+    }
+
+    function cancelActiveDictation(options = {}) {
+      return activeDictationSession ? failDictationSession(activeDictationSession, options) : false;
+    }
+
+    function syncCommittedDictationDraft(targetId, value) {
+      if (targetId === "quick-text") view.quickGrabDraftText = value;
+      if (targetId === "today-capture-text") view.todayCaptureDraftText = value;
+      if (targetId === "profile-capture-text") view.profileCaptureDraftText = value;
+    }
+
+    function currentDictationViewDraft(targetId) {
+      if (targetId === "quick-text") return view.quickGrabDraftText;
+      if (targetId === "today-capture-text") return view.todayCaptureDraftText;
+      if (targetId === "profile-capture-text") return view.profileCaptureDraftText;
+      return undefined;
+    }
+
+    function finishDictationSession(session) {
+      if (!session || session.finished || activeDictationSession !== session) return false;
+      if (!session.transcript) return failDictationSession(session, { message: "No dictation was added. Nothing was saved." });
+      const target = document.getElementById(session.context.targetId);
+      if (!voiceCaptureIsEnabled()
+        || !recoveryEpochIsCurrent(session.epoch)
+        || !dictationCaptureContextMatches(session.context)
+        || !target
+        || target !== session.target
+        || target.isConnected === false) {
+        return failDictationSession(session, { announce: false });
+      }
+      session.finished = true;
+      const nextValue = [String(target.value || "").trim(), session.transcript].filter(Boolean).join("\n");
+      const previousValue = target.value;
+      const previousViewDraft = currentDictationViewDraft(session.context.targetId);
+      const hadCaptureMethod = Object.prototype.hasOwnProperty.call(target.dataset, "captureMethod");
+      const previousCaptureMethod = target.dataset.captureMethod;
+      const supersededAutosaveTimer = autosaveTimer;
+      const previousAutosaveDraftsCache = settings.localEncryptionEnabled ? cloneJson(autosaveDraftsCache || {}) : null;
+      clearDictationSession(session);
+      target.value = nextValue;
+      target.dataset.captureMethod = "dictation";
+      syncCommittedDictationDraft(session.context.targetId, nextValue);
+      if (settings.enableAutoSave) {
+        let saved = false;
+        try {
+          saved = saveCurrentDraftNow() === true;
+        } catch (error) {
+          saved = false;
+        }
+        if (!saved) {
+          target.value = previousValue;
+          if (previousViewDraft !== undefined) syncCommittedDictationDraft(session.context.targetId, previousViewDraft);
+          if (hadCaptureMethod) target.dataset.captureMethod = previousCaptureMethod;
+          else delete target.dataset.captureMethod;
+          if (previousAutosaveDraftsCache) autosaveDraftsCache = previousAutosaveDraftsCache;
+          showToast("Could not add dictation. Nothing was saved.", "error");
+          return false;
+        }
+        if (supersededAutosaveTimer && autosaveTimer === supersededAutosaveTimer) {
+          const clear = window.clearTimeout || clearTimeout;
+          clear(supersededAutosaveTimer);
+          autosaveTimer = null;
+        }
+      }
+      showToast("Dictation added to this draft.");
+      return true;
+    }
+
+    function beginConfirmedDictation(targetId = "quick-text", expectedContext = null) {
+      if (recoveryMutationBlocked() || !voiceCaptureIsEnabled() || activeDictationSession) {
+        if (activeDictationSession && !recoveryMutationBlocked()) showToast("A dictation request is already in progress.");
+        return false;
+      }
+      const target = document.getElementById(targetId);
+      const context = dictationCaptureContext(targetId);
+      const Recognition = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+      if (!target || target.isConnected === false || (expectedContext && !dictationCaptureContextMatches(expectedContext)) || !Recognition) {
+        showToast("Could not start dictation in this browser. Nothing was saved.", "error");
+        return false;
+      }
+
+      let recognition = null;
+      try {
+        recognition = new Recognition();
+        recognition.lang = "en-US";
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+      } catch (error) {
+        bestEffortAbortDictation({ recognition });
+        showToast("Could not start dictation in this browser. Nothing was saved.", "error");
+        return false;
+      }
+
+      const session = {
+        id: ++dictationSessionSequence,
+        epoch: recoveryEpoch,
+        context,
+        target,
+        recognition,
+        transcript: "",
+        finished: false,
+        deadlineTimer: null
+      };
+      activeDictationSession = session;
+      try {
+        recognition.onresult = event => {
+          if (session.finished || activeDictationSession !== session) return;
+          if (!voiceCaptureIsEnabled()
+            || !recoveryEpochIsCurrent(session.epoch)
+            || !dictationCaptureContextMatches(session.context)
+            || document.getElementById(session.context.targetId) !== session.target
+            || session.target.isConnected === false) {
+            failDictationSession(session, { announce: false });
+            return;
+          }
+          try {
+            const spoken = Array.from(event?.results || [])
+              .filter(result => result && result.isFinal !== false)
+              .map(result => String(result?.[0]?.transcript || "").trim())
+              .filter(Boolean)
+              .join(" ")
+              .trim();
+            if (!spoken) return;
+            if (spoken.length > MAX_DICTATION_TRANSCRIPT_CHARACTERS) {
+              failDictationSession(session);
+              return;
+            }
+            session.transcript = spoken;
+          } catch (error) {
+            failDictationSession(session);
+          }
+        };
+        recognition.onerror = () => failDictationSession(session);
+        recognition.onend = () => finishDictationSession(session);
+        const delay = window.setTimeout || setTimeout;
+        session.deadlineTimer = delay(() => failDictationSession(session), DICTATION_SESSION_DEADLINE_MS);
+        recognition.start();
+      } catch (error) {
+        return failDictationSession(session, { message: "Could not start dictation in this browser. Nothing was saved." });
+      }
+      if (activeDictationSession === session) showToast("Dictation request started. Waiting for speech recognition.");
+      return true;
+    }
+
+    function renderWithoutRestoringAutosaveTarget(targetId = "") {
+      autosaveRestoreSkipTargetId = String(targetId || "");
+      try {
+        render({ mutationEffects: false });
+      } finally {
+        autosaveRestoreSkipTargetId = "";
+      }
+    }
+
+    function syncLiveDictationDraft(targetId, target) {
+      const value = String(target?.value ?? "");
+      if (targetId === "quick-text" && view.screen === "quick") {
+        view.quickGrabDraftText = value;
+        return true;
+      }
+      if (targetId === "today-capture-text" && view.screen === "today") {
+        view.todayCaptureDraftText = value;
+        return true;
+      }
+      if (targetId === "profile-capture-text" && view.screen === "person") {
+        const composer = typeof target?.closest === "function"
+          ? target.closest('[data-capture-composer="profile"]')
+          : null;
+        const renderedPersonId = String(composer?.dataset?.personId || "");
+        if (!personById(renderedPersonId)) return false;
+        view.profileCapturePersonId = renderedPersonId;
+        view.profileCaptureDraftTargetId = renderedPersonId;
+        view.profileCaptureDraftText = value;
+        return true;
+      }
+      return false;
+    }
+
+    function openDictationConsentSheet(targetId = "quick-text") {
+      if (recoveryMutationBlocked() || !voiceCaptureIsEnabled() || activeDictationSession) return false;
+      const target = document.getElementById(targetId);
+      if (!target || target.isConnected === false || !syncLiveDictationDraft(targetId, target)) return false;
+      view.sheet = { type: "dictation", kind: "start", targetId, context: dictationCaptureContext(targetId) };
+      renderWithoutRestoringAutosaveTarget(targetId);
+      return true;
+    }
+
+    function openVoiceCaptureEnablement() {
+      if (recoveryMutationBlocked()) return false;
+      view.sheet = { type: "dictation", kind: "enable" };
+      render();
+      return true;
+    }
+
+    function submitVoiceCaptureEnablement() {
+      if (recoveryMutationBlocked() || view.sheet?.type !== "dictation" || view.sheet?.kind !== "enable") return false;
+      if (!document.getElementById("dictation-confirm")?.checked) {
+        reportFieldError("dictation-confirm", "Confirm that you understand how browser or device speech recognition is controlled.");
+        return false;
+      }
+      const previous = cloneJson(settings);
+      settings.enableVoiceCapture = true;
+      settings.voiceCaptureDisclosureVersion = VOICE_CAPTURE_DISCLOSURE_VERSION;
+      try {
+        if (!saveSettings()) throw new Error("voice setting not saved");
+      } catch (error) {
+        settings = previous;
+        showToast("Dictation was not enabled. Your previous setting remains in place.", "error");
+        render();
+        return false;
+      }
+      view.sheet = null;
+      showToast("Dictation is enabled. You will confirm before each start.");
+      render();
+      restoreSheetReturnFocus();
+      return true;
+    }
+
+    function submitDictationStartSheet() {
+      const sheet = view.sheet?.type === "dictation" && view.sheet?.kind === "start" ? view.sheet : null;
+      if (!sheet || recoveryMutationBlocked() || !voiceCaptureIsEnabled()) return false;
+      if (!document.getElementById("dictation-confirm")?.checked) {
+        reportFieldError("dictation-confirm", "Confirm that you want to start browser or device speech recognition now.");
+        return false;
+      }
+      const targetId = sheet.targetId;
+      const expectedContext = sheet.context;
+      view.sheet = null;
+      renderWithoutRestoringAutosaveTarget(targetId);
+      restoreSheetReturnFocus();
+      return beginConfirmedDictation(targetId, expectedContext);
     }
 
     function startDictation(targetId = "quick-text") {
-      const textarea = document.getElementById(targetId);
-      const Recognition = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
-      if (!textarea || !Recognition) {
-        showToast("Dictation is not available in this browser.");
-        return;
-      }
-      const recognition = new Recognition();
-      recognition.lang = "en-US";
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      recognition.onresult = event => {
-        const spoken = Array.from(event.results).map(result => result[0].transcript).join(" ").trim();
-        textarea.value = [textarea.value.trim(), spoken].filter(Boolean).join("\n");
-        textarea.dataset.captureMethod = "dictation";
-        scheduleAutosave();
-        showToast("Dictation added.");
-      };
-      recognition.onerror = () => showToast("Dictation stopped.");
-      recognition.start();
-      showToast("Listening...");
+      return openDictationConsentSheet(targetId);
     }
 
     function isPinnedPerson(id) {
@@ -4943,6 +6349,7 @@
     }
 
     function togglePinnedPerson(id) {
+      if (recoveryMutationBlocked()) return false;
       const pinned = new Set(settings.pinnedPersonIds);
       if (pinned.has(id)) pinned.delete(id);
       else pinned.add(id);
@@ -4950,12 +6357,15 @@
       saveSettings();
       showToast(pinned.has(id) ? "Person pinned." : "Person unpinned.");
       render();
+      return true;
     }
 
     function recordRecentPerson(id) {
-      if (!id) return;
+      if (recoveryMutationBlocked()) return false;
+      if (!id) return false;
       settings.recentPersonIds = [id, ...settings.recentPersonIds.filter(existing => existing !== id)].slice(0, 8);
       saveSettings();
+      return true;
     }
 
     function peopleFromIds(ids) {
@@ -5029,6 +6439,7 @@
     }
 
     function mergePeopleRecord(fromId, toId) {
+      if (recoveryMutationBlocked()) return false;
       if (!fromId || !toId || fromId === toId) return;
       const from = personById(fromId);
       const to = personById(toId);
@@ -5051,7 +6462,8 @@
       return to;
     }
 
-    function render() {
+    function render(options = {}) {
+      const allowMutationEffects = options.mutationEffects !== false;
       captureFocusedControl();
       if (view.startupHydrating) {
         document.getElementById("app").innerHTML = `
@@ -5078,7 +6490,37 @@
         bindScreen();
         return;
       }
-      applyAutoArchiveAnswered();
+      if (recoveryTransactionPending) {
+        const restoring = recoveryTransactionKind === "restore";
+        const app = document.getElementById("app");
+        app.setAttribute?.("aria-busy", "true");
+        app.innerHTML = `
+          <main id="main-content" class="lock-screen" role="status" aria-live="polite" aria-busy="true" tabindex="-1">
+            <div class="lock-panel">
+              <h1 class="lock-title">${restoring ? "Restoring backup…" : "Undoing last change…"}</h1>
+              <p class="page-kicker">Keep Calm OS open. Records, drafts, and private local recovery are being saved as one transaction.</p>
+            </div>
+          </main>
+        `;
+        return;
+      }
+      if (recoveryRetryRequired()) {
+        const app = document.getElementById("app");
+        app.removeAttribute?.("aria-busy");
+        app.innerHTML = `
+          <main id="main-content" class="lock-screen" role="alert" aria-live="assertive" tabindex="-1">
+            <div class="lock-panel">
+              <h1 class="lock-title">Recovery needs a retry</h1>
+              <p class="page-kicker">The earlier Undo stopped safely before changing local records. Retry that same Undo to finish recovery.</p>
+              <button class="button primary full" data-action="undo-last">Retry Undo</button>
+            </div>
+          </main>
+        `;
+        bindScreen();
+        return;
+      }
+      document.getElementById("app").removeAttribute?.("aria-busy");
+      if (allowMutationEffects) applyAutoArchiveAnswered();
       if (view.encryptionLocked) {
         document.getElementById("app").innerHTML = renderVaultUnlockScreen();
         bindScreen();
@@ -5125,8 +6567,10 @@
       bindScreen();
       bindDynamicAccessibility();
       applyPendingFocusDescriptor();
-      applyPendingUrlQuickGrabText();
-      maybeSendReminderNotification();
+      if (allowMutationEffects) {
+        applyPendingFragmentQuickGrabText();
+        maybeSendReminderNotification();
+      }
     }
 
     function applyAutoArchiveAnswered() {
@@ -5158,7 +6602,8 @@
             ${kicker ? `<p class="page-kicker">${editableCopy(kickerKey, kicker)}</p>` : ""}
           </div>
           <div class="top-actions">
-            ${settings.enableUndo && undoStack.length ? `<button class="button small" data-action="undo-last">Undo</button>` : ""}
+            ${view.undoSaving ? `<span class="meta" role="status" aria-live="polite" aria-busy="true">Undoing last change…</span>` : ""}
+            ${settings.enableUndo && undoStack.length ? `<button class="button small" data-action="undo-last" ${view.undoSaving ? `disabled aria-disabled="true" aria-busy="true"` : ""}>${view.undoSaving ? "Undoing…" : "Undo"}</button>` : ""}
             ${settings.appLockEnabled && settings.pinHash ? `<button class="button small" data-action="lock-app">Lock</button>` : ""}
           </div>
         </div>
@@ -6061,6 +7506,8 @@
       const placeholder = options.placeholder || (person ? `Add something about ${personFirstName(person)}…` : "What do you need to remember?");
       const initialValue = source === "main"
         ? view.quickGrabDraftText || ""
+        : source === "today"
+          ? view.todayCaptureDraftText || ""
         : source === "profile" && view.profileCaptureDraftTargetId === person?.id
           ? view.profileCaptureDraftText || ""
           : "";
@@ -6072,7 +7519,7 @@
           <textarea class="textarea" id="${targetId}" rows="1" placeholder="${escapeHtml(placeholder)}" data-capture-source="${escapeHtml(source)}">${escapeHtml(initialValue)}</textarea>
           <div class="action-row">
             <button class="${processClass}" data-action="capture-submit" data-mode="process" data-source="${escapeHtml(source)}" data-person-id="${escapeHtml(person?.id || "")}" data-target="${targetId}">Process</button>
-            ${settings.enableVoiceCapture ? `<button class="button quiet" data-action="voice-capture" data-target="${targetId}">Dictate</button>` : ""}
+            ${voiceCaptureIsEnabled() ? `<button class="button quiet" data-action="voice-capture" data-target="${targetId}">Dictate</button>` : ""}
             ${source === "profile" || options.allowSaveForLater ? `<button class="button quiet" data-action="capture-submit" data-mode="later" data-source="${escapeHtml(source)}" data-person-id="${escapeHtml(person?.id || "")}" data-target="${targetId}">Save for later</button>` : ""}
           </div>
           <div class="meta">Capture first. Calm OS will suggest how to sort it, and nothing becomes a permanent record without your approval.</div>
@@ -7147,6 +8594,7 @@
     }
 
     function weeklyResetContextSummary(recordsByCollection, findings) {
+      const backupHealth = backupHealthState();
       return [
         `Open Quick Grabs: ${findings.openQuickGrabs.length}`,
         `Stale Quick Grabs: ${findings.staleQuickGrabs.length}`,
@@ -7157,7 +8605,7 @@
         `Answered prayer requests: ${findings.answeredPrayerRequests.length}`,
         `Possible duplicate people: ${findings.duplicatePeople.length}`,
         `Pending AI proposals: ${findings.pendingAiProposals.length}`,
-        `Backup status: ${findings.backupReminderDue ? "backup appears due" : "backup reminder is current or off"}`,
+        `Backup status: ${backupHealth.label}. ${backupHealth.detail}`,
         `App Coach suggestions: ${findings.appCoachSuggestions.length}`
       ].join(" | ");
     }
@@ -7172,6 +8620,7 @@
     function buildWeeklyResetContextReview() {
       const recordsByCollection = weeklyResetAllowedRecordsByCollection();
       const findings = weeklyResetFindings(recordsByCollection);
+      const backupHealth = backupHealthState();
       const context = {
         used: [
           {
@@ -7202,7 +8651,7 @@
           {
             label: "Backup status",
             tier: "Normal",
-            summary: findings.backupReminderDue ? `Backup appears due. ${backupStatusText()}` : `Backup reminder is current or off. ${backupStatusText()}`
+            summary: `${backupHealth.label}. ${backupHealth.detail}`
           },
           {
             label: "App Coach suggestions",
@@ -7247,12 +8696,13 @@
         context.warnings.push("Some prayer requests look sensitive and should be handled gently before sharing or summarizing.");
       }
       if (findings.backupReminderDue) {
-        context.warnings.push("A backup appears due before larger weekly cleanup.");
+        context.warnings.push(`Backup download attention: ${backupHealth.detail}`);
       }
       return context;
     }
 
     function weeklyResetPlanFromFindings(findings, contextReview) {
+      const backupHealth = backupHealthState();
       const oneFaithfulNextStep = findings.staleQuickGrabs[0]
         ? `Review one stale Quick Grab: ${findings.staleQuickGrabs[0].rawContent || "untitled grab"}.`
         : findings.dueFollowUpTasks[0]
@@ -7260,14 +8710,14 @@
           : findings.prayerRequestsNeedingFollowUp[0]
             ? `Check on one prayer request for ${dataJanitorRecordOwner(findings.prayerRequestsNeedingFollowUp[0])}.`
             : findings.backupReminderDue
-              ? "Export a fresh backup before making cleanup decisions."
+              ? "Start a backup download, then confirm the file appears in Files before making cleanup decisions."
               : "Choose one person to pray for and send one small encouragement.";
       const tenMinutePlan = [
         "Pray briefly and choose one faithful next step.",
         findings.staleQuickGrabs[0] ? "Process one stale Quick Grab." : "Scan the open Quick Grabs for one useful next step.",
         findings.dueFollowUpTasks[0] ? "Handle one due follow-up task." : "Check whether any follow-up needs a date.",
         findings.prayerRequestsNeedingFollowUp[0] ? "Review one prayer request needing follow-up." : "Pray through one active request.",
-        findings.backupReminderDue ? "Export a backup if you have two extra minutes." : "Leave the app in a calmer state than you found it."
+        backupHealth.detail
       ];
       const thirtyMinutePlan = [
         "Process the oldest three loose Quick Grabs.",
@@ -7275,7 +8725,7 @@
         "Review prayer requests that need follow-up, then answered requests that may be ready to archive.",
         "Choose the top people care priorities for the week.",
         findings.duplicatePeople.length ? "Review possible duplicate people before adding new profile details." : "Check that this week's ministry records have enough context.",
-        findings.backupReminderDue ? "Export a fresh backup after the reset." : "Confirm backup health before closing."
+        backupHealth.detail
       ];
       return {
         oneFaithfulNextStep,
@@ -7294,9 +8744,9 @@
         adminCleanup: [
           ...findings.duplicatePeople.slice(0, 5).map(([a, b]) => `Possible duplicate people: ${a.name} / ${b.name}.`),
           ...findings.pendingAiProposals.slice(0, 5).map(proposal => `Pending AI Review item: ${proposal.title || "Untitled proposal"}.`),
-          findings.backupReminderDue ? "Backup appears due before larger cleanup." : "Backup reminder is current or off."
+          backupHealth.detail
         ],
-        backupReminder: findings.backupReminderDue ? `Backup appears due. ${backupStatusText()}` : `Backup reminder is current or off. ${backupStatusText()}`,
+        backupReminder: backupHealth.detail,
         sensitivityWarnings: contextReview.warnings.filter(warning => /Sensitive|Highly Sensitive|Do Not Send|sensitive/i.test(warning)),
         contextSummary: weeklyResetContextSummary(contextReview.recordsByCollection, findings)
       };
@@ -7357,7 +8807,7 @@
           label: `Review possible duplicate people: ${a.name} / ${b.name}`
         });
       });
-      if (findings.backupReminderDue) actions.push({ actionType: "noAction", label: "Export a fresh backup before larger cleanup." });
+      if (findings.backupReminderDue) actions.push({ actionType: "noAction", label: "Start a backup download and confirm the file appears in Files before larger cleanup." });
       if (!actions.length) actions.push({ actionType: "noAction", label: "No Weekly Reset action needs attention right now." });
       return actions.slice(0, 40);
     }
@@ -8349,8 +9799,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function persistAiActionSelection(proposalId, actionId, checked) {
+      if (recoveryMutationBlocked()) return false;
       const proposal = aiProposalById(proposalId);
-      if (!proposal || !aiProposalCanExecute(proposal)) return;
+      if (!proposal || !aiProposalCanExecute(proposal)) return false;
       const actions = Array.isArray(proposal.proposedActions) ? proposal.proposedActions : [];
       const actionIndexes = actions
         .map((action, index) => {
@@ -8360,7 +9811,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         })
         .filter(index => index >= 0);
       const nextSelection = aiActionSelectionFromIndexes(proposal, actionIndexes);
-      storeAiActionSelection(proposal, nextSelection);
+      return storeAiActionSelection(proposal, nextSelection);
     }
 
     function aiActionEditableFields(action = {}) {
@@ -8800,6 +10251,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function saveQuickGrabAiProposal(proposal, undoLabel, toastMessage) {
+      if (recoveryMutationBlocked()) return false;
       const grab = db.quickGrabs.find(item => item.id === proposal?.sourceId);
       if (grab) {
         proposal.proposalKey = proposal.proposalKey || captureProposalKey(grab);
@@ -8846,7 +10298,103 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return "Backend Quick Grab is not available. No records were changed.";
     }
 
+    async function restoreCancelledQuickGrabMutation(grabId, beforeGrab, beforeAutoMemoryVault, beforeAutoMemoryLocal) {
+      const restoredDb = cloneJson(db);
+      const currentIndex = restoredDb.quickGrabs.findIndex(item => item.id === grabId);
+      if (currentIndex >= 0) restoredDb.quickGrabs[currentIndex] = cloneJson(beforeGrab);
+      if (settings.localEncryptionEnabled && vaultPassphrase) {
+        const recoverySettlement = {
+          recoveryEpoch,
+          passphrase: vaultPassphrase,
+          targetRevision: vaultSaveRequestedRevision,
+          payloadGeneration: vaultPayloadGeneration,
+          initialLeaseId: activeVaultFlushLease?.id ?? null,
+          leaseSequenceAtStart: vaultFlushLeaseSequence
+        };
+        if (!(await settleRecoveryOperationWithinDeadline(
+          () => settleVaultBeforeRecovery(),
+          "Device Vault cancellation settlement",
+          { onTimeout: () => revokeVaultFlushLeaseForRecoverySettlement(recoverySettlement) }
+        ))) return false;
+        const ownedEpoch = recoveryEpoch;
+        const ownedPassphrase = vaultPassphrase;
+        const ownedRevision = vaultSaveRequestedRevision;
+        if (vaultSaveCompletedRevision !== ownedRevision) return false;
+        const restoredMemory = cloneJson(beforeAutoMemoryVault);
+        const stagedPayload = cloneJson({
+          data: restoredDb,
+          customCopy,
+          autosaveDrafts: loadAutosaveDrafts(),
+          autoMemoryVault: restoredMemory
+        });
+        const envelope = await settleRecoveryOperationWithinDeadline(
+          () => encryptPayload(stagedPayload, ownedPassphrase),
+          "Device Vault cancellation encryption"
+        );
+        const ownershipIsCurrent = () => recoveryTransactionPending
+          && recoveryEpoch === ownedEpoch
+          && vaultPassphrase === ownedPassphrase
+          && vaultSaveRequestedRevision === ownedRevision
+          && vaultSaveCompletedRevision === ownedRevision;
+        if (!ownershipIsCurrent()) return false;
+        const nextSettings = { ...settings, localEncryptionUpdatedAt: envelope.encryptedAt };
+        const encryptedKeys = [ENCRYPTED_STORAGE_KEY, SETTINGS_KEY, STORAGE_KEY, COPY_KEY, AUTOSAVE_KEY, AUTO_MEMORY_KEY];
+        const indexedDbSnapshot = canUseIndexedDb() ? await readIndexedDbSnapshot(encryptedKeys) : null;
+        if (!ownershipIsCurrent()) return false;
+        const localEntries = [
+          [ENCRYPTED_STORAGE_KEY, JSON.stringify(envelope)],
+          [STORAGE_KEY, null],
+          [COPY_KEY, null],
+          [AUTOSAVE_KEY, null],
+          [AUTO_MEMORY_KEY, null],
+          [SETTINGS_KEY, JSON.stringify(nextSettings)]
+        ];
+        const localSnapshot = writeLocalStorageBatch(localEntries);
+        let indexedDbCommitted = false;
+        try {
+          if (canUseIndexedDb()) {
+            await commitEncryptedVaultToIndexedDb(envelope, nextSettings);
+            indexedDbCommitted = true;
+          }
+          if (!ownershipIsCurrent()) throw new Error("Device Vault cancellation ownership changed before publication.");
+        } catch (error) {
+          restoreLocalStorageSnapshot(localSnapshot);
+          if (indexedDbCommitted && indexedDbSnapshot) {
+            try { await restoreIndexedDbSnapshot(indexedDbSnapshot); } catch (restoreError) {
+              console.warn("Could not restore Device Vault cancellation persistence", restoreError);
+            }
+          }
+          throw error;
+        }
+        db = restoredDb;
+        memoryVaultCache = restoredMemory;
+        settings.localEncryptionUpdatedAt = nextSettings.localEncryptionUpdatedAt;
+        vaultSaveRequestedRevision = ownedRevision + 1;
+        vaultSaveCompletedRevision = ownedRevision + 1;
+        return true;
+      }
+      const localSnapshot = writeLocalStorageBatch([
+        [STORAGE_KEY, JSON.stringify(restoredDb)],
+        [AUTO_MEMORY_KEY, beforeAutoMemoryLocal]
+      ]);
+      try {
+        if (canUseIndexedDb()) {
+          const autoMemoryValue = beforeAutoMemoryLocal === null ? undefined : JSON.parse(beforeAutoMemoryLocal);
+          await writeIndexedDbBatch([
+            [STORAGE_KEY, restoredDb],
+            [AUTO_MEMORY_KEY, autoMemoryValue]
+          ]);
+        }
+      } catch (error) {
+        restoreLocalStorageSnapshot(localSnapshot);
+        throw error;
+      }
+      db = restoredDb;
+      return true;
+    }
+
     async function createQuickGrabBackendAiProposal(grabId) {
+      if (recoveryMutationBlocked()) return false;
       const grab = db.quickGrabs.find(item => item.id === grabId);
       if (!grab) {
         showToast("That Quick Grab is no longer available.");
@@ -8870,9 +10418,18 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       if (grab.processingState === "processing") {
         showToast("This capture is already processing. Your text is safe.");
-        return;
+        return false;
       }
       const payload = buildQuickGrabBackendPayload(grab);
+      const beforeGrab = cloneJson(grab);
+      const beforeAutoMemoryVault = cloneJson(loadAutoMemoryVault());
+      const beforeAutoMemoryLocal = settings.localEncryptionEnabled ? null : localStorage.getItem(AUTO_MEMORY_KEY);
+      const abortController = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const mutation = registerActiveMutation("backend-quick-grab", { blocking: false });
+      mutation.cancel = async () => {
+        try { abortController?.abort(); } catch (error) {}
+        return restoreCancelledQuickGrabMutation(grabId, beforeGrab, beforeAutoMemoryVault, beforeAutoMemoryLocal);
+      };
       grab.processingState = "processing";
       grab.processingError = "";
       grab.lastProcessingAttemptAt = nowISO();
@@ -8881,35 +10438,44 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         const response = await fetch("/api/ai/quick-grab", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          ...(abortController ? { signal: abortController.signal } : {})
         });
+        if (!activeMutationIsCurrent(mutation)) return false;
         const body = await response.json().catch(() => ({}));
+        if (!activeMutationIsCurrent(mutation)) return false;
         if (!response.ok || body?.ok !== true || !body.proposal) {
           throw new Error("safe_backend_quick_grab_unavailable");
         }
         const proposal = normalizeBackendQuickGrabProposal(body, grab);
         saveQuickGrabAiProposal(proposal, "backend Quick Grab AI proposal", "Backend Quick Grab proposal created. Review before saving anything.");
+        return true;
       } catch {
+        if (!activeMutationIsCurrent(mutation)) return false;
         if (settings.aiMockMode) {
           markCaptureProcessingFailure(grabId, "Backend processing was unavailable. Your capture is safe.");
           showToast("Backend Quick Grab was unavailable. Creating a local mock proposal instead.");
           createQuickGrabMockAiProposal(grabId);
-          return;
+          return true;
         }
         markCaptureProcessingFailure(grabId, "Processing is unavailable. Your capture is saved and can be retried.");
         showToast(backendQuickGrabSafeErrorMessage());
+        return false;
+      } finally {
+        finishActiveMutation(mutation);
       }
     }
 
     function createQuickGrabAiProposal(grabId) {
+      if (recoveryMutationBlocked()) return false;
       if (quickGrabBackendModeEnabled()) {
-        createQuickGrabBackendAiProposal(grabId);
-        return;
+        return createQuickGrabBackendAiProposal(grabId);
       }
-      createQuickGrabMockAiProposal(grabId);
+      return createQuickGrabMockAiProposal(grabId);
     }
 
     function createQuickGrabMockAiProposal(grabId) {
+      if (recoveryMutationBlocked()) return false;
       const grab = db.quickGrabs.find(item => item.id === grabId);
       if (!grab) {
         showToast("That Quick Grab is no longer available.");
@@ -10201,8 +11767,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	                ${settingSelect("reviewBatchSize", "Review Queue Size", [["1", "1 card"], ["3", "3 cards"], ["5", "5 cards"], ["10", "10 cards"]], "How many loose Quick Grabs to show in a one-card review batch.")}
 	                ${settingSelect("promptMeAfterHours", "Prompt Me Timing", [["0", "Right away"], ["12", "After 12 hours"], ["24", "After 24 hours"], ["48", "After 48 hours"]], "When unsorted Quick Grabs with no reminder should reappear.")}
 	                ${settingToggle("autoOpenQuickGrabReview", "Open Review After Grab", "Go straight to the processing screen after saving a Quick Grab.")}
-		                ${settingToggle("enableVoiceCapture", "Dictation Button", "Show a Dictate button on Quick Grab when your browser supports speech input.")}
-		                ${settingToggle("enableUrlQuickGrab", "Shared Text Quick Grab", "Capture text from iOS Shortcuts or shared URLs using quickgrab, text, or note query text.")}
+	                ${settingToggle("enableVoiceCapture", "Dictation Button", "Off by default. Enabling shows a disclosure because your browser or device controls microphone permission and speech recognition processing.")}
+		                ${settingToggle("enableUrlQuickGrab", "Shared Text Quick Grab", "Capture text locally from one exact quickgrab URL fragment. Legacy capture query text is discarded.")}
 		                ${settingToggle("enableUndo", "Undo Button", "Keep a short local undo stack for recent edits and archive actions.")}
 	                ${settingToggle("enableAutoSave", "Auto Save Drafts", "Save typed form drafts automatically on this device so you can leave and come back without losing input.")}
 		              </div>
@@ -10393,6 +11959,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const iconReady = true;
       const shortcutUrl = shortcutTemplateUrl();
       const autoMemory = autoMemoryVaultState();
+      const backupReadiness = backupReadinessState();
       return `
         ${renderTopbar("iPhone Readiness", "Final checks for Home Screen use, offline launch, and daily capture.", false)}
         <section class="section">
@@ -10413,7 +11980,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           ${readinessStatus(iconReady, "Home Screen Icons", "Manifest and Apple touch icons are included in the app bundle.")}
           ${readinessStatus(settings.localEncryptionEnabled, "Device Vault", settings.localEncryptionEnabled ? "Encrypted local storage is enabled." : "Turn on Device Vault in Settings before carrying sensitive notes on your phone.")}
           ${readinessStatus(settings.autoMemoryVaultEnabled && autoMemory.count > 0, "Auto Memory Vault", settings.autoMemoryVaultEnabled ? autoMemory.detail : "Turn Auto Memory Vault on in Settings so local restore points are created automatically.")}
-          ${readinessStatus(!backupReminderDue(), "Backup Rhythm", backupReminderDue() ? backupStatusText() + " Export before you depend on the app daily." : backupStatusText())}
+          ${readinessStatus(backupReadiness.ready, "Backup Rhythm", backupReadiness.detail)}
           ${readinessStatus(settings.enableAutoSave, "Auto Save Drafts", settings.enableAutoSave ? "Typed drafts are saved automatically on this device." : "Turn Auto Save Drafts on to protect interrupted phone input.")}
         </section>
         <section class="section">
@@ -10445,7 +12012,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               <li>Create a shortcut named Send to RUF Hub.</li>
               <li>Enable Show in Share Sheet and accept Text.</li>
               <li>Add URL Encode for the Shortcut Input.</li>
-              <li>Add Open URLs using your deployed app URL plus ?quickgrab=encoded text.</li>
+              <li>Add Open URLs using your deployed app URL plus #quickgrab=encoded text.</li>
               <li>Test from Notes or Messages by sharing selected text to Send to RUF Hub.</li>
             </ol>
           </div>
@@ -10552,10 +12119,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             ])}
             ${manualSection("Use dictation", [
               "Open Capture or a person's capture box.",
-              "Tap Dictate.",
-              "Speak the note naturally.",
-              "When dictation finishes, review the inserted text.",
-              "Tap Process when the text says what you need to remember."
+              "Dictation is off by default. Turn it on in Settings and review the browser/device processing disclosure.",
+              "Each time you tap Dictate, read and check the confirmation before the app asks the browser or device to begin speech recognition.",
+              "Your browser or device controls microphone permission and audio processing. RUF Ministry Hub cannot verify where recognition occurs or how audio is handled.",
+              "Recognized words join the local draft only after recognition ends successfully. A denial, error, interruption, or timeout adds and saves nothing.",
+              "Review the draft, then tap Process or Save for later. Dictation alone never creates a permanent record or AI proposal."
             ])}
             ${manualSection("Review suggested updates", [
               "Process a saved capture to open the privacy review before any AI-assisted request.",
@@ -10663,9 +12231,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               "Leave Auto Memory Vault on so the app keeps local restore points after saved changes.",
               "Use Restore Points to roll back accidental edits, bad imports, or resets on this device.",
               "Use Save Now before a major cleanup if you want an extra manual restore point.",
-              "Use Backup Health to see whether a backup is missing, due, current, or set to reminders off.",
-              "Tap Export all data as JSON for a normal backup file.",
-              "Tap Export encrypted backup to open a passphrase sheet and make a protected backup file.",
+              "Use Backup Health to see download-initiation status: none recorded, due, recent, or reminders off.",
+              "Tap Export all data as JSON to ask the browser to start a JSON backup download.",
+              "Tap Export encrypted backup to open a passphrase sheet and ask the browser to start an encrypted backup download.",
+              "After either export, confirm the expected non-zero file appears in Files before relying on it.",
               "To restore, choose a JSON backup file with Restore from backup file.",
               "Tap Import backup to open the restore sheet. If the file is encrypted, enter the backup passphrase.",
               "Restoring replaces the current app data, so use Auto Memory or export first if you are unsure.",
@@ -10900,6 +12469,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function renderDataSafetySheet(sheet) {
       const kind = sheet.kind;
+      const exporting = kind === "encrypted-export" && protectedBackupExportOwnsSheet(sheet);
+      const exportingDisabled = exporting ? "disabled" : "";
       const titles = {
         "encrypted-export": "Export Encrypted Backup",
         import: "Import Backup",
@@ -10913,8 +12484,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const fields = {
         "encrypted-export": `
           <div class="notice secure">This file cannot be opened without the backup passphrase. There is no recovery if it is forgotten.</div>
-          ${sheetField("Backup passphrase", `<input class="input" id="sheet-export-passphrase" type="password" autocomplete="new-password" placeholder="At least 8 characters">`)}
-          ${sheetField("Confirm passphrase", `<input class="input" id="sheet-export-confirm" type="password" autocomplete="new-password" placeholder="Type it again">`)}
+          ${exporting ? `<div class="notice" role="status" aria-live="polite" aria-atomic="true">Preparing encrypted backup…</div>` : ""}
+          ${sheetField("Backup passphrase", `<input class="input" id="sheet-export-passphrase" type="password" autocomplete="new-password" placeholder="At least 8 characters" ${exportingDisabled}>`)}
+          ${sheetField("Confirm passphrase", `<input class="input" id="sheet-export-confirm" type="password" autocomplete="new-password" placeholder="Type it again" ${exportingDisabled}>`)}
         `,
         import: `
           <div class="notice">Current local data: ${escapeHtml(dataSummaryText())}</div>
@@ -10931,20 +12503,20 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       };
       return `
         <div class="sheet-backdrop" data-action="sheet-close">
-          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="data-sheet-title" data-sheet-panel>
+          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="data-sheet-title" data-sheet-panel ${exporting ? 'aria-busy="true"' : ""}>
             <div class="sheet-head">
               <div>
                 <h2 id="data-sheet-title">${escapeHtml(titles[kind] || "Data Safety")}</h2>
                 <p class="page-kicker">${escapeHtml(helpers[kind] || "Review this data action before continuing.")}</p>
               </div>
-              <button class="button small" data-action="sheet-close" aria-label="Close">Close</button>
+              <button class="button small" data-action="sheet-close" aria-label="Close" ${exportingDisabled}>Close</button>
             </div>
             <div class="sheet-form">
               ${fields[kind] || ""}
             </div>
             <div class="sheet-actions">
-              <button class="button" data-action="sheet-close">Cancel</button>
-              <button class="button ${kind === "reset-demo" || kind === "import" ? "danger" : "primary"}" data-action="data-sheet-save" data-kind="${escapeHtml(kind)}">${kind === "import" ? "Restore Backup" : kind === "reset-demo" ? "Reset Demo Data" : "Export Backup"}</button>
+              <button class="button" data-action="sheet-close" ${exportingDisabled}>Cancel</button>
+              <button class="button ${kind === "reset-demo" || kind === "import" ? "danger" : "primary"}" data-action="data-sheet-save" data-kind="${escapeHtml(kind)}" ${exportingDisabled}>${kind === "import" ? "Restore Backup" : kind === "reset-demo" ? "Reset Demo Data" : exporting ? "Preparing Backup…" : "Export Backup"}</button>
             </div>
           </section>
         </div>
@@ -11673,11 +13245,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function updateCareCadenceSheetProposal() {
-      if (view.sheet?.type !== "care-cadence") return;
+      if (recoveryMutationBlocked() || view.sheet?.type !== "care-cadence") return false;
       const cadence = document.getElementById("sheet-care-cadence")?.value || "None";
       const customDays = document.getElementById("sheet-care-custom-days")?.value || "";
       const nextDate = document.getElementById("sheet-care-next-date");
       if (nextDate) nextDate.value = proposedFollowUpDate(cadence, customDays, todayISO());
+      return true;
     }
 
     async function submitCareCadenceSheet() {
@@ -11701,9 +13274,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         reportFieldError("sheet-care-next-date", "Choose today or a future date, or clear the date.");
         return false;
       }
+      return withActiveMutation("care-cadence-save", async () => {
       const beforeData = cloneJson(db);
       const beforeMemoryVault = cloneJson(memoryVaultCache);
       const beforeUndoStack = cloneJson(undoStack);
+      const beforeUndoGeneration = undoGeneration;
       const storageSnapshot = localStorageSnapshot([STORAGE_KEY, AUTO_MEMORY_KEY]);
       sheet.saving = true;
       render();
@@ -11722,6 +13297,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         db = beforeData;
         memoryVaultCache = beforeMemoryVault;
         undoStack = beforeUndoStack;
+        undoGeneration = beforeUndoGeneration;
         restoreLocalStorageSnapshot(storageSnapshot);
         view.sheet = { ...sheet, saving: false };
         console.warn("Could not save care cadence", error);
@@ -11733,10 +13309,41 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       showToast(nextDate ? `Follow-up rhythm saved for ${formatCalendarDay(nextDate)}.` : "Follow-up rhythm saved with no next date.");
       render();
       return true;
+      });
+    }
+
+    function renderDictationSheet(sheet = {}) {
+      const enabling = sheet.kind === "enable";
+      const title = enabling ? "Enable dictation?" : "Start dictation?";
+      const action = enabling ? "dictation-enable-confirm" : "dictation-start-confirm";
+      const actionLabel = enabling ? "Enable dictation" : "Start dictation";
+      return `
+        <div class="sheet-backdrop" data-action="sheet-close">
+          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="dictation-sheet-title" aria-describedby="dictation-sheet-description" data-sheet-panel>
+            <div class="sheet-head">
+              <div><div class="eyebrow">Speech recognition</div><h2 id="dictation-sheet-title">${title}</h2></div>
+              <button class="button quiet" data-action="sheet-close" aria-label="Close">Close</button>
+            </div>
+            <div class="sheet-form">
+              <div class="notice" id="dictation-sheet-description">Your browser or device provides speech recognition and controls microphone permission and audio processing. RUF Ministry Hub cannot verify where recognition occurs or how the browser or device handles audio.</div>
+              <div class="notice secure">Recognized words join this local draft only after speech recognition ends successfully. An error, interruption, or timeout adds and saves nothing. You still review and explicitly save or process before any permanent record is created.</div>
+              <label class="setting-row" for="dictation-confirm">
+                <input id="dictation-confirm" type="checkbox" autofocus aria-describedby="dictation-sheet-description">
+                <span><strong>I understand and want to ${enabling ? "enable dictation" : "start dictation now"}.</strong><span class="meta">This confirmation applies ${enabling ? "to enabling the button; each start asks again" : "only to this start"}.</span></span>
+              </label>
+            </div>
+            <div class="sheet-actions">
+              <button class="button quiet" data-action="sheet-close">Cancel</button>
+              <button class="button primary" data-action="${action}">${actionLabel}</button>
+            </div>
+          </section>
+        </div>
+      `;
     }
 
     function renderSheet() {
       if (!view.sheet) return "";
+      if (view.sheet.type === "dictation") return renderDictationSheet(view.sheet);
       if (view.sheet.type === "prayer-action") return renderPrayerActionSheet(view.sheet);
       if (view.sheet.type === "data-safety") return renderDataSafetySheet(view.sheet);
       if (view.sheet.type === "auto-memory") return renderAutoMemorySheet(view.sheet);
@@ -11763,13 +13370,15 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       });
       document.querySelectorAll("[data-setting-toggle]").forEach(input => {
         input.addEventListener("change", event => {
-          if (event.target.dataset.settingToggle === "localEncryptionEnabled") rememberSheetReturnFocus(event.target);
-          updateSetting(event.target.dataset.settingToggle, event.target.checked);
+          if (recoveryMutationBlocked()) return false;
+          if (["localEncryptionEnabled", "enableVoiceCapture"].includes(event.target.dataset.settingToggle)) rememberSheetReturnFocus(event.target);
+          return updateSetting(event.target.dataset.settingToggle, event.target.checked);
         });
       });
       document.querySelectorAll("[data-setting-select]").forEach(select => {
         select.addEventListener("change", event => {
-          updateSetting(event.target.dataset.settingSelect, event.target.value);
+          if (recoveryMutationBlocked()) return false;
+          return updateSetting(event.target.dataset.settingSelect, event.target.value);
         });
       });
       const careCadence = document.getElementById("sheet-care-cadence");
@@ -11780,12 +13389,14 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         el.addEventListener("click", event => {
           event.preventDefault();
           event.stopPropagation();
-          editCopyText(el.dataset.copyKey, el.dataset.copyFallback || el.textContent.trim());
+          if (recoveryMutationBlocked()) return false;
+          return editCopyText(el.dataset.copyKey, el.dataset.copyFallback || el.textContent.trim());
         });
       });
       document.querySelectorAll("[data-ai-action-select]").forEach(input => {
         input.addEventListener("change", event => {
-          persistAiActionSelection(
+          if (recoveryMutationBlocked()) return false;
+          return persistAiActionSelection(
             event.target.dataset.aiActionSelect,
             event.target.dataset.actionId,
             event.target.checked
@@ -11801,6 +13412,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const peopleSearch = document.getElementById("people-search");
       if (peopleSearch) {
         peopleSearch.addEventListener("input", event => {
+          if (recoveryMutationBlocked()) return false;
           const caret = Number.isFinite(event.target.selectionStart) ? event.target.selectionStart : event.target.value.length;
           view.search = event.target.value;
           view.peopleVisibleLimit = PEOPLE_BATCH_SIZE;
@@ -11816,13 +13428,16 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const globalSearch = document.getElementById("global-search");
       if (globalSearch) {
         globalSearch.addEventListener("input", event => {
+          if (recoveryMutationBlocked()) return false;
           const caret = Number.isFinite(event.target.selectionStart) ? event.target.selectionStart : event.target.value.length;
           view.globalSearch = event.target.value;
           view.searchVisibleLimits = {};
           saveCurrentDraftNow();
           if (globalSearchTimer) window.clearTimeout(globalSearchTimer);
+          const searchEpoch = recoveryEpoch;
           globalSearchTimer = window.setTimeout(() => {
             globalSearchTimer = null;
+            if (!recoveryEpochIsCurrent(searchEpoch)) return;
             if (view.screen !== "search") return;
             render();
             const restoredSearch = document.getElementById("global-search");
@@ -11837,19 +13452,23 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (quickText) {
         view.quickGrabDraftText = quickText.value;
         quickText.addEventListener("input", event => {
+          if (recoveryMutationBlocked()) return false;
           view.quickGrabDraftText = event.target.value;
+          return true;
         });
       }
       const profilePhotoInput = document.getElementById("profile-photo-input");
       if (profilePhotoInput) {
         profilePhotoInput.addEventListener("change", event => {
-          handleProfilePhotoUpload(event.target);
+          if (recoveryMutationBlocked()) return false;
+          return handleProfilePhotoUpload(event.target);
         });
       }
       const pinInput = document.getElementById("pin-input");
       if (pinInput) {
         pinInput.focus();
         pinInput.addEventListener("keydown", event => {
+          if (recoveryMutationBlocked()) return false;
           if (event.key === "Enter") unlockApp();
         });
       }
@@ -11857,13 +13476,14 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (vaultInput) {
         vaultInput.focus();
         vaultInput.addEventListener("keydown", event => {
+          if (recoveryMutationBlocked()) return false;
           if (event.key === "Enter") unlockVault();
         });
       }
       const sheetPersonName = document.getElementById("sheet-person-name");
       if (sheetPersonName) {
-        sheetPersonName.addEventListener("input", updateCreatePersonDuplicateWarning);
-        updateCreatePersonDuplicateWarning();
+        sheetPersonName.addEventListener("input", () => recoveryMutationBlocked() ? false : updateCreatePersonDuplicateWarning());
+        if (!recoveryMutationBlocked()) updateCreatePersonDuplicateWarning();
       }
     }
 
@@ -11876,8 +13496,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function openDataSafetySheet(kind) {
       if (!["encrypted-export", "import", "reset-demo"].includes(kind)) return;
+      if (activeProtectedBackupExport) return false;
       view.sheet = { type: "data-safety", kind };
       render();
+      return true;
     }
 
     function openAutoMemorySheet(kind = "list", snapshotId = "") {
@@ -11899,10 +13521,18 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       render();
     }
 
-    function closeSheet() {
+    function closeSheet(options = {}) {
       if (careSaveIsPending()) return false;
+      if (protectedBackupExportOwnsSheet(view.sheet)) {
+        if (!options.force) return false;
+        invalidateProtectedBackupExport();
+      }
+      const dictationTargetId = view.sheet?.type === "dictation" && view.sheet?.kind === "start"
+        ? view.sheet.targetId
+        : "";
       view.sheet = null;
-      render();
+      if (dictationTargetId) renderWithoutRestoringAutosaveTarget(dictationTargetId);
+      else render(options.force ? { mutationEffects: false } : {});
       restoreSheetReturnFocus();
       return true;
     }
@@ -11958,6 +13588,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     async function submitDataSafetySheet(kind) {
       if (kind === "encrypted-export") {
+        if (activeProtectedBackupExport || protectedBackupExportOwnsSheet(view.sheet)) return false;
         const passphrase = document.getElementById("sheet-export-passphrase")?.value || "";
         const confirmPassphrase = document.getElementById("sheet-export-confirm")?.value || "";
         if (!canUseWebCrypto()) {
@@ -11972,16 +13603,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           reportFieldError("sheet-export-confirm", "Passphrases did not match.");
           return;
         }
-        try {
-          if (await exportEncryptedJsonWithPassphrase(passphrase)) {
-            view.sheet = null;
-            render();
-          }
-        } catch (error) {
-          console.warn("Encrypted export failed", error);
-          showToast("Encrypted export failed.");
-        }
-        return;
+        return exportEncryptedJsonWithPassphrase(passphrase);
       }
       if (kind === "import") {
         const input = document.getElementById("sheet-import-backup-file") || document.getElementById("import-backup-file");
@@ -11995,10 +13617,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           reportFieldError("sheet-import-confirm", "Confirm that this should replace local data.");
           return;
         }
+        const importEpoch = recoveryEpoch;
         try {
           const payload = await readBackupFilePayload(file, passphrase, { allowPrompt: false });
+          if (!recoveryEpochIsCurrent(importEpoch)) return false;
           await applyRestoredPayload(payload);
         } catch (error) {
+          if (error?.message === "stale_recovery_epoch" || !recoveryEpochIsCurrent(importEpoch)) return false;
           console.warn("Backup import failed", error);
           const passphraseNeeded = error && error.message === "Encrypted backup needs passphrase.";
           reportFieldError(passphraseNeeded ? "sheet-import-passphrase" : input, passphraseNeeded ? "Enter the backup passphrase." : "That backup could not be imported.");
@@ -12091,7 +13716,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           reportFieldError("sheet-vault-confirm", "Passphrases did not match.");
           return;
         }
-        recordUndo("Device Vault setup");
         if (await enableLocalEncryptionRecord(passphrase, hint)) {
           view.sheet = null;
           showToast("Encrypted local storage enabled.");
@@ -12104,11 +13728,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           reportFieldError("sheet-vault-disable-confirm", "Confirm Device Vault should turn off.");
           return;
         }
-        recordUndo("Device Vault removal");
-        disableLocalEncryptionRecord();
-        view.sheet = null;
-        showToast("Encrypted local storage turned off.");
-        render();
+        if (await disableLocalEncryptionRecord()) {
+          view.sheet = null;
+          showToast("Encrypted local storage turned off.");
+          render();
+        }
+        return;
       }
     }
 
@@ -12927,6 +14552,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         reportFieldError("ai-confirm-action-confirm", "Confirm the selected actions first.");
         return false;
       }
+      return withActiveMutation("ai-action-approval-save", async () => {
       const convertQuickGrab = Boolean(validation.sourceQuickGrab && isCheckedInAiActionConfirm("ai-confirm-convert-quickgrab"));
       if (autosaveTimer) {
         const clear = window.clearTimeout || clearTimeout;
@@ -12938,6 +14564,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const beforeMemoryVault = cloneJson(memoryVaultCache);
       const beforeAutosaveDrafts = cloneJson(autosaveDraftsCache);
       const beforeUndoStack = cloneJson(undoStack);
+      const beforeUndoGeneration = undoGeneration;
       const beforeWorkflow = {
         screen: view.screen,
         sheet: view.sheet ? cloneJson(view.sheet) : null,
@@ -12983,6 +14610,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         memoryVaultCache = beforeMemoryVault;
         autosaveDraftsCache = beforeAutosaveDrafts;
         undoStack = beforeUndoStack;
+        undoGeneration = beforeUndoGeneration;
         vaultSaveRequestedRevision = beforeVaultRevisions.requested;
         vaultSaveCompletedRevision = beforeVaultRevisions.completed;
         restoreLocalStorageSnapshot(storageSnapshot);
@@ -12998,6 +14626,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         render();
         return false;
       }
+      });
     }
 
     function cancelAiActionConfirmView() {
@@ -13084,6 +14713,18 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function handleAction(event) {
+	      const button = event.currentTarget;
+      const action = button.dataset.action;
+      const id = button.dataset.id;
+	      if (recoveryTransactionPending || (recoveryRetryRequired() && action !== "undo-last")) {
+	        event.preventDefault?.();
+	        event.stopPropagation?.();
+	        return false;
+	      }
+	      if (recoveryRetryRequired() && action === "undo-last") {
+        undoLast();
+        return true;
+      }
 	      if (view.aiConfirmSaving) {
 	        event.preventDefault?.();
 	        event.stopPropagation?.();
@@ -13094,9 +14735,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	        event.stopPropagation?.();
 	        return;
 	      }
-	      const button = event.currentTarget;
-      const action = button.dataset.action;
-      const id = button.dataset.id;
       if (!view.sheet && action !== "sheet-close") rememberSheetReturnFocus(button);
       if (action === "startup-retry") {
         bootstrapLocalState();
@@ -13179,7 +14817,19 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         submitDonorUpdateBuilderSheet();
         return;
       }
-	      if (!["unlock-vault", "unlock-app"].includes(action)) saveCurrentDraftNow();
+	      if (action === "voice-capture") {
+	        return openDictationConsentSheet(button.dataset.target || "quick-text");
+	      }
+	      if (action === "dictation-enable-confirm") {
+	        return submitVoiceCaptureEnablement();
+	      }
+	      if (action === "dictation-start-confirm") {
+	        return submitDictationStartSheet();
+	      }
+	      if (action === "nav" && activeDictationSession) cancelActiveDictation({ announce: false });
+      const invalidatedProtectedExport = action === "nav" && Boolean(activeProtectedBackupExport);
+      if (invalidatedProtectedExport) invalidateProtectedBackupExport();
+	      if (!["unlock-vault", "unlock-app"].includes(action) && !invalidatedProtectedExport) saveCurrentDraftNow();
 
 	      if (action === "unlock-vault") unlockVault();
       if (action === "nav") {
@@ -13189,7 +14839,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         view.sheet = null;
         if (view.screen === "review") view.reviewIndex = 0;
         requestPageHeadingFocus();
-        render();
+        render(invalidatedProtectedExport ? { mutationEffects: false } : {});
       }
       if (action === "ai-review-filter") {
         view.aiReviewFilter = button.dataset.filter || "Pending";
@@ -13214,7 +14864,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "lock-app") lockApp();
       if (action === "capture-submit") submitUnifiedCapture(button.dataset.source, button.dataset.personId, button.dataset.mode, button);
       if (action === "capture-change-person") openProfileCapturePersonSheet(id);
-      if (action === "voice-capture") startDictation(button.dataset.target || "quick-text");
       if (action === "qg-process") beginCaptureProcessing(id);
       if (action === "qg-toggle-more") toggleExpanded("expandedQuickGrabIds", id);
       if (action === "qg-done") updateQuickGrab(id, { status: "Done" }, "Marked done.");
@@ -13330,6 +14979,29 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function updateSetting(key, value) {
+      if (recoveryMutationBlocked()) return false;
+      if (key === "enableVoiceCapture") {
+        if (value) {
+          settings.enableVoiceCapture = false;
+          settings.voiceCaptureDisclosureVersion = "";
+          return openVoiceCaptureEnablement();
+        }
+        cancelActiveDictation({ announce: false });
+        const previous = cloneJson(settings);
+        settings.enableVoiceCapture = false;
+        settings.voiceCaptureDisclosureVersion = "";
+        try {
+          if (!saveSettings()) throw new Error("voice setting not saved");
+        } catch (error) {
+          settings = previous;
+          showToast("Dictation was not disabled. Your previous setting remains in place.", "error");
+          render();
+          return false;
+        }
+        showToast("Dictation is off.");
+        render();
+        return true;
+      }
       if (key === "aiEnabled") {
         settings.aiEnabled = false;
         showToast("Real AI is not connected in this build.");
@@ -13382,19 +15054,22 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (key === "enableAutoSave" && !value) clearAllAutosaveDrafts();
       saveSettings();
 	      render();
+	      return true;
 	    }
 
     function applyCoachSettings(patch, message) {
+      if (recoveryMutationBlocked()) return false;
       recordUndo("App Coach adjustment");
       Object.assign(settings, patch);
       settings.launchScreen = calmLaunchScreen(settings.launchScreen);
       saveSettings();
       showToast(message || "App Coach adjustment applied.");
       render();
+      return true;
     }
 
     function applyCoachSuggestion(id) {
-      if (!id) return;
+      if (recoveryMutationBlocked() || !id) return false;
       if (id === "finish-iphone-deploy") {
         view.screen = "readiness";
         render();
@@ -13457,7 +15132,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function dismissCoachSuggestion(id) {
-      if (!id) return;
+      if (recoveryMutationBlocked()) return false;
+      if (!id) return false;
       settings.appCoachDismissed = {
         ...(settings.appCoachDismissed || {}),
         [id]: nowISO()
@@ -13465,35 +15141,42 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       saveSettings();
       showToast("Suggestion hidden for now.");
       render();
+      return true;
     }
 
     function clearDismissedCoachSuggestions() {
+      if (recoveryMutationBlocked()) return false;
       settings.appCoachDismissed = {};
       saveSettings();
       showToast("Hidden suggestions restored.");
       render();
+      return true;
     }
 
     function editCopyText(key, fallback) {
+      if (recoveryMutationBlocked()) return false;
       const current = copyText(key, fallback);
       const next = window.prompt("Edit this wording:", current);
-      if (next === null) return;
+      if (next === null) return false;
       const trimmed = next.trim();
-      if (!trimmed) return;
+      if (!trimmed) return false;
       recordUndo("wording edit");
       customCopy[key] = trimmed;
       saveCustomCopy();
       showToast("Wording updated.");
       render();
+      return true;
     }
 
     function resetCustomCopy() {
-      if (!window.confirm("Reset edited wording back to the app defaults?")) return;
+      if (recoveryMutationBlocked()) return false;
+      if (!window.confirm("Reset edited wording back to the app defaults?")) return false;
       recordUndo("wording reset");
       customCopy = {};
       saveCustomCopy();
       showToast("Edited wording reset.");
       render();
+      return true;
     }
 
     function toggleExpanded(key, id) {
@@ -13572,6 +15255,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function submitUnifiedCapture(source = "main", personId = "", mode = "process", button = null) {
+      if (recoveryMutationBlocked()) return false;
       if (button?.dataset?.submitted === "true") return null;
       const targetId = button?.dataset?.target || captureTextareaId(source);
       const textarea = document.getElementById(targetId);
@@ -13598,6 +15282,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       clearCaptureDraft(source, personId);
       view.quickGrabDraftText = "";
       view.quickGrabDraftSource = "";
+      if (source === "today") view.todayCaptureDraftText = "";
       if (source === "profile") {
         clearAutosaveDraft(profileCaptureOwnerKey(view.profileCaptureOwnerId || view.personId));
         view.profileCapturePersonId = view.profileCaptureOwnerId || view.personId || personId;
@@ -13617,18 +15302,21 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function updateQuickGrab(id, patch, message) {
+      if (recoveryMutationBlocked()) return false;
       const grab = db.quickGrabs.find(item => item.id === id);
-      if (!grab) return;
+      if (!grab) return false;
 	      recordUndo("Quick Grab update");
 	      Object.assign(grab, patch, { updatedAt: nowISO() });
 	      saveData();
 	      showToast(message);
       render();
+      return true;
     }
 
     function setSnooze(id, when) {
+      if (recoveryMutationBlocked()) return false;
       const grab = db.quickGrabs.find(item => item.id === id);
-      if (!grab) return;
+      if (!grab) return false;
       let date = daysFromNow(1);
       if (when === "later") date = todayISO();
       if (when === "tomorrow") date = daysFromNow(1);
@@ -13642,6 +15330,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	      showToast("Snoozed until " + dateLabel(date) + ".");
       view.screen = "quick";
       render();
+      return true;
     }
 
     function nextWeekend() {
@@ -13697,6 +15386,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function createPerson(name, phone = "") {
+      if (recoveryMutationBlocked()) return false;
       const person = {
         id: uid("person"),
         name: String(name || "").trim().slice(0, 120),
@@ -13766,45 +15456,55 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     async function handleProfilePhotoUpload(input) {
+      if (recoveryMutationBlocked()) return false;
       const personId = input?.dataset?.personId;
       const person = personById(personId);
       const file = input?.files?.[0];
-      if (!person || !file) return;
+      if (!person || !file) return false;
+      const photoEpoch = recoveryEpoch;
       const previousPhoto = person.photoDataUrl || "";
       const previousUpdatedAt = person.updatedAt || "";
       try {
         const photoDataUrl = await resizeProfilePhoto(file);
+        if (!recoveryEpochIsCurrent(photoEpoch)) return false;
         recordUndo("profile photo");
         person.photoDataUrl = photoDataUrl;
         person.updatedAt = nowISO();
         saveData();
         showToast("Profile picture saved.");
         render();
+        return true;
       } catch (error) {
+        if (!recoveryEpochIsCurrent(photoEpoch)) return false;
         person.photoDataUrl = previousPhoto;
         person.updatedAt = previousUpdatedAt;
         console.warn("Profile photo upload failed", error);
         showToast(error.message || "Photo could not be saved.");
+        return false;
       }
     }
 
     function removePersonPhoto(id) {
+      if (recoveryMutationBlocked()) return false;
       const person = personById(id);
-      if (!person || !person.photoDataUrl) return;
+      if (!person || !person.photoDataUrl) return false;
       recordUndo("profile photo removal");
       person.photoDataUrl = "";
       person.updatedAt = nowISO();
       saveData();
       showToast("Profile picture removed.");
       render();
+      return true;
     }
 
     async function markFollowedUp(id) {
       const person = personById(id);
       if (!person || !personIsActive(person)) return false;
+      return withActiveMutation("followed-up-save", async () => {
       const beforeData = cloneJson(db);
       const beforeMemoryVault = cloneJson(memoryVaultCache);
       const beforeUndoStack = cloneJson(undoStack);
+      const beforeUndoGeneration = undoGeneration;
       const storageSnapshot = localStorageSnapshot([STORAGE_KEY, AUTO_MEMORY_KEY]);
       const previousSheet = view.sheet ? cloneJson(view.sheet) : null;
       try {
@@ -13831,6 +15531,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         db = beforeData;
         memoryVaultCache = beforeMemoryVault;
         undoStack = beforeUndoStack;
+        undoGeneration = beforeUndoGeneration;
         restoreLocalStorageSnapshot(storageSnapshot);
         view.sheet = previousSheet;
         console.warn("Could not mark person followed up", error);
@@ -13838,6 +15539,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         render();
         return false;
       }
+      });
     }
 
     function createProfileNoteRecord(personId, options = {}) {
@@ -14083,33 +15785,141 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function updatePrayer(id, patch, message) {
+      if (recoveryMutationBlocked()) return false;
       const prayer = db.prayerRequests.find(item => item.id === id);
-      if (!prayer) return;
+      if (!prayer) return false;
       recordUndo("prayer update");
       Object.assign(prayer, patch, { updatedAt: nowISO() });
       saveData();
       showToast(message);
       render();
+      return true;
     }
 
     function updateTask(id, patch, message) {
+      if (recoveryMutationBlocked()) return false;
       const task = db.tasks.find(item => item.id === id);
-      if (!task) return;
+      if (!task) return false;
       recordUndo("task update");
       Object.assign(task, patch, { updatedAt: nowISO() });
       saveData();
       showToast(message);
       render();
+      return true;
+    }
+
+    function backupDownloadFailureMessage(downloadMayHaveStarted = false) {
+      return downloadMayHaveStarted
+        ? "Backup download may have started, but its status was not recorded."
+        : "Backup download could not be started. Nothing was recorded.";
+    }
+
+    function commitBackupInitiation(exportedAt, ownerIsCurrent = () => true) {
+      if (!ownerIsCurrent() || recoveryMutationBlocked()) return { ok: false, stale: true };
+      const previousSettings = settings;
+      const nextSettings = cloneJson(settings);
+      nextSettings.lastBackupAt = exportedAt;
+      const localSnapshot = localStorageSnapshot([SETTINGS_KEY, CALM_MODE_KEY]);
+      try {
+        writeLocalStorageBatch([
+          [SETTINGS_KEY, JSON.stringify(nextSettings)],
+          [CALM_MODE_KEY, nextSettings.calmMode ? "on" : "off"]
+        ]);
+        if (!ownerIsCurrent() || recoveryMutationBlocked()) {
+          restoreLocalStorageSnapshot(localSnapshot);
+          return { ok: false, stale: true };
+        }
+        settings = nextSettings;
+        mirrorToIndexedDb(SETTINGS_KEY, cloneJson(nextSettings));
+        return { ok: true, stale: false };
+      } catch (error) {
+        settings = previousSettings;
+        restoreLocalStorageSnapshot(localSnapshot);
+        return { ok: false, stale: false };
+      }
+    }
+
+    function protectedBackupExportOwnsSheet(sheet = view.sheet) {
+      const owner = activeProtectedBackupExport;
+      return Boolean(owner
+        && owner.sheetBound
+        && sheet?.type === "data-safety"
+        && sheet?.kind === "encrypted-export"
+        && sheet?.backupExportOwnerId === owner.id);
+    }
+
+    function protectedBackupExportIsCurrent(owner) {
+      if (!owner || activeProtectedBackupExport !== owner || !recoveryEpochIsCurrent(owner.epoch)) return false;
+      if (!owner.sheetBound) return true;
+      return protectedBackupExportOwnsSheet(view.sheet) && view.sheet.backupExportOwnerId === owner.id;
+    }
+
+    function beginProtectedBackupExport() {
+      if (activeProtectedBackupExport || recoveryMutationBlocked()) return null;
+      const sheetBound = Boolean(view.sheet?.type === "data-safety" && view.sheet?.kind === "encrypted-export");
+      const owner = Object.freeze({
+        id: `backup_export_${++protectedBackupExportSequence}`,
+        epoch: recoveryEpoch,
+        sheetBound
+      });
+      activeProtectedBackupExport = owner;
+      if (sheetBound) {
+        view.sheet = { ...view.sheet, backupExportOwnerId: owner.id };
+        render({ mutationEffects: false });
+      }
+      return owner;
+    }
+
+    function invalidateProtectedBackupExport() {
+      const owner = activeProtectedBackupExport;
+      if (!owner) return false;
+      activeProtectedBackupExport = null;
+      if (view.sheet?.backupExportOwnerId === owner.id) {
+        const { backupExportOwnerId, ...restoredSheet } = view.sheet;
+        view.sheet = restoredSheet;
+      }
+      return true;
+    }
+
+    function finishProtectedBackupExport(owner, options = {}) {
+      const current = protectedBackupExportIsCurrent(owner);
+      if (activeProtectedBackupExport === owner) activeProtectedBackupExport = null;
+      if (!current) return false;
+      if (!owner.sheetBound) return true;
+      if (view.sheet?.backupExportOwnerId !== owner.id) return false;
+      if (options.close) view.sheet = null;
+      else {
+        const { backupExportOwnerId, ...restoredSheet } = view.sheet;
+        view.sheet = restoredSheet;
+      }
+      render({ mutationEffects: false });
+      if (options.close) restoreSheetReturnFocus();
+      return true;
     }
 
     function exportJson() {
+      if (recoveryMutationBlocked()) return false;
+      const exportEpoch = recoveryEpoch;
       const exportedAt = nowISO();
-      settings.lastBackupAt = exportedAt;
-      saveSettings();
-      const payload = currentPortablePayload();
+      const payload = cloneJson(currentPortablePayload());
       payload.exportedAt = exportedAt;
-      downloadJson(payload, "ruf-ministry-hub-export-" + todayISO() + ".json");
-      showToast("JSON export started.");
+      let downloadMayHaveStarted = false;
+      try {
+        downloadJson(payload, "ruf-ministry-hub-export-" + todayISO() + ".json");
+        downloadMayHaveStarted = true;
+      } catch (error) {
+        downloadMayHaveStarted = Boolean(error?.downloadMayHaveStarted);
+        if (recoveryEpochIsCurrent(exportEpoch)) showToast(backupDownloadFailureMessage(downloadMayHaveStarted), "error");
+        return false;
+      }
+      if (!recoveryEpochIsCurrent(exportEpoch)) return false;
+      const committed = commitBackupInitiation(exportedAt, () => recoveryEpochIsCurrent(exportEpoch));
+      if (!committed.ok) {
+        if (!committed.stale && recoveryEpochIsCurrent(exportEpoch)) showToast(backupDownloadFailureMessage(downloadMayHaveStarted), "error");
+        return false;
+      }
+      showToast("Backup download started. Confirm the file appears in Files.");
+      return true;
     }
 
     async function exportEncryptedJsonWithPassphrase(passphrase) {
@@ -14121,13 +15931,41 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         showToast("Use at least 8 characters.");
         return false;
       }
+      const owner = beginProtectedBackupExport();
+      if (!owner) return false;
       const exportedAt = nowISO();
-      settings.lastBackupAt = exportedAt;
-      saveSettings();
-      const envelope = await encryptPayload({ ...currentPortablePayload(), exportedAt }, passphrase, "ruf-ministry-hub-encrypted-backup");
-      downloadJson(envelope, "ruf-ministry-hub-encrypted-backup-" + todayISO() + ".json");
-      showToast("Encrypted backup export started.");
-      return true;
+      const payload = cloneJson(currentPortablePayload());
+      payload.exportedAt = exportedAt;
+      let completed = false;
+      let failureMessage = "";
+      try {
+        const envelope = await encryptPayload(payload, passphrase, "ruf-ministry-hub-encrypted-backup");
+        if (!protectedBackupExportIsCurrent(owner)) return false;
+        try {
+          downloadJson(envelope, "ruf-ministry-hub-encrypted-backup-" + todayISO() + ".json");
+        } catch (error) {
+          failureMessage = backupDownloadFailureMessage(Boolean(error?.downloadMayHaveStarted));
+          return false;
+        }
+        if (!protectedBackupExportIsCurrent(owner)) return false;
+        const committed = commitBackupInitiation(exportedAt, () => protectedBackupExportIsCurrent(owner));
+        if (!committed.ok) {
+          if (!committed.stale) failureMessage = backupDownloadFailureMessage(true);
+          return false;
+        }
+        if (!protectedBackupExportIsCurrent(owner)) return false;
+        showToast("Backup download started. Confirm the file appears in Files.");
+        completed = finishProtectedBackupExport(owner, { close: true });
+        return completed;
+      } catch (error) {
+        if (protectedBackupExportIsCurrent(owner)) failureMessage = "Encrypted backup could not be prepared. Nothing was downloaded or recorded.";
+        return false;
+      } finally {
+        if (!completed) {
+          if (failureMessage && protectedBackupExportIsCurrent(owner)) showToast(failureMessage, "error");
+          finishProtectedBackupExport(owner);
+        }
+      }
     }
 
     async function decodeBackupPayload(parsed, passphrase = "", options = {}) {
@@ -14155,9 +15993,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     async function readBackupFilePayload(file, passphrase = "", options = {}) {
+      const readEpoch = recoveryEpoch;
       const text = await readTextFile(file);
+      if (!recoveryEpochIsCurrent(readEpoch)) throw new Error("stale_recovery_epoch");
       const parsed = JSON.parse(text);
       const payload = await decodeBackupPayload(parsed, passphrase, options);
+      if (!recoveryEpochIsCurrent(readEpoch)) throw new Error("stale_recovery_epoch");
       return validateBackupPayload(payload);
     }
 
@@ -14182,8 +16023,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         aiConfirmValidationWarnings: [],
         search: "",
         peopleVisibleLimit: PEOPLE_BATCH_SIZE,
-        searchVisibleLimits: {},
+	        searchVisibleLimits: {},
 	        quickGrabDraftText: "",
+	        todayCaptureDraftText: "",
 	        profileCaptureOwnerId: "",
 	        profileCapturePersonId: "",
 	        profileCaptureDraftText: "",
@@ -14205,16 +16047,22 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function showToast(message, severity = "") {
       const toast = document.getElementById("toast");
-      const isError = severity === "error" || /^(add|choose|enter|use|type|select|confirm|could not|unable|invalid|no related|unlock|passphrases|pins|a valid)/i.test(String(message || ""));
-      toast.textContent = message;
+      const isError = severity === "error" || /^(add|choose|enter|use|type|select|confirm|could not|unable|invalid|no related|passphrases|pins|a valid)/i.test(String(message || ""));
+      const generation = ++toastGeneration;
+      if (toastTimer) window.clearTimeout(toastTimer);
       toast.setAttribute?.("role", isError ? "alert" : "status");
       toast.setAttribute?.("aria-live", isError ? "assertive" : "polite");
+      toast.textContent = message;
       toast.classList.add("show");
-      if (toastTimer) window.clearTimeout(toastTimer);
-      toastTimer = window.setTimeout(() => {
+      const timer = window.setTimeout(() => {
+        if (generation !== toastGeneration || toastTimer !== timer) return;
         toast.classList.remove("show");
-        toastTimer = null;
+        toast.setAttribute?.("role", "status");
+        toast.setAttribute?.("aria-live", "polite");
+        toast.textContent = "";
+        if (toastTimer === timer) toastTimer = null;
       }, isError ? 5000 : 2800);
+      toastTimer = timer;
     }
 
     function reportFieldError(fieldOrId, message) {
@@ -14230,6 +16078,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function flushRecoveryState() {
+      if (recoveryMutationBlocked()) return Promise.resolve(false);
       if (view.startupHydrating || view.startupRecoveryError || view.locked || view.encryptionLocked) return Promise.resolve(false);
       if (autosaveTimer) {
         const clear = window.clearTimeout || clearTimeout;
@@ -14238,7 +16087,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       saveCurrentDraftNow();
       if (settings.localEncryptionEnabled && vaultPassphrase) return persistEncryptedVault();
-      return Promise.resolve(true);
+      return canUseIndexedDb() ? drainIndexedDbCoordinator() : Promise.resolve(true);
     }
 
     function bootstrapLocalState() {
@@ -14253,7 +16102,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             restoreInterruptedWorkflow();
             initializeAutoMemoryVault();
           }
-          render();
+          if (!activatePendingFragmentQuickGrab()) render();
           return recovered;
         })
         .catch(error => {
@@ -14269,12 +16118,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return startupBootstrapPromise;
     }
 
+    importQuickGrabFromCurrentFragment();
     registerServiceWorker();
-    captureQuickGrabFromUrl();
     bootstrapLocalState();
     if (typeof window !== "undefined") {
-      window.addEventListener("pageshow", importQuickGrabFromCurrentUrl);
-      window.addEventListener("focus", importQuickGrabFromCurrentUrl);
+      window.addEventListener("pageshow", importQuickGrabFromCurrentFragment);
+      window.addEventListener("focus", importQuickGrabFromCurrentFragment);
       window.addEventListener("pagehide", flushRecoveryState);
     }
     if (typeof document !== "undefined") {
