@@ -4456,6 +4456,430 @@ async function testDirectQuickGrabProposalPathsRejectDuringRecovery() {
   assert(safe(central) && safe(mock), "central and direct mock Quick Grab proposal paths reject during recovery with zero graph, Undo, Auto Memory, persistence, toast, view, or render mutation");
 }
 
+async function testTransientCaptureDismissalCancelsBackendContinuation() {
+  async function runLateContinuation(outcome) {
+    const harness = makeHarness({
+      local: {
+        [KEYS.settings]: { enableUndo: true, autoMemoryVaultEnabled: true, localEncryptionEnabled: false },
+        [KEYS.data]: emptyData()
+      },
+      idbSeed: {
+        [KEYS.settings]: { enableUndo: true, autoMemoryVaultEnabled: true, localEncryptionEnabled: false },
+        [KEYS.data]: emptyData()
+      }
+    });
+    await harness.ready();
+    const fetchStarted = deferred();
+    const fetchResponse = deferred();
+    harness.sandbox.fetch = () => {
+      fetchStarted.resolve();
+      return fetchResponse.promise;
+    };
+    const setup = harness.eval(`(() => {
+      settings = normalizeSettings({
+        ...settings,
+        enableUndo: true,
+        autoMemoryVaultEnabled: true,
+        localEncryptionEnabled: false,
+        quickGrabAiMode: "backendQuickGrab",
+        aiMockMode: false
+      });
+      const grab = makeQuickGrab("Transient backend dismissal", [], "Whenever", null, { captureSource: "main" });
+      recordUndo("capture");
+      const cancelUndoId = undoStack[0].id;
+      db.quickGrabs = [grab];
+      beginCaptureProcessing(grab.id, { deleteOnCancel: true, cancelUndoId });
+      return { grabId: grab.id, cancelUndoId };
+    })()`);
+    const backend = harness.eval(`createQuickGrabBackendAiProposal("${setup.grabId}")`);
+    await fetchStarted.promise;
+    await harness.eval("drainIndexedDbCoordinator()");
+    const closeResult = await harness.eval("closeSheet()");
+    await harness.eval("drainIndexedDbCoordinator()");
+    const afterClose = harness.eval(`JSON.stringify({
+      db,
+      undoStack,
+      memoryVaultCache,
+      view,
+      activeCount: activeMutations.size,
+      localData: localStorage.getItem(STORAGE_KEY),
+      localMemory: localStorage.getItem(AUTO_MEMORY_KEY),
+      toast: document.getElementById("toast").textContent
+    })`);
+    const afterCloseIdb = JSON.stringify(Object.fromEntries(Array.from(harness.fakeIdb.values.entries())));
+    if (outcome === "success") {
+      fetchResponse.resolve({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          mode: "mock",
+          route: "/api/ai/quick-grab",
+          proposal: { title: "Late proposal", summary: "Must be discarded", confidence: "high", proposedActions: [] }
+        })
+      });
+    } else {
+      fetchResponse.reject(new Error("synthetic late Backend Quick Grab rejection"));
+    }
+    const backendResult = await backend;
+    await harness.eval("drainIndexedDbCoordinator()");
+    const afterLate = harness.eval(`JSON.stringify({
+      db,
+      undoStack,
+      memoryVaultCache,
+      view,
+      activeCount: activeMutations.size,
+      localData: localStorage.getItem(STORAGE_KEY),
+      localMemory: localStorage.getItem(AUTO_MEMORY_KEY),
+      toast: document.getElementById("toast").textContent
+    })`);
+    const afterLateIdb = JSON.stringify(Object.fromEntries(Array.from(harness.fakeIdb.values.entries())));
+    const closed = JSON.parse(afterClose);
+    const localData = JSON.parse(closed.localData);
+    return {
+      closeResult,
+      backendResult,
+      stable: afterLate === afterClose && afterLateIdb === afterCloseIdb,
+      captureCount: closed.db.quickGrabs.length,
+      proposalCount: closed.db.aiProposals.length,
+      undoCount: closed.undoStack.length,
+      activeCount: closed.activeCount,
+      sheet: closed.view.sheet,
+      localCaptureCount: localData.quickGrabs.length,
+      localProposalCount: localData.aiProposals.length,
+      localMemory: closed.localMemory,
+      idbCaptureCount: harness.fakeIdb.values.get(KEYS.data)?.quickGrabs?.length,
+      idbProposalCount: harness.fakeIdb.values.get(KEYS.data)?.aiProposals?.length
+    };
+  }
+
+  const lateSuccess = await runLateContinuation("success");
+  const lateRejection = await runLateContinuation("rejection");
+  const safe = result => result.closeResult === true
+    && result.backendResult === false
+    && result.stable
+    && result.captureCount === 0
+    && result.proposalCount === 0
+    && result.undoCount === 0
+    && result.activeCount === 0
+    && result.sheet === null
+    && result.localCaptureCount === 0
+    && result.localProposalCount === 0
+    && result.localMemory === null
+    && result.idbCaptureCount === 0
+    && result.idbProposalCount === 0;
+
+  const encrypted = makeHarness({
+    local: { [KEYS.settings]: { enableUndo: true, localEncryptionEnabled: false }, [KEYS.data]: emptyData() },
+    idbSeed: {}
+  });
+  await encrypted.ready();
+  const encryptedFetchStarted = deferred();
+  const encryptedFetch = deferred();
+  encrypted.sandbox.fetch = () => {
+    encryptedFetchStarted.resolve();
+    return encryptedFetch.promise;
+  };
+  encrypted.sandbox.__encryptTransientEnvelope = async payload => ({
+    kind: "ruf-ministry-hub-encrypted",
+    version: 1,
+    algorithm: "AES-GCM",
+    kdf: "PBKDF2-SHA-256",
+    iterations: 150000,
+    salt: "synthetic-salt",
+    iv: "synthetic-iv",
+    ciphertext: "synthetic-ciphertext",
+    encryptedAt: `synthetic-${Date.now()}`,
+    payload: clone(payload)
+  });
+  await encrypted.eval(`(async () => {
+    settings = normalizeSettings({
+      ...settings,
+      enableUndo: true,
+      autoMemoryVaultEnabled: true,
+      localEncryptionEnabled: true,
+      quickGrabAiMode: "backendQuickGrab",
+      aiMockMode: false
+    });
+    vaultPassphrase = "synthetic-transient-dismissal-passphrase";
+    memoryVaultCache = emptyAutoMemoryVault();
+    encryptPayload = payload => globalThis.__encryptTransientEnvelope(payload);
+    db = emptyData();
+    await persistEncryptedVault();
+  })()`);
+  const encryptedId = encrypted.eval(`(() => {
+    const grab = makeQuickGrab("Encrypted transient backend dismissal", [], "Whenever", null, { captureSource: "main" });
+    recordUndo("capture");
+    db.quickGrabs = [grab];
+    beginCaptureProcessing(grab.id, { deleteOnCancel: true, cancelUndoId: undoStack[0].id });
+    return grab.id;
+  })()`);
+  const encryptedBackend = encrypted.eval(`createQuickGrabBackendAiProposal("${encryptedId}")`);
+  await encryptedFetchStarted.promise;
+  await encrypted.eval("persistEncryptedVault()");
+  const encryptedClose = await encrypted.eval("closeSheet()");
+  const encryptedAfterClose = encrypted.eval(`JSON.stringify({
+    db,
+    undoStack,
+    memoryVaultCache,
+    view,
+    activeCount: activeMutations.size,
+    plaintextData: localStorage.getItem(STORAGE_KEY),
+    plaintextMemory: localStorage.getItem(AUTO_MEMORY_KEY),
+    envelope: JSON.parse(localStorage.getItem(ENCRYPTED_STORAGE_KEY))
+  })`);
+  const encryptedIdbAfterClose = JSON.stringify(encrypted.fakeIdb.values.get(KEYS.encrypted));
+  encryptedFetch.resolve({
+    ok: true,
+    json: async () => ({
+      ok: true,
+      mode: "mock",
+      route: "/api/ai/quick-grab",
+      proposal: { title: "Late encrypted proposal", summary: "Must be discarded", confidence: "high", proposedActions: [] }
+    })
+  });
+  const encryptedBackendResult = await encryptedBackend;
+  const encryptedAfterLate = encrypted.eval(`JSON.stringify({
+    db,
+    undoStack,
+    memoryVaultCache,
+    view,
+    activeCount: activeMutations.size,
+    plaintextData: localStorage.getItem(STORAGE_KEY),
+    plaintextMemory: localStorage.getItem(AUTO_MEMORY_KEY),
+    envelope: JSON.parse(localStorage.getItem(ENCRYPTED_STORAGE_KEY))
+  })`);
+  const encryptedIdbAfterLate = JSON.stringify(encrypted.fakeIdb.values.get(KEYS.encrypted));
+  const encryptedClosed = JSON.parse(encryptedAfterClose);
+  const encryptedSafe = encryptedClose === true
+    && encryptedBackendResult === false
+    && encryptedAfterLate === encryptedAfterClose
+    && encryptedIdbAfterLate === encryptedIdbAfterClose
+    && encryptedClosed.db.quickGrabs.length === 0
+    && encryptedClosed.db.aiProposals.length === 0
+    && encryptedClosed.undoStack.length === 0
+    && encryptedClosed.memoryVaultCache.snapshots.length === 0
+    && encryptedClosed.view.sheet === null
+    && encryptedClosed.activeCount === 0
+    && encryptedClosed.plaintextData === null
+    && encryptedClosed.plaintextMemory === null
+    && encryptedClosed.envelope.payload.data.quickGrabs.length === 0
+    && encryptedClosed.envelope.payload.data.aiProposals.length === 0
+    && encryptedClosed.envelope.payload.autoMemoryVault.snapshots.length === 0;
+
+  const failed = makeHarness({
+    local: {
+      [KEYS.settings]: { enableUndo: true, autoMemoryVaultEnabled: true, localEncryptionEnabled: false },
+      [KEYS.data]: emptyData()
+    },
+    idbSeed: {
+      [KEYS.settings]: { enableUndo: true, autoMemoryVaultEnabled: true, localEncryptionEnabled: false },
+      [KEYS.data]: emptyData()
+    }
+  });
+  await failed.ready();
+  const failedFetchStarted = deferred();
+  const failedFetch = deferred();
+  failed.sandbox.fetch = () => {
+    failedFetchStarted.resolve();
+    return failedFetch.promise;
+  };
+  const failedId = failed.eval(`(() => {
+    settings = normalizeSettings({
+      ...settings,
+      enableUndo: true,
+      autoMemoryVaultEnabled: true,
+      localEncryptionEnabled: false,
+      quickGrabAiMode: "backendQuickGrab",
+      aiMockMode: false
+    });
+    const grab = makeQuickGrab("Transient dismissal persistence failure", [], "Whenever", null, { captureSource: "main" });
+    recordUndo("capture");
+    db.quickGrabs = [grab];
+    beginCaptureProcessing(grab.id, { deleteOnCancel: true, cancelUndoId: undoStack[0].id });
+    return grab.id;
+  })()`);
+  const failedBackend = failed.eval(`createQuickGrabBackendAiProposal("${failedId}")`);
+  await failedFetchStarted.promise;
+  await failed.eval("drainIndexedDbCoordinator()");
+  const failedGate = failed.fakeIdb.gateNextTransaction();
+  failed.fakeIdb.failNextTransaction = true;
+  const failedClosePromise = failed.eval("closeSheet()");
+  await failedGate.started.promise;
+  const pendingDeletion = failed.eval(`({
+    busy: document.getElementById("app").innerHTML.match(/<section class="sheet-panel"[^>]*aria-busy="([^"]+)"/)?.[1],
+    statusVisible: document.getElementById("app").innerHTML.includes("Deleting capture safely"),
+    enabledControls: (() => {
+      const panel = document.getElementById("app").innerHTML.match(/<section class="sheet-panel"[\\s\\S]*?<\\/section>/)?.[0] || "";
+      return (panel.match(/<(?:button|input|select)\\b[^>]*>/g) || [])
+        .filter(control => !/\\sdisabled(?:\\s|>|=)/.test(control)).length;
+    })()
+  })`);
+  failedGate.resolve();
+  const failedClose = await failedClosePromise;
+  const retained = failed.eval(`({
+    captureCount: db.quickGrabs.length,
+    proposalCount: db.aiProposals.length,
+    undoCount: undoStack.length,
+    sheetOpen: view.sheet?.type === "ai-gate",
+    retry: Array.from(activeMutations.values()).some(mutation => mutation.cancelNeedsRetry),
+    retryNotice: document.getElementById("app").innerHTML.includes("The capture was not deleted"),
+    enabledControls: (() => {
+      const panel = document.getElementById("app").innerHTML.match(/<section class="sheet-panel"[\\s\\S]*?<\\/section>/)?.[0] || "";
+      return (panel.match(/<(?:button|input|select)\\b[^>]*>/g) || [])
+        .filter(control => !/\\sdisabled(?:\\s|>|=)/.test(control));
+    })()
+  })`);
+  const retriedClose = await failed.eval("closeSheet()");
+  await failed.eval("drainIndexedDbCoordinator()");
+  failedFetch.reject(new Error("synthetic rejected request after retryable dismissal"));
+  await failedBackend;
+  const afterRetry = failed.eval(`({
+    captureCount: db.quickGrabs.length,
+    proposalCount: db.aiProposals.length,
+    undoCount: undoStack.length,
+    sheet: view.sheet,
+    activeCount: activeMutations.size,
+    localCaptureCount: JSON.parse(localStorage.getItem(STORAGE_KEY)).quickGrabs.length
+  })`);
+  afterRetry.idbCaptureCount = failed.fakeIdb.values.get(KEYS.data)?.quickGrabs?.length;
+  const retrySafe = failedClose === false
+    && pendingDeletion.busy === "true"
+    && pendingDeletion.statusVisible
+    && pendingDeletion.enabledControls === 0
+    && retained.captureCount === 1
+    && retained.proposalCount === 0
+    && retained.undoCount === 1
+    && retained.sheetOpen
+    && retained.retry
+    && retained.retryNotice
+    && retained.enabledControls.length === 2
+    && retained.enabledControls.every(control => control.includes('data-action="sheet-close"'))
+    && retriedClose === true
+    && afterRetry.captureCount === 0
+    && afterRetry.proposalCount === 0
+    && afterRetry.undoCount === 0
+    && afterRetry.sheet === null
+    && afterRetry.activeCount === 0
+    && afterRetry.localCaptureCount === 0
+    && afterRetry.idbCaptureCount === 0;
+
+  async function runBackendRetry(secondOutcome) {
+    const harness = makeHarness({
+      local: { [KEYS.settings]: { enableUndo: true, autoMemoryVaultEnabled: false }, [KEYS.data]: emptyData() },
+      idbSeed: { [KEYS.settings]: { enableUndo: true, autoMemoryVaultEnabled: false }, [KEYS.data]: emptyData() }
+    });
+    await harness.ready();
+    const requests = [];
+    harness.sandbox.fetch = () => {
+      const request = deferred();
+      requests.push(request);
+      return request.promise;
+    };
+    const grabId = harness.eval(`(() => {
+      settings = normalizeSettings({
+        ...settings,
+        enableUndo: true,
+        autoMemoryVaultEnabled: false,
+        quickGrabAiMode: "backendQuickGrab",
+        aiMockMode: false
+      });
+      db.people = [{ id: "retry-person", name: "Before retry", status: "Active" }];
+      recordUndo("independent retry recovery");
+      db.people[0].name = "Current retry name";
+      const grab = makeQuickGrab("Backend retry owns one cancellation", [], "Whenever", null, { captureSource: "main" });
+      recordUndo("capture");
+      db.quickGrabs = [grab];
+      beginCaptureProcessing(grab.id, { deleteOnCancel: true, cancelUndoId: undoStack[0].id });
+      return grab.id;
+    })()`);
+    const first = harness.eval(`createQuickGrabBackendAiProposal("${grabId}")`);
+    requests[0].reject(new Error("synthetic first Backend Quick Grab failure"));
+    const firstResult = await first;
+    const firstOwner = harness.eval(`Array.from(activeMutations.values()).map(mutation => mutation.id)`);
+    const second = harness.eval(`createQuickGrabBackendAiProposal("${grabId}")`);
+    const secondOwner = harness.eval(`Array.from(activeMutations.values()).map(mutation => mutation.id)`);
+    if (secondOutcome === "success") {
+      requests[1].resolve({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          mode: "mock",
+          route: "/api/ai/quick-grab",
+          proposal: { title: "Retry proposal", summary: "One owner", confidence: "high", proposedActions: [] }
+        })
+      });
+    } else {
+      requests[1].reject(new Error("synthetic second Backend Quick Grab failure"));
+    }
+    const secondResult = await second;
+    if (secondOutcome === "success") {
+      return {
+        firstResult,
+        secondResult,
+        firstOwner,
+        secondOwner,
+        activeCount: harness.eval("activeMutations.size"),
+        proposalCount: harness.eval("db.aiProposals.length")
+      };
+    }
+    const ownerCountBeforeClose = harness.eval("activeMutations.size");
+    const closeResult = await harness.eval("closeSheet()");
+    const ownerCountAfterClose = harness.eval("activeMutations.size");
+    const undoResult = await harness.eval("undoLast()");
+    return {
+      firstResult,
+      secondResult,
+      firstOwner,
+      secondOwner,
+      ownerCountBeforeClose,
+      closeResult,
+      ownerCountAfterClose,
+      undoResult,
+      finalName: harness.eval("db.people[0]?.name"),
+      finalCaptureCount: harness.eval("db.quickGrabs.length"),
+      finalProposalCount: harness.eval("db.aiProposals.length")
+    };
+  }
+
+  const retrySuccess = await runBackendRetry("success");
+  const retryFailure = await runBackendRetry("failure");
+  const retryOwnerSafe = retrySuccess.firstResult === false
+    && retrySuccess.secondResult === true
+    && retrySuccess.firstOwner.length === 1
+    && retrySuccess.secondOwner.length === 1
+    && retrySuccess.secondOwner[0] === retrySuccess.firstOwner[0]
+    && retrySuccess.activeCount === 0
+    && retrySuccess.proposalCount === 1
+    && retryFailure.firstResult === false
+    && retryFailure.secondResult === false
+    && retryFailure.firstOwner.length === 1
+    && retryFailure.secondOwner.length === 1
+    && retryFailure.secondOwner[0] === retryFailure.firstOwner[0]
+    && retryFailure.ownerCountBeforeClose === 1
+    && retryFailure.closeResult === true
+    && retryFailure.ownerCountAfterClose === 0
+    && retryFailure.undoResult === true
+    && retryFailure.finalName === "Before retry"
+    && retryFailure.finalCaptureCount === 0
+    && retryFailure.finalProposalCount === 0;
+
+  const missingSource = makeHarness({ local: { [KEYS.settings]: { enableUndo: true }, [KEYS.data]: emptyData() } });
+  await missingSource.ready();
+  const missingBefore = missingSource.eval(`JSON.stringify({ db, undoStack, view, toast: document.getElementById("toast").textContent })`);
+  const missingResult = missingSource.eval(`saveQuickGrabAiProposal(emptyAiProposal({
+    sourceType: "quickGrab",
+    sourceId: "missing-transient-capture",
+    proposalType: "quickGrabParse",
+    proposedActions: []
+  }), "missing source proposal", "Must not announce")`);
+  const missingAfter = missingSource.eval(`JSON.stringify({ db, undoStack, view, toast: document.getElementById("toast").textContent })`);
+
+  assert(
+    safe(lateSuccess) && safe(lateRejection) && encryptedSafe && retrySafe && retryOwnerSafe && missingResult === false && missingAfter === missingBefore,
+    `transient Close/Cancel dismissal durably deletes once in plaintext and Device Vault, retains one owner across backend retries, exposes an accessible deletion state, cancels late Backend success/rejection, retries failed persistence, and rejects source-less proposals [success=${JSON.stringify(lateSuccess)}, rejection=${JSON.stringify(lateRejection)}, encrypted=${encryptedSafe}, persistenceRetry=${retrySafe}, pending=${JSON.stringify(pendingDeletion)}, retained=${JSON.stringify(retained)}, retriedClose=${retriedClose}, afterRetry=${JSON.stringify(afterRetry)}, backendRetry=${retryOwnerSafe}]`
+  );
+}
+
 async function testRecovery19RedContracts() {
   const failures = [];
   for (const [label, test] of [
@@ -4483,7 +4907,8 @@ async function testRecovery21RedContracts() {
     ["canonical failed-mirror reconciliation", testFailedMirrorReconciliationIsCanonicalAndRetryable],
     ["aggregate FIFO settlement", testAggregateFifoWaitKeepsPerOperationDeadlines],
     ["plain lifecycle mirror truth", testPlainLifecycleFlushAwaitsMirrorTruth],
-    ["direct Quick Grab recovery containment", testDirectQuickGrabProposalPathsRejectDuringRecovery]
+    ["direct Quick Grab recovery containment", testDirectQuickGrabProposalPathsRejectDuringRecovery],
+    ["transient capture Backend dismissal", testTransientCaptureDismissalCancelsBackendContinuation]
   ]) {
     try {
       await test();

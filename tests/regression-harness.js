@@ -1469,7 +1469,10 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
     const legacyConfirm = renderAiActionConfirmSheet({ proposalId: proposal.id, actionIndexes: view.aiConfirmActionIndexes });
     return { gate, waiting, cardBefore, proposal, card, legacyPlaceholderCard, sourceDeletedCard, duplicateConfirm, confirm, legacyConfirm };
   })()`);
-  assert(sensitiveProposal.gate.includes("TOPSECRET") && sensitiveProposal.card.includes("TOPSECRET") && sensitiveProposal.confirm.includes("TOPSECRET") && sensitiveProposal.legacyConfirm.includes("TOPSECRET"), "unlocked AI context, review, and confirmation surfaces show classified local capture text");
+  assert(sensitiveProposal.gate.includes("TOPSECRET"), "unlocked AI context shows classified local capture text");
+  assert(sensitiveProposal.card.includes("TOPSECRET"), "unlocked AI review shows classified local capture text");
+  assert(sensitiveProposal.confirm.includes("TOPSECRET"), "unlocked AI confirmation shows classified local capture text");
+  assert(sensitiveProposal.legacyConfirm.includes("TOPSECRET"), "unlocked legacy AI confirmation shows classified local capture text");
   assert(sensitiveProposal.waiting.includes("Secret Person") && sensitiveProposal.cardBefore.includes("Secret Person"), "unlocked capture waiting and review cards show classified linked person identity");
   assert(sensitiveProposal.proposal.contextPreview.includes("TOPSECRET") && sensitiveProposal.proposal.rawInputPreview.includes("TOPSECRET"), "sensitive proposal previews remain locally reviewable with their classification");
   assert(sensitiveProposal.legacyPlaceholderCard.includes("TOPSECRET"), "legacy redaction placeholders fall back to the available classified local source inside AI Review");
@@ -2345,6 +2348,581 @@ async function testAdversarialCalmOsDataShapes() {
   assert(ambiguousMatch.ambiguous && ambiguousMatch.confidence === "low" && ambiguousMatch.possiblePersonIds.length === 2, "same-first-name capture is classified as a low-confidence ambiguous match");
   assert(ambiguousMatch.grabPerson === "" && ambiguousMatch.possiblePersonId === "" && ambiguousMatch.existingPersonId === "" && ambiguousMatch.personErrors.length > 0, "ambiguous capture never preselects either person and requires an explicit choice");
   assert(ambiguousMatch.records === 0, "ambiguous matching creates no structured record before human resolution and approval");
+
+  resetApp("emptyData()");
+  const boundedPersonMatch = appEval(`(() => {
+    const ann = createPerson("Ann Smith");
+    const substringGrab = makeQuickGrab("Met Joanne Carter for coffee", [], "Whenever", null, { captureSource: "main" });
+    db.quickGrabs.push(substringGrab);
+    const substringProposal = createQuickGrabMockAiProposal(substringGrab.id);
+    const substringValidation = validateAiActionExecution(
+      substringProposal,
+      allExecutableAiActionIndexes(substringProposal),
+      { enforcePersonChoice: true }
+    );
+    const firstNameGrab = makeQuickGrab("Met Ann for coffee", [], "Whenever", null, { captureSource: "main" });
+    const smith = createPerson("Alex Smith");
+    createPerson("Alex Jones");
+    const fullNameGrab = makeQuickGrab("Met Alex Smith for coffee", [], "Whenever", null, { captureSource: "main" });
+    db.quickGrabs.push(fullNameGrab);
+    const fullNameProposal = createQuickGrabMockAiProposal(fullNameGrab.id);
+    createPerson("Jordan Lee");
+    createPerson("Jordan Lee");
+    const duplicateFullNameGrab = makeQuickGrab("Met Jordan Lee for coffee", [], "Whenever", null, { captureSource: "main" });
+    const lockedGrab = makeQuickGrab(
+      "Met Joanne Carter for coffee",
+      [],
+      "Whenever",
+      null,
+      { captureSource: "person", personId: ann.id, personLocked: true }
+    );
+    return {
+      annId: ann.id,
+      smithId: smith.id,
+      substringGrabPerson: substringGrab.relatedPersonId,
+      substringProposalPerson: substringProposal.result.possiblePersonId,
+      substringExistingPerson: substringValidation.existingPersonId,
+      firstNameGrabPerson: firstNameGrab.relatedPersonId,
+      fullNameGrabPerson: fullNameGrab.relatedPersonId,
+      fullNameProposalPerson: fullNameProposal.result.possiblePersonId,
+      fullNameAmbiguous: fullNameProposal.result.personMatchAmbiguous,
+      duplicateFullNamePerson: duplicateFullNameGrab.relatedPersonId,
+      lockedGrabPerson: lockedGrab.relatedPersonId,
+      locked: lockedGrab.personLocked,
+      records: db.notes.length + db.meetingNotes.length + db.prayerRequests.length + db.tasks.length
+    };
+  })()`);
+  assert(boundedPersonMatch.substringGrabPerson === "" && boundedPersonMatch.substringProposalPerson === "" && boundedPersonMatch.substringExistingPerson === "", "a first name contained inside another name never selects an existing person");
+  assert(boundedPersonMatch.firstNameGrabPerson === boundedPersonMatch.annId, "one unique whole first-name token selects the intended existing person");
+  assert(boundedPersonMatch.fullNameGrabPerson === boundedPersonMatch.smithId && boundedPersonMatch.fullNameProposalPerson === boundedPersonMatch.smithId && !boundedPersonMatch.fullNameAmbiguous, "one exact full-name phrase wins over a same-first-name peer");
+  assert(boundedPersonMatch.duplicateFullNamePerson === "", "duplicate exact full names remain unlinked until a person is chosen explicitly");
+  assert(boundedPersonMatch.locked && boundedPersonMatch.lockedGrabPerson === boundedPersonMatch.annId, "an explicit person-locked capture keeps precedence over inferred text");
+  assert(boundedPersonMatch.records === 0, "bounded person matching creates no structured record before explicit approval");
+
+  resetApp("emptyData()");
+  const backendPersonContract = appEval(`(() => {
+    const jordanOne = createPerson("Jordan Lee");
+    const jordanTwo = createPerson("Jordan Lee");
+    const ann = createPerson("Ann Smith");
+    const joanne = createPerson("Joanne Carter");
+    const duplicateGrab = makeQuickGrab("Met Jordan Lee for coffee", [], "Whenever", null, { captureSource: "main" });
+    db.quickGrabs.push(duplicateGrab);
+    const duplicateProposal = normalizeBackendQuickGrabProposal({
+      ok: true,
+      mode: "real",
+      proposal: {
+        title: "Adversarial duplicate-person proposal",
+        relatedPersonIdSuggestion: jordanOne.id,
+        relatedPersonId: jordanOne.id,
+        personId: jordanOne.id,
+        targetPersonId: jordanOne.id,
+        detectedPersonName: jordanOne.name,
+        result: {
+          possiblePersonId: jordanOne.id,
+          relatedPersonIdSuggestion: jordanOne.id,
+          relatedPersonId: jordanOne.id,
+          personId: jordanOne.id,
+          targetPersonId: jordanOne.id,
+          personMatchAmbiguous: false
+        },
+        proposedActions: [{
+          actionId: "duplicate-meeting",
+          actionType: "createMeetingNote",
+          relatedPersonId: jordanOne.id,
+          personId: jordanOne.id,
+          targetPersonId: jordanOne.id,
+          summary: "Synthetic duplicate-name meeting",
+          meetingDate: todayISO()
+        }]
+      }
+    }, duplicateGrab);
+    const duplicateValidation = validateAiActionExecution(duplicateProposal, [0], { enforcePersonChoice: true });
+    const explicitValidation = validateAiActionExecution(duplicateProposal, [0], {
+      personChoice: { mode: "existing", existingPersonId: jordanTwo.id },
+      enforcePersonChoice: true
+    });
+
+    const lockedGrab = makeQuickGrab(
+      "Met Joanne Carter for coffee",
+      [],
+      "Whenever",
+      null,
+      { captureSource: "person", personId: ann.id, personLocked: true }
+    );
+    db.quickGrabs.push(lockedGrab);
+    const lockedProposal = normalizeBackendQuickGrabProposal({
+      ok: true,
+      mode: "real",
+      proposal: {
+        title: "Adversarial locked-person proposal",
+        relatedPersonIdSuggestion: joanne.id,
+        relatedPersonId: joanne.id,
+        personId: joanne.id,
+        targetPersonId: joanne.id,
+        detectedPersonName: joanne.name,
+        result: {
+          possiblePersonId: joanne.id,
+          relatedPersonIdSuggestion: joanne.id,
+          relatedPersonId: joanne.id,
+          personId: joanne.id,
+          targetPersonId: joanne.id
+        },
+        proposedActions: [{
+          actionId: "locked-meeting",
+          actionType: "createMeetingNote",
+          relatedPersonId: joanne.id,
+          personId: joanne.id,
+          targetPersonId: joanne.id,
+          summary: "Synthetic locked-person meeting",
+          meetingDate: todayISO()
+        }]
+      }
+    }, lockedGrab);
+    const lockedValidation = validateAiActionExecution(lockedProposal, [0], { enforcePersonChoice: true });
+    return {
+      jordanOneId: jordanOne.id,
+      jordanTwoId: jordanTwo.id,
+      annId: ann.id,
+      duplicatePossiblePersonId: duplicateProposal.result.possiblePersonId,
+      duplicatePossiblePersonIds: duplicateProposal.result.possiblePersonIds,
+      duplicateAmbiguous: duplicateProposal.result.personMatchAmbiguous,
+      duplicateProposalPersonIds: [
+        duplicateProposal.relatedPersonIdSuggestion,
+        duplicateProposal.relatedPersonId,
+        duplicateProposal.personId,
+        duplicateProposal.targetPersonId,
+        duplicateProposal.result.relatedPersonIdSuggestion,
+        duplicateProposal.result.relatedPersonId,
+        duplicateProposal.result.personId,
+        duplicateProposal.result.targetPersonId
+      ],
+      duplicateActionPersonIds: [
+        duplicateProposal.proposedActions[0].relatedPersonId,
+        duplicateProposal.proposedActions[0].personId,
+        duplicateProposal.proposedActions[0].targetPersonId
+      ],
+      duplicateExistingPersonId: duplicateValidation.existingPersonId,
+      duplicatePersonErrors: duplicateValidation.personResolutionErrors,
+      explicitExistingPersonId: explicitValidation.existingPersonId,
+      explicitErrors: explicitValidation.errors,
+      lockedPossiblePersonId: lockedProposal.result.possiblePersonId,
+      lockedProposalPersonIds: [
+        lockedProposal.relatedPersonIdSuggestion,
+        lockedProposal.relatedPersonId,
+        lockedProposal.personId,
+        lockedProposal.targetPersonId,
+        lockedProposal.result.relatedPersonIdSuggestion,
+        lockedProposal.result.relatedPersonId,
+        lockedProposal.result.personId,
+        lockedProposal.result.targetPersonId
+      ],
+      lockedActionPersonIds: [
+        lockedProposal.proposedActions[0].relatedPersonId,
+        lockedProposal.proposedActions[0].personId,
+        lockedProposal.proposedActions[0].targetPersonId
+      ],
+      lockedExistingPersonId: lockedValidation.existingPersonId,
+      lockedErrors: lockedValidation.errors,
+      records: db.notes.length + db.meetingNotes.length + db.prayerRequests.length + db.tasks.length
+    };
+  })()`);
+  assert(backendPersonContract.duplicatePossiblePersonId === "" && backendPersonContract.duplicatePossiblePersonIds.length === 2 && backendPersonContract.duplicateAmbiguous && backendPersonContract.duplicateProposalPersonIds.every(id => id === ""), "backend normalization preserves duplicate-name ambiguity and clears every supplied proposal/result person ID");
+  assert(backendPersonContract.duplicateActionPersonIds.every(id => id === "") && backendPersonContract.duplicateExistingPersonId === "" && backendPersonContract.duplicatePersonErrors.length > 0, "backend action IDs cannot bypass an ambiguous local person match");
+  assert(backendPersonContract.explicitExistingPersonId === backendPersonContract.jordanTwoId && backendPersonContract.explicitErrors.length === 0, "an explicit human choice can resolve an ambiguous backend proposal to the selected existing person");
+  assert(backendPersonContract.lockedPossiblePersonId === backendPersonContract.annId && backendPersonContract.lockedProposalPersonIds.every(id => id === backendPersonContract.annId) && backendPersonContract.lockedActionPersonIds.every(id => id === "") && backendPersonContract.lockedExistingPersonId === backendPersonContract.annId && backendPersonContract.lockedErrors.length === 0, "a person-locked capture replaces proposal/result IDs with local source truth and clears conflicting action IDs");
+  assert(backendPersonContract.records === 0, "backend proposal normalization and validation create no structured records before final approval");
+
+  resetApp("emptyData()");
+  const persistedLegacyGrabContract = appEval(`(() => {
+    settings.quickGrabAiMode = "backendQuickGrab";
+    const ann = createPerson("Ann Smith");
+    ann.aiPrivacyTier = "Do Not Send to AI";
+    ann.hometown = "Synthetic Private Town";
+    const joanne = createPerson("Joanne Carter");
+    const staleGrab = makeQuickGrab("Met Joanne Carter for coffee", [], "Whenever", null, { captureSource: "legacy" });
+    staleGrab.relatedPersonId = ann.id;
+    staleGrab.detectedPersonName = ann.name;
+    staleGrab.personLocked = false;
+    staleGrab.category = "People";
+    db.quickGrabs.push(staleGrab);
+
+    const contractBefore = quickGrabPersonContract(staleGrab, db.people);
+    const candidatePeople = quickGrabCandidatePeopleForBackend(staleGrab);
+    const blockedPeople = quickGrabBlockedPeopleForBackend(staleGrab);
+    const payload = buildQuickGrabBackendPayload(staleGrab);
+    const context = buildQuickGrabAiContextReview(staleGrab.id);
+    const contextText = JSON.stringify(context);
+    const waitingMarkup = renderCaptureWaitingRow(staleGrab);
+    const cardMarkup = renderQuickGrabCard(staleGrab);
+    const findings = dataJanitorFindings(dataJanitorAllowedRecordsByCollection());
+    const preApprovalRecords = db.notes.length + db.meetingNotes.length + db.prayerRequests.length + db.tasks.length;
+    const linkedToAnnBefore = linkedRecordCountForPerson(ann.id);
+    const linkedToJoanneBefore = linkedRecordCountForPerson(joanne.id);
+    const annSearchHasGrab = buildSearchResults(ann.name).find(group => group.key === "captures")?.items.some(item => item.quickGrabId === staleGrab.id) || false;
+    const joanneSearchHasGrab = buildSearchResults(joanne.name).find(group => group.key === "captures")?.items.some(item => item.quickGrabId === staleGrab.id) || false;
+
+    const staleProposal = emptyAiProposal({
+      sourceType: "quickGrab",
+      sourceId: staleGrab.id,
+      result: { possiblePersonId: ann.id, possiblePersonName: ann.name, personMatchAmbiguous: false },
+      proposedActions: [{
+        actionId: "stale-egress-meeting",
+        actionType: "createMeetingNote",
+        relatedPersonId: ann.id,
+        summary: "Synthetic stale-link reconciliation meeting",
+        meetingDate: todayISO()
+      }]
+    });
+    db.aiProposals.push(staleProposal);
+    const staleValidation = validateAiActionExecution(staleProposal, [0], { enforcePersonChoice: true });
+    applyAiProposalActions(staleProposal, staleValidation, { convertQuickGrab: true });
+    let duplicateBlocked = false;
+    try { applyAiProposalActions(staleProposal, staleValidation, { convertQuickGrab: true }); } catch (error) { duplicateBlocked = true; }
+
+    const missingLock = makeQuickGrab(
+      "Met Joanne Carter for coffee",
+      [],
+      "Whenever",
+      null,
+      { captureSource: "person", personId: ann.id, personLocked: true }
+    );
+    db.quickGrabs.push(missingLock);
+    db.people = db.people.filter(person => person.id !== ann.id);
+    const missingLockContract = quickGrabPersonContract(missingLock, db.people);
+    const missingLockContext = buildQuickGrabAiContextReview(missingLock.id);
+    let missingLockPayloadBlocked = false;
+    try { buildQuickGrabBackendPayload(missingLock); } catch (error) { missingLockPayloadBlocked = error.message === "quick_grab_locked_person_missing"; }
+    const missingLockProposal = emptyAiProposal({
+      sourceType: "quickGrab",
+      sourceId: missingLock.id,
+      result: { possiblePersonId: joanne.id, possiblePersonName: joanne.name, personMatchAmbiguous: false },
+      proposedActions: [{
+        actionId: "missing-lock-meeting",
+        actionType: "createMeetingNote",
+        relatedPersonId: joanne.id,
+        summary: "Synthetic missing-lock meeting",
+        meetingDate: todayISO()
+      }]
+    });
+    const missingLockValidation = validateAiActionExecution(missingLockProposal, [0], { enforcePersonChoice: true });
+    const missingLockExplicitValidation = validateAiActionExecution(missingLockProposal, [0], {
+      personChoice: { mode: "existing", existingPersonId: joanne.id },
+      enforcePersonChoice: true
+    });
+    return {
+      annName: ann.name,
+      joanneId: joanne.id,
+      joanneName: joanne.name,
+      contractPersonId: contractBefore.person?.id || "",
+      candidatePeople,
+      blockedPeople,
+      payload,
+      contextBlocked: context.blocked,
+      contextText,
+      waitingMarkup,
+      cardMarkup,
+      privacyTier: aiPrivacyTierForRecord({ ...staleGrab, relatedPersonId: ann.id, personLocked: false }, "quickGrabs"),
+      donorIdentifiable: donorUpdatePotentiallyIdentifiable(staleGrab, "quickGrabs"),
+      unlinkedQuickGrabIds: findings.unlinkedRecords.filter(item => item.collection === "quickGrabs").map(item => item.record.id),
+      linkedToAnn: linkedToAnnBefore,
+      linkedToJoanne: linkedToJoanneBefore,
+      annSearchHasGrab,
+      joanneSearchHasGrab,
+      preApprovalRecords,
+      validationErrors: staleValidation.errors,
+      meetingCount: db.meetingNotes.length,
+      meetingPersonId: db.meetingNotes[0]?.relatedPersonId,
+      sourcePersonId: staleGrab.relatedPersonId,
+      sourcePersonLocked: staleGrab.personLocked,
+      duplicateBlocked,
+      missingLockPersonId: missingLockContract.person?.id || "",
+      missingLockAmbiguous: missingLockContract.ambiguous,
+      missingLockTargetMissing: missingLockContract.lockedTargetMissing,
+      missingLockContextBlocked: missingLockContext.blocked,
+      missingLockContextUsedText: missingLockContext.used.some(item => item.label === "One Quick Grab text"),
+      missingLockPayloadBlocked,
+      missingLockId: missingLock.id,
+      missingLockCandidates: quickGrabCandidatePeopleForBackend(missingLock),
+      missingLockValidationPersonId: missingLockValidation.existingPersonId,
+      missingLockErrors: missingLockValidation.errors,
+      missingLockExplicitPersonId: missingLockExplicitValidation.existingPersonId,
+      missingLockExplicitErrors: missingLockExplicitValidation.errors
+    };
+  })()`);
+  assert(persistedLegacyGrabContract.contractPersonId === persistedLegacyGrabContract.joanneId, "a persisted non-locked legacy link is re-evaluated by the current whole-token person contract");
+  assert(persistedLegacyGrabContract.candidatePeople.length === 1 && persistedLegacyGrabContract.candidatePeople[0].id === persistedLegacyGrabContract.joanneId && persistedLegacyGrabContract.payload.candidatePeople.length === 1 && persistedLegacyGrabContract.payload.candidatePeople[0].id === persistedLegacyGrabContract.joanneId, "stale legacy person metadata cannot enter backend candidate context or the outbound payload");
+  assert(persistedLegacyGrabContract.blockedPeople.length === 0 && !persistedLegacyGrabContract.contextBlocked && !persistedLegacyGrabContract.contextText.includes(persistedLegacyGrabContract.annName) && persistedLegacyGrabContract.contextText.includes(persistedLegacyGrabContract.joanneName), "a stale Do Not Send link neither leaks nor falsely blocks the current trusted candidate context");
+  assert(persistedLegacyGrabContract.privacyTier === "Normal" && !persistedLegacyGrabContract.donorIdentifiable && persistedLegacyGrabContract.waitingMarkup.includes(persistedLegacyGrabContract.joanneName) && !persistedLegacyGrabContract.waitingMarkup.includes(persistedLegacyGrabContract.annName) && persistedLegacyGrabContract.cardMarkup.includes(persistedLegacyGrabContract.joanneName) && !persistedLegacyGrabContract.cardMarkup.includes(persistedLegacyGrabContract.annName), "local privacy, donor-review classification, and capture labels use the current trusted person rather than a stale raw ID");
+  assert(!persistedLegacyGrabContract.unlinkedQuickGrabIds.length && persistedLegacyGrabContract.linkedToAnn === 0 && persistedLegacyGrabContract.linkedToJoanne === 1, "unlinked classification and linked-record counts use the trusted Quick Grab person contract");
+  assert(!persistedLegacyGrabContract.annSearchHasGrab && persistedLegacyGrabContract.joanneSearchHasGrab, "Search ignores a v39 stale detected person name and uses current raw and contract-derived person truth");
+  assert(persistedLegacyGrabContract.preApprovalRecords === 0 && persistedLegacyGrabContract.validationErrors.length === 0, "persisted legacy reconciliation creates no record before approval and validates against current local truth");
+  assert(persistedLegacyGrabContract.meetingCount === 1 && persistedLegacyGrabContract.meetingPersonId === persistedLegacyGrabContract.joanneId && persistedLegacyGrabContract.sourcePersonId === persistedLegacyGrabContract.joanneId && persistedLegacyGrabContract.sourcePersonLocked, "approved conversion links both the new record and its source capture to the one validated person");
+  assert(persistedLegacyGrabContract.duplicateBlocked && persistedLegacyGrabContract.meetingCount === 1, "repeating a reconciled legacy approval cannot duplicate the structured record");
+  assert(persistedLegacyGrabContract.missingLockPersonId === "" && persistedLegacyGrabContract.missingLockAmbiguous && persistedLegacyGrabContract.missingLockTargetMissing && persistedLegacyGrabContract.missingLockCandidates.length === 0, "a missing person-lock target fails closed without rematching capture text");
+  assert(persistedLegacyGrabContract.missingLockContextBlocked && !persistedLegacyGrabContract.missingLockContextUsedText && persistedLegacyGrabContract.missingLockPayloadBlocked, "a missing person-lock target is excluded before backend context or payload construction");
+  assert(persistedLegacyGrabContract.missingLockValidationPersonId === "" && persistedLegacyGrabContract.missingLockErrors.length > 0 && persistedLegacyGrabContract.missingLockExplicitPersonId === persistedLegacyGrabContract.joanneId && persistedLegacyGrabContract.missingLockExplicitErrors.length === 0, "a stale lock requires explicit human resolution and still permits a deliberate existing-person choice");
+  let missingLockFetchCalls = 0;
+  sandbox.fetch = async () => {
+    missingLockFetchCalls += 1;
+    return { ok: true, async json() { return { ok: true, proposal: {} }; } };
+  };
+  await appEval(`createQuickGrabBackendAiProposal("${persistedLegacyGrabContract.missingLockId}")`);
+  const missingLockAfterBackendAttempt = appEval(`db.quickGrabs.find(grab => grab.id === "${persistedLegacyGrabContract.missingLockId}")`);
+  assert(missingLockFetchCalls === 0 && missingLockAfterBackendAttempt.processingState === "failed", "backend Quick Grab processing makes no request when a locked person target is missing");
+
+  resetApp("emptyData()");
+  const legacyPersonContract = appEval(`(() => {
+    const jordanOne = createPerson("Jordan Lee");
+    const jordanTwo = createPerson("Jordan Lee");
+    const ann = createPerson("Ann Smith");
+    const joanne = createPerson("Joanne Carter");
+    const duplicateGrab = makeQuickGrab("Met Jordan Lee for coffee", [], "Whenever", null, { captureSource: "main" });
+    db.quickGrabs.push(duplicateGrab);
+    const staleDuplicateProposal = emptyAiProposal({
+      sourceType: "quickGrab",
+      sourceId: duplicateGrab.id,
+      result: { possiblePersonId: jordanOne.id, possiblePersonName: jordanOne.name, personMatchAmbiguous: false },
+      proposedActions: [{
+        actionId: "stale-duplicate-meeting",
+        actionType: "createMeetingNote",
+        relatedPersonId: jordanOne.id,
+        summary: "Synthetic stale duplicate meeting",
+        meetingDate: todayISO()
+      }]
+    });
+    const staleDuplicateValidation = validateAiActionExecution(staleDuplicateProposal, [0], { enforcePersonChoice: true });
+    const explicitValidation = validateAiActionExecution(staleDuplicateProposal, [0], {
+      personChoice: { mode: "existing", existingPersonId: jordanTwo.id },
+      enforcePersonChoice: true
+    });
+
+    const lockedGrab = makeQuickGrab(
+      "Met Joanne Carter for coffee",
+      [],
+      "Whenever",
+      null,
+      { captureSource: "person", personId: ann.id, personLocked: true }
+    );
+    db.quickGrabs.push(lockedGrab);
+    const staleLockedProposal = emptyAiProposal({
+      sourceType: "quickGrab",
+      sourceId: lockedGrab.id,
+      result: { possiblePersonId: joanne.id, possiblePersonName: joanne.name, personMatchAmbiguous: false },
+      proposedActions: [{
+        actionId: "stale-locked-meeting",
+        actionType: "createMeetingNote",
+        relatedPersonId: joanne.id,
+        summary: "Synthetic stale locked meeting",
+        meetingDate: todayISO()
+      }]
+    });
+    db.aiProposals.push(staleLockedProposal);
+    const preApprovalRecords = db.notes.length + db.meetingNotes.length + db.prayerRequests.length + db.tasks.length;
+    const lockedValidation = validateAiActionExecution(staleLockedProposal, [0], { enforcePersonChoice: true });
+    applyAiProposalActions(staleLockedProposal, lockedValidation, { convertQuickGrab: true });
+    let duplicateBlocked = false;
+    try { applyAiProposalActions(staleLockedProposal, lockedValidation, { convertQuickGrab: true }); } catch (error) { duplicateBlocked = true; }
+    return {
+      jordanTwoId: jordanTwo.id,
+      annId: ann.id,
+      staleDuplicateExistingPersonId: staleDuplicateValidation.existingPersonId,
+      staleDuplicatePersonErrors: staleDuplicateValidation.personResolutionErrors,
+      explicitExistingPersonId: explicitValidation.existingPersonId,
+      explicitErrors: explicitValidation.errors,
+      lockedExistingPersonId: lockedValidation.existingPersonId,
+      lockedErrors: lockedValidation.errors,
+      preApprovalRecords,
+      meetingCount: db.meetingNotes.length,
+      meetingPersonId: db.meetingNotes[0]?.relatedPersonId,
+      sourceActionId: db.meetingNotes[0]?.sourceAIActionId,
+      duplicateBlocked
+    };
+  })()`);
+  assert(legacyPersonContract.staleDuplicateExistingPersonId === "" && legacyPersonContract.staleDuplicatePersonErrors.length > 0, "saved legacy Quick Grab proposals cannot bypass current ambiguous-person validation");
+  assert(legacyPersonContract.explicitExistingPersonId === legacyPersonContract.jordanTwoId && legacyPersonContract.explicitErrors.length === 0, "saved legacy proposals still accept an explicit human person choice");
+  assert(legacyPersonContract.lockedExistingPersonId === legacyPersonContract.annId && legacyPersonContract.lockedErrors.length === 0, "saved legacy proposals obey the current person-lock source contract");
+  assert(legacyPersonContract.preApprovalRecords === 0 && legacyPersonContract.meetingCount === 1 && legacyPersonContract.meetingPersonId === legacyPersonContract.annId && Boolean(legacyPersonContract.sourceActionId), "one approved locked-person save creates exactly one correctly linked record with an idempotency key");
+  assert(legacyPersonContract.duplicateBlocked && legacyPersonContract.meetingCount === 1, "repeating the approved stale proposal cannot duplicate the linked record");
+
+  resetApp("emptyData()");
+  const crossProposalSourceContract = appEval(`(() => {
+    const ann = createPerson("Ann Smith");
+    const joanne = createPerson("Joanne Carter");
+    const grab = makeQuickGrab("Met Joanne Carter for coffee", [], "Whenever", null, { captureSource: "legacy" });
+    grab.relatedPersonId = ann.id;
+    grab.detectedPersonName = ann.name;
+    grab.personLocked = false;
+    db.quickGrabs.push(grab);
+    const proposal = emptyAiProposal({
+      sourceType: "dataJanitor",
+      sourceId: "",
+      proposalType: "dataJanitor",
+      proposedActions: [{
+        actionId: "cross-proposal-stale-source",
+        actionType: "createMeetingNote",
+        sourceQuickGrabId: grab.id,
+        relatedPersonId: ann.id,
+        summary: "Synthetic cross-proposal source meeting",
+        meetingDate: todayISO()
+      }]
+    });
+    db.aiProposals.push(proposal);
+    const validation = validateAiActionExecution(proposal, [0], { enforcePersonChoice: true });
+    const preApprovalRecords = db.meetingNotes.length;
+    applyAiProposalActions(proposal, validation, { convertQuickGrab: true });
+    return {
+      joanneId: joanne.id,
+      resolvedPersonId: validation.existingPersonId,
+      errors: validation.errors,
+      preApprovalRecords,
+      meetingCount: db.meetingNotes.length,
+      meetingPersonId: db.meetingNotes[0]?.relatedPersonId || "",
+      sourcePersonId: grab.relatedPersonId,
+      sourcePersonLocked: grab.personLocked
+    };
+  })()`);
+  assert(crossProposalSourceContract.resolvedPersonId === crossProposalSourceContract.joanneId && crossProposalSourceContract.errors.length === 0, "every proposal type resolves an action-supplied source Quick Grab through current local person truth");
+  assert(crossProposalSourceContract.preApprovalRecords === 0 && crossProposalSourceContract.meetingCount === 1 && crossProposalSourceContract.meetingPersonId === crossProposalSourceContract.joanneId && crossProposalSourceContract.sourcePersonId === crossProposalSourceContract.joanneId && crossProposalSourceContract.sourcePersonLocked, "cross-proposal approval creates exactly one correctly linked record and reconciles the source capture");
+
+  resetApp("emptyData()");
+  const staleSourceNameContract = appEval(`(() => {
+    const ann = createPerson("Ann Smith");
+    const grab = makeQuickGrab("Met a new student after large group", [], "Whenever", null, { captureSource: "legacy" });
+    grab.relatedPersonId = ann.id;
+    grab.detectedPersonName = ann.name;
+    grab.personLocked = false;
+    db.quickGrabs.push(grab);
+    const proposal = emptyAiProposal({
+      sourceType: "dataJanitor",
+      sourceId: "",
+      proposalType: "dataJanitor",
+      result: { possiblePersonId: ann.id, possiblePersonName: ann.name, personMatchAmbiguous: false },
+      proposedActions: [{
+        actionId: "cross-proposal-stale-name",
+        actionType: "createMeetingNote",
+        sourceQuickGrabId: grab.id,
+        relatedPersonId: ann.id,
+        personName: ann.name,
+        summary: "Synthetic new-student meeting",
+        meetingDate: todayISO()
+      }]
+    });
+    const validation = validateAiActionExecution(proposal, [0], { enforcePersonChoice: true });
+    return {
+      annName: ann.name,
+      existingPersonId: validation.existingPersonId,
+      suggestedPersonName: validation.suggestedPersonName,
+      newPersonName: validation.newPersonName,
+      errors: validation.errors,
+      records: db.notes.length + db.meetingNotes.length + db.prayerRequests.length + db.tasks.length
+    };
+  })()`);
+  assert(staleSourceNameContract.existingPersonId === "" && staleSourceNameContract.suggestedPersonName === "" && staleSourceNameContract.newPersonName === "" && staleSourceNameContract.errors.length > 0, "a stale proposal name cannot prefill a new person when current source text has no grounded local person resolution");
+  assert(staleSourceNameContract.records === 0, "an unresolved stale source name creates no canonical record before explicit human resolution");
+
+  resetApp("emptyData()");
+  const invalidSourceBindingContract = appEval(`(() => {
+    const ann = createPerson("Ann Smith");
+    const bob = createPerson("Bob Jones");
+    const annGrab = makeQuickGrab("Met Ann Smith for coffee", [], "Whenever", null, { captureSource: "legacy" });
+    const bobGrab = makeQuickGrab("Met Bob Jones for coffee", [], "Whenever", null, { captureSource: "legacy" });
+    db.quickGrabs.push(annGrab, bobGrab);
+    const multiSourceProposal = emptyAiProposal({
+      sourceType: "dataJanitor",
+      sourceId: "",
+      proposalType: "dataJanitor",
+      proposedActions: [
+        { actionId: "multi-ann", actionType: "createMeetingNote", sourceQuickGrabId: annGrab.id, relatedPersonId: ann.id, summary: "Synthetic Ann meeting", meetingDate: todayISO() },
+        { actionId: "multi-bob", actionType: "createMeetingNote", sourceQuickGrabId: bobGrab.id, relatedPersonId: bob.id, summary: "Synthetic Bob meeting", meetingDate: todayISO() }
+      ]
+    });
+    const multiValidation = validateAiActionExecution(multiSourceProposal, [0, 1], { enforcePersonChoice: true });
+    let multiApplyBlocked = false;
+    try { applyAiProposalActions(multiSourceProposal, multiValidation, { convertQuickGrab: true }); } catch (error) { multiApplyBlocked = true; }
+
+    const missingSourceProposal = emptyAiProposal({
+      sourceType: "dataJanitor",
+      sourceId: "",
+      proposalType: "dataJanitor",
+      proposedActions: [{
+        actionId: "missing-source",
+        actionType: "createMeetingNote",
+        sourceQuickGrabId: "missing-grab",
+        relatedPersonId: ann.id,
+        summary: "Synthetic missing-source meeting",
+        meetingDate: todayISO()
+      }]
+    });
+    const missingValidation = validateAiActionExecution(missingSourceProposal, [0], { enforcePersonChoice: true });
+    let missingApplyBlocked = false;
+    try { applyAiProposalActions(missingSourceProposal, missingValidation, { convertQuickGrab: true }); } catch (error) { missingApplyBlocked = true; }
+    return {
+      multiErrors: multiValidation.sourceQuickGrabBindingErrors,
+      multiSourceIds: multiValidation.sourceQuickGrabIds,
+      multiApplyBlocked,
+      missingErrors: missingValidation.sourceQuickGrabBindingErrors,
+      missingSourceId: missingValidation.sourceQuickGrabId,
+      missingApplyBlocked,
+      meetingCount: db.meetingNotes.length,
+      annStatus: annGrab.status,
+      bobStatus: bobGrab.status
+    };
+  })()`);
+  assert(invalidSourceBindingContract.multiErrors.length > 0 && invalidSourceBindingContract.multiSourceIds.length === 2 && invalidSourceBindingContract.multiApplyBlocked, "selected actions that reference different Quick Grabs fail closed before execution");
+  assert(invalidSourceBindingContract.missingErrors.length > 0 && invalidSourceBindingContract.missingSourceId === "missing-grab" && invalidSourceBindingContract.missingApplyBlocked, "a proposal-carried Quick Grab reference must resolve to one current live capture");
+  assert(invalidSourceBindingContract.meetingCount === 0 && invalidSourceBindingContract.annStatus === "Needs Processing" && invalidSourceBindingContract.bobStatus === "Needs Processing", "invalid source bindings create no records and convert no captures");
+
+  resetApp("emptyData()");
+  const indexedPersonScale = appEval(`(() => {
+    const firstDuplicateIdPerson = { id: "duplicate-id", name: "First Duplicate" };
+    const secondDuplicateIdPerson = { id: "duplicate-id", name: "Second Duplicate" };
+    const duplicateIdPeople = [firstDuplicateIdPerson, secondDuplicateIdPerson];
+    const duplicateIdIndex = buildQuickGrabPersonIndex(duplicateIdPeople);
+    const indexedLockedPerson = quickGrabPersonContract(
+      { rawContent: "Second Duplicate", relatedPersonId: "duplicate-id", personLocked: true },
+      duplicateIdPeople,
+      duplicateIdIndex
+    ).person;
+    db.people = Array.from({ length: 500 }, (_, index) => ({
+      id: "scale-person-" + index,
+      name: "Person" + index + " Surname" + index,
+      personType: "Student",
+      status: "Active",
+      careLevel: "Normal"
+    }));
+    db.quickGrabs = Array.from({ length: 600 }, (_, index) => ({
+      id: "scale-grab-" + index,
+      rawContent: "Met Person" + (index % 500) + " Surname" + (index % 500) + " for coffee scale-query",
+      detectedPersonName: "Stale Person",
+      category: "People",
+      status: "Needs Processing",
+      urgency: "Whenever",
+      relatedPersonId: "",
+      personLocked: false,
+      sensitiveFlag: false,
+      createdAt: nowISO(),
+      updatedAt: nowISO()
+    }));
+    const originalNormalizedName = normalizedName;
+    let normalizedNameCalls = 0;
+    normalizedName = value => {
+      normalizedNameCalls += 1;
+      return originalNormalizedName(value);
+    };
+    const startedAt = Date.now();
+    const captures = buildSearchResults("scale-query").find(group => group.key === "captures")?.items || [];
+    const elapsedMs = Date.now() - startedAt;
+    normalizedName = originalNormalizedName;
+    return {
+      normalizedNameCalls,
+      elapsedMs,
+      captureCount: captures.length,
+      indexedLockedPersonName: indexedLockedPerson?.name || ""
+    };
+  })()`);
+  assert(indexedPersonScale.indexedLockedPersonName === "First Duplicate", "indexed locked-person lookup preserves the established first-match behavior for corrupt duplicate IDs");
+  assert(indexedPersonScale.captureCount === 600, "indexed person matching preserves all 600 synthetic Search results");
+  assert(indexedPersonScale.normalizedNameCalls <= 2000, "bulk Search builds one people index and performs bounded per-capture normalization instead of rebuilding all 500 people for each capture");
 
   resetApp("emptyData()");
   makeElement("quick-text").value = "Repeated tap capture stays singular";
@@ -3311,8 +3889,8 @@ async function testContextualDatesAndLegacyProfileCompatibility() {
 
 function testServiceWorkerShape() {
   assert(/const APP_VERSION = "2026\.07\.\d{2}-calm-os-[^"]+"/.test(html), "deploy app version is in the Calm OS release family");
-  assert(html.includes('const APP_VERSION = "2026.07.20-calm-os-core-v39"'), "deploy app declares the reviewed v39 local-visibility boundary");
-  assert(serviceWorkerSource.includes('const CACHE_NAME = "ruf-ministry-hub-v88-calm-os-core-v39"'), "service worker cache identity matches the reviewed v39 app");
+  assert(html.includes('const APP_VERSION = "2026.07.21-calm-os-core-v41"'), "deploy app declares the reviewed v41 transient-capture cancellation boundary");
+  assert(serviceWorkerSource.includes('const CACHE_NAME = "ruf-ministry-hub-v92-calm-os-core-v41"'), "service worker cache identity matches the reviewed v41 app");
   const appUnlockSource = html.slice(html.indexOf("function unlockApp()"), html.indexOf("async function unlockVault()"));
   assert(
     appUnlockSource.indexOf('showToast("Unlocked.")') < appUnlockSource.indexOf("requestPageHeadingFocus()")

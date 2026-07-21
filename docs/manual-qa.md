@@ -4,7 +4,7 @@ These checks require a real iPhone running Safari against the deployed PWA URL. 
 
 ## Independent RC audit note (2026-07-15)
 
-The second release-candidate audit verified the 390px and 430px layout contracts, large-text navigation/Right Now wrapping, offline cached-shell behavior, and no-overflow preview checks with local/DevTools evidence. Real iPhone Safari, VoiceOver, Dynamic Type, Home Screen suspension, and Safari storage-quota behavior remain `NOT VERIFIED` until this checklist is run on a physical device. Use fictional records only, and confirm linked Sensitive/Do Not Send captures remain masked and are blocked before any backend Quick Grab request.
+The second release-candidate audit verified the 390px and 430px layout contracts, large-text navigation/Right Now wrapping, offline cached-shell behavior, and no-overflow preview checks with local/DevTools evidence. Real iPhone Safari, VoiceOver, Dynamic Type, Home Screen suspension, and Safari storage-quota behavior remain `NOT VERIFIED` until this checklist is run on a physical device. Use fictional records only. Historical masking expectations are superseded: in the unlocked local app, classified content and labels must remain visible; Sensitive and Highly Sensitive stay default-blocked from external context, and Do Not Send to AI must be blocked before any backend Quick Grab request.
 
 ## Physical-device evidence (2026-07-16 17:23 CDT)
 
@@ -14,13 +14,21 @@ The second release-candidate audit verified the 390px and 430px layout contracts
 - `P2 / OBSERVED`: when **Skip to main content** is focused in Home Screen mode, the fixed link overlaps the iOS status area. This is not accepted as a complete safe-area or accessibility pass. `CALM-A11Y-07` changes installed-app status-bar behavior from overlay to reserved status area and requires a same-device recheck.
 - `NOT VERIFIED`: complete five-destination interaction, capture cancel/approved save/reload, VoiceOver semantics, largest Dynamic Type, landscape, Reduced Motion, update-ready flow, Airplane Mode reopen, backup/vault recovery, Undo, and rollback. The visible focused link does not by itself prove VoiceOver was enabled or passed.
 
-The next preview candidate is app/package `2026.07.16-calm-os-core-v8` with cache `ruf-ministry-hub-v57-calm-os-core-v8`. Its source, preview, and physical evidence remain invalid until the bounded fix is frozen, tested, pushed through the sole release lane, deployed to the preview-only QA project, and rechecked.
+Historical v8/cache57 evidence below is preserved only as provenance and is not the current candidate. The current local candidate is named in the first version-specific section below.
+
+## `CALM-TRANSIENT-CAPTURE-CANCEL-58` local v41 recheck
+
+- Local candidate identity: app/package `2026.07.21-calm-os-core-v41`, cache `ruf-ministry-hub-v92-calm-os-core-v41`. It preserves the reviewed v40 person-token boundary and adds the transient Backend Quick Grab cancellation boundary. It is local-only and is not committed, previewed, provider-verified, production-verified, rollback-verified, or physical-device verified. Exact v39 Preview/device evidence does not transfer to changed v41 bytes.
+- With fictional people **Ann Smith**, **Alex Smith**, **Alex Jones**, and two distinct records both named **Jordan Lee**, process separate fictional captures naming **Joanne Carter**, **Ann**, **Alex**, **Alex Smith**, and **Jordan Lee**. Joanne must not link to Ann; unique whole-token Ann must link to Ann Smith; Alex must require an explicit person choice; exact full-name Alex Smith must select only Alex Smith; duplicate Jordan Lee must require an explicit choice. Before final approval, none may create a note, meeting, prayer, task, or profile update.
+- From Ann Smith's profile, start a person-locked fictional capture whose text names Joanne Carter. The explicit profile lock must remain Ann Smith. Cancel and confirm no proposal or structured record. Then approve one intended fictional action from an unambiguous capture, reload, and confirm exactly one intended result; repeating approval must not duplicate it.
+- For the genuine same-origin update check, create fictional **Ann Smith** on the older v39 candidate, then save a non-profile capture saying **Met Joanne Carter for coffee** so the historical parser can retain its stale Ann link and derived name. Update to exact v41 without clearing storage. Confirm v41 no longer labels the capture Ann, searching **Ann Smith** does not return that capture, searching **Joanne Carter** does return it, the reviewed request packet includes no Ann name/id, the capture does not inherit Ann's outward privacy decision, and processing requires a current match or explicit person choice. After approving Joanne explicitly, confirm both the converted source and exactly one created record link to Joanne; a repeat approval creates nothing.
+- Repeat the affected Quick Capture/review flow in iPhone Safari and the installed Home Screen app, then recheck genuine same-origin update, offline reopen, VoiceOver, Dynamic Type, dictation, Files/restore/Undo, and all five privacy levels. In the unlocked app, **Normal**, **Private**, **Sensitive**, **Highly Sensitive**, and **Do Not Send to AI** labels and full local content must remain visible. Sensitive and Highly Sensitive must remain default-blocked from external context; Do Not Send to AI must produce no request. Local content is concealed only while App Lock or Device Vault is effectively locked. These checks are `NOT VERIFIED` for v41 until observed on the exact deployed candidate.
 
 ## `CALM-LOCAL-VISIBILITY-46` local v39 recheck
 
 - Local candidate identity: app/package `2026.07.20-calm-os-core-v39`, cache `ruf-ministry-hub-v88-calm-os-core-v39`. It is local-only and is not committed, previewed, provider-verified, production-verified, rollback-verified, or physical-device verified.
 - Exact-v38 preview evidence from Daniel: Safari and the saved Home Screen app displayed normally. A fictional new capture remained under **Waiting to be sorted** after Cancel, and **Mark item Do Not Send to AI** was not visible. Treat those as one manual display pass plus two observed Quick Capture failures; they do not transfer to v39.
-- With fictional text, press **Process** and confirm the sensitivity selector and **Mark item Do Not Send to AI** appear near the top, before the long context lists. Press header Close, footer Cancel, Escape, and the backdrop in separate attempts; each must delete only that newly typed transient capture, remove it from **Waiting to be sorted**, and create no proposal or structured record. A previously saved capture opened with **Process** must remain saved when its review is dismissed.
+- With fictional text, press **Process** and confirm the sensitivity selector and **Mark item Do Not Send to AI** appear near the top, before the long context lists. Press header Close, footer Cancel, Escape, and the backdrop in separate attempts; each must delete only that newly typed transient capture, remove it from **Waiting to be sorted**, and create no proposal or structured record. With Backend Quick Grab enabled, repeat after approving processing and dismiss while the request is pending; confirm the sheet announces **Deleting capture safely…** and its controls cannot be used until storage settles. Wait for the request to settle, reload, and confirm the transient capture, processing snapshot, proposal, capture Undo, and hidden recovery owner do not return. Force two fictional backend failures with a retry between them, then dismiss; confirm one retryable owner is reused and a later Undo still succeeds. If deletion cannot be saved, the review and capture must remain, and only the two equivalent **Retry delete** controls may be enabled. A previously saved capture opened with **Process** must remain saved when its review is dismissed.
 - Repeat with **Normal**, **Private**, **Sensitive**, **Highly Sensitive**, and **Do Not Send to AI**. Confirm full local text and linked names remain visible in Capture, Today, Search, profiles, prayers, tasks, AI context review, Suggested updates, and final approval while the app is unlocked. Each classification label must remain visible. **Do Not Send to AI** must keep the capture local and visible while blocking any request.
 - Recheck in iPhone Safari and the installed Home Screen app, including largest Dynamic Type, VoiceOver, landscape, update-ready behavior, an offline reopen, and rollback. Automated and simulated-browser results do not prove any of those physical or deployed boundaries.
 
@@ -283,14 +291,14 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 - Confirm the whole card opens the profile with one tap; there is no separate Open Profile button or equal-weight Pin/Followed Up cluster.
 - Confirm cards never show preferred contact, Created/Updated timestamps, generic avatar icons, or a visible Pinned badge.
 - Type several characters into People search and confirm the iPhone keyboard, focus, and caret remain in the field after each filtered update.
-- With a synthetic person marked Sensitive, confirm a saved follow-up reason is masked; clear or corrupt the follow-up date and confirm a stale reason is not shown.
+- With a fictional person marked Sensitive, confirm the classification and saved follow-up reason remain visible while the local app is unlocked; clear or corrupt the follow-up date and confirm a stale reason is not shown. Confirm App Lock conceals the app when it is actually locked.
 - Test a long fictional name, no photo, and a synthetic large local image. Confirm the 48px image area does not resize or shift while the card loads and the name wraps without overlap.
 - Create or open a person.
 - Tap Add person and confirm it opens an in-app sheet.
 - Try creating a likely duplicate and confirm the sheet asks you to confirm before saving.
 - Create a new non-duplicate person and confirm the new profile opens.
 - Confirm the top answers who this person is, why they need care, the contextual last/next timing, reason, and phone only when populated.
-- Confirm Right Now contains only Pray, Next thing, Remember, and Reminder; each statement must be traceable to a saved synthetic record, and sensitive text stays masked.
+- Confirm Right Now contains only Pray, Next thing, Remember, and Reminder; each statement must be traceable to a saved fictional record, and classified text remains visible with its classification while the local app is unlocked.
 - Confirm the shared capture says Add something about the person's first name, locks that person, and exposes Process plus quiet Dictate/Save for later choices.
 - Type an unfinished profile capture, choose Change person, and confirm the draft follows the new locked person without navigating away, creating records, or updating either profile.
 - Refresh with an unfinished profile capture and confirm the correct person-linked draft returns.
@@ -312,7 +320,7 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 - Set a prayer follow-up date and confirm it opens an in-app sheet, rejects an invalid typed date, and saves a valid date.
 - Create a prayer follow-up task and confirm it opens an in-app sheet, saves the task, and links it back to the prayer request.
 - Archive and restore a prayer request.
-- Confirm sensitive prayer text is masked when Mask Sensitive Previews is on.
+- Confirm classified prayer text and its classification remain visible while the local app is unlocked, and that App Lock conceals the app when it is actually locked.
 
 ## Today
 
@@ -322,7 +330,7 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 - Confirm **After that** displays no more than two compact items.
 - Confirm exactly one action is visually dominant and the recommended item offers only **Do this**, **Done**, and **Later**.
 - With synthetic records, confirm overdue person follow-up wins over due-today follow-up, important task, important capture, prayer follow-up, care-window, oldest capture, and proactive suggestions in that order.
-- Confirm sensitive capture, prayer, and task details are masked in recommendation previews.
+- Confirm classified capture, prayer, and task details remain visible with their classification in recommendation previews while the local app is unlocked.
 - Tap **Done** on a task and confirm it remains complete after refresh.
 - Tap **Later** on a real task or person follow-up and confirm a future return date is required before it disappears.
 - Tap **Later** on a proactive suggestion and confirm it stays dismissed for the rest of the local day.
@@ -339,7 +347,7 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 - Tap Review selected, cancel from Review before saving, and confirm no records were created and the selected/skipped choices remain.
 - Tap Approve all, return to Suggested updates without saving if possible, and confirm all supported actions remain selected.
 - Change the selected person in Review before saving and confirm approved records link only to that person.
-- Mark the source sensitive and confirm its preview becomes masked.
+- Mark the fictional source Sensitive and confirm its full local preview and classification remain visible while unlocked; confirm it remains default-blocked from external context.
 - Complete a partial approval and confirm the proposal leaves Pending, appears under Approved as Partially Approved, and shows the saved selected/skipped choices.
 - Confirm Save approved updates still requires the explicit review checkbox before local records are created.
 
@@ -373,11 +381,10 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 
 ## Privacy
 
-- Turn on Mask Sensitive Previews.
-- Confirm sensitive notes and prayer details are obscured in public-facing lists.
-- Confirm names and navigation remain usable.
-- Turn off Mask Sensitive Previews and confirm details return.
-- If using Device Vault, verify the app asks for the vault passphrase after a fresh launch.
+- In the unlocked local app, confirm classified notes, prayers, captures, tasks, and linked names remain readable with their **Normal**, **Private**, **Sensitive**, **Highly Sensitive**, or **Do Not Send to AI** labels.
+- Confirm Sensitive and Highly Sensitive remain default-blocked from external context, and Do Not Send to AI permits no backend request.
+- Enable App Lock and confirm the lock screen conceals app content until the correct fictional PIN is entered. Do not describe App Lock as encryption.
+- If using Device Vault, verify the app asks for the fictional vault passphrase after a fresh launch and does not expose encrypted records before successful unlock. Do not describe Device Vault as cloud sync.
 
 ## Adversarial Calm OS Checks
 
@@ -385,7 +392,7 @@ When production backend Quick Grab is enabled, sign in through the approved Clou
 - Search for a phrase matching more than 30 synthetic people. Confirm Search reveals results in batches without moving the caret or hiding later matches.
 - Add more than 50 synthetic notes to one profile. Confirm the normal preview remains three items and View all reveals 50 at a time without changing the quiet profile top.
 - Create two synthetic people sharing a first name, then process a capture using only that first name. Confirm neither person is preselected and final save requires an explicit person choice.
-- Mark a synthetic capture sensitive, approve a follow-up task and person-detail update, then inspect Today and Search with preview masking on. Confirm the saved text exists locally but is not exposed in either preview.
+- Mark a fictional capture Sensitive, approve a follow-up task and person-detail update, then inspect Today and Search. Confirm the saved local text and classification remain visible while unlocked and Sensitive remains default-blocked from external context.
 - Import a synthetic version-2 backup containing a person ID with no name. Confirm the person appears as **Unnamed person**, Capture still works, and re-export succeeds. Never use deliberately malformed fixtures with real ministry data.
 - Start typing a synthetic capture while an app update is waiting. Tap Update now and confirm activation occurs only after the draft is recoverable; reopen offline and confirm the cached app shell loads.
 - Exercise a real browser storage-quota boundary only on a disposable synthetic origin. Confirm a failed restore keeps the previous data and a failed Device Vault disable leaves encryption enabled. Node regression evidence does not prove Safari quota behavior.

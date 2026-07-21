@@ -1738,7 +1738,7 @@
     window.addEventListener("keydown", revealSkipLinkForKeyboard, true);
 
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.20-calm-os-core-v39";
+    const APP_VERSION = "2026.07.21-calm-os-core-v41";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
@@ -2256,27 +2256,30 @@
       return AI_PRIVACY_TIERS.includes(value) ? value : fallback;
     }
 
-    function aiPrivacyTierForRecord(record = {}, collection = "") {
+    function aiPrivacyTierForRecord(record = {}, collection = "", quickGrabPeopleIndex = null) {
       if (!record || typeof record !== "object") return "Normal";
-      const explicitTier = normalizeAiPrivacyTier(record.aiPrivacyTier || record.aiContextPrivacyTier || "", "");
-      const sensitivity = normalizeAiPrivacyTier(record.sensitivityLevel || "", "");
+      const sourceRecord = collection === "quickGrabs"
+        ? quickGrabTrustedRecord(record, Array.isArray(db?.people) ? db.people : [], quickGrabPeopleIndex)
+        : record;
+      const explicitTier = normalizeAiPrivacyTier(sourceRecord.aiPrivacyTier || sourceRecord.aiContextPrivacyTier || "", "");
+      const sensitivity = normalizeAiPrivacyTier(sourceRecord.sensitivityLevel || "", "");
       let baseTier = "Normal";
       if (explicitTier && explicitTier !== "Normal") baseTier = explicitTier;
-      else if (record.aiDoNotSendToAi === true) baseTier = "Do Not Send to AI";
+      else if (sourceRecord.aiDoNotSendToAi === true) baseTier = "Do Not Send to AI";
       else if (sensitivity && sensitivity !== "Normal") baseTier = sensitivity;
-      else if (record.sensitivityLevel === "Sensitive" || record.sensitiveFlag === true) baseTier = "Sensitive";
+      else if (sourceRecord.sensitivityLevel === "Sensitive" || sourceRecord.sensitiveFlag === true) baseTier = "Sensitive";
       else if (explicitTier) baseTier = explicitTier;
       else if (sensitivity) baseTier = sensitivity;
 
       const linkedTiers = [baseTier];
       try {
-        if (record.relatedPersonId && Array.isArray(db?.people)) {
-          const linkedPerson = db.people.find(person => person.id === record.relatedPersonId);
-          if (linkedPerson && linkedPerson !== record) linkedTiers.push(aiPrivacyTierForRecord(linkedPerson, "people"));
+        if (sourceRecord.relatedPersonId && Array.isArray(db?.people)) {
+          const linkedPerson = db.people.find(person => person.id === sourceRecord.relatedPersonId);
+          if (linkedPerson && linkedPerson !== sourceRecord) linkedTiers.push(aiPrivacyTierForRecord(linkedPerson, "people"));
         }
-        if (collection === "tasks" && record.relatedPrayerRequestId && Array.isArray(db?.prayerRequests)) {
-          const linkedPrayer = db.prayerRequests.find(prayer => prayer.id === record.relatedPrayerRequestId);
-          if (linkedPrayer && linkedPrayer !== record) linkedTiers.push(aiPrivacyTierForRecord(linkedPrayer, "prayerRequests"));
+        if (collection === "tasks" && sourceRecord.relatedPrayerRequestId && Array.isArray(db?.prayerRequests)) {
+          const linkedPrayer = db.prayerRequests.find(prayer => prayer.id === sourceRecord.relatedPrayerRequestId);
+          if (linkedPrayer && linkedPrayer !== sourceRecord) linkedTiers.push(aiPrivacyTierForRecord(linkedPrayer, "prayerRequests"));
         }
       } catch (error) {
         // Storage hydration can call this helper before the live graph is assigned.
@@ -2288,8 +2291,8 @@
       }, "Normal");
     }
 
-    function recordIsSensitive(record = {}, collection = "") {
-      return aiPrivacyTierForRecord(record, collection) !== "Normal";
+    function recordIsSensitive(record = {}, collection = "", quickGrabPeopleIndex = null) {
+      return aiPrivacyTierForRecord(record, collection, quickGrabPeopleIndex) !== "Normal";
     }
 
     function taskIsWaiting(task = {}) {
@@ -3543,6 +3546,17 @@
       return Boolean(retainedRecoveryOwner());
     }
 
+    function transientCaptureDeletionRetryRequired() {
+      const owner = retainedRecoveryOwner();
+      return Boolean(owner
+        && owner.kind === "backend-quick-grab"
+        && owner.cancelNeedsRetry === true
+        && view.sheet?.type === "ai-gate"
+        && view.sheet?.deleteOnCancel === true
+        && view.sheet?.cancelNeedsRetry === true
+        && view.sheet?.sourceId === owner.sourceId);
+    }
+
     function recoveryMutationBlocked() {
       return recoveryTransactionPending || recoveryRetryRequired();
     }
@@ -3589,6 +3603,11 @@
       if (!mutation) return;
       mutation.operationSettled = true;
       if (mutation.cancelNeedsRetry) return;
+      if (mutation.retainForTransientDismissal
+        && !mutation.cancelled
+        && view.sheet?.type === "ai-gate"
+        && view.sheet?.deleteOnCancel === true
+        && view.sheet?.sourceId === mutation.sourceId) return;
       if (activeMutations.get(mutation.id) === mutation) activeMutations.delete(mutation.id);
     }
 
@@ -5210,15 +5229,11 @@
       const lockedPersonId = captureOptions.personId && (peopleList || db.people).some(person => person.id === captureOptions.personId)
         ? captureOptions.personId
         : "";
-      const possiblePeople = parsed.detectedPersonName
-        ? similarPeopleInList(parsed.detectedPersonName, peopleList || db.people)
-        : [];
-      const unambiguousPersonId = possiblePeople.length === 1 ? parsed.relatedPersonId : "";
       return {
         id,
         rawContent,
         detectedPersonName: parsed.detectedPersonName,
-        relatedPersonId: lockedPersonId || unambiguousPersonId,
+        relatedPersonId: lockedPersonId || parsed.relatedPersonId,
         detectedDate: parsed.detectedDate,
         detectedPrayerRequest: parsed.detectedPrayerRequest,
         detectedFollowUp: parsed.detectedFollowUp,
@@ -5245,15 +5260,95 @@
       };
     }
 
+    function buildQuickGrabPersonIndex(people = []) {
+      const entries = [];
+      const fullNamesByFirstToken = new Map();
+      const firstNames = new Map();
+      const peopleById = new Map();
+      people.forEach((person, order) => {
+        if (person?.id && !peopleById.has(person.id)) peopleById.set(person.id, person);
+        const name = normalizedName(person?.name).slice(0, 160);
+        const parts = name.split(" ").filter(Boolean);
+        if (!parts.length) return;
+        const entry = { person, name, parts, first: parts[0], order };
+        entries.push(entry);
+        const fullBucket = fullNamesByFirstToken.get(entry.first) || [];
+        fullBucket.push(entry);
+        fullNamesByFirstToken.set(entry.first, fullBucket);
+        const firstBucket = firstNames.get(entry.first) || [];
+        firstBucket.push(entry);
+        firstNames.set(entry.first, firstBucket);
+      });
+      return { entries, fullNamesByFirstToken, firstNames, peopleById };
+    }
+
+    function quickGrabPersonMatch(rawContent, people = [], peopleIndex = null) {
+      const normalizedRaw = normalizedName(rawContent);
+      if (!normalizedRaw) return { person: null, possiblePeople: [] };
+      const index = peopleIndex || buildQuickGrabPersonIndex(people);
+      const rawParts = normalizedRaw.split(" ").filter(Boolean);
+      const fullNameMatches = new Set();
+      rawParts.forEach((part, rawIndex) => {
+        (index.fullNamesByFirstToken.get(part) || []).forEach(entry => {
+          if (entry.parts.every((namePart, offset) => rawParts[rawIndex + offset] === namePart)) {
+            fullNameMatches.add(entry);
+          }
+        });
+      });
+      const firstNameMatches = new Set();
+      if (!fullNameMatches.size) {
+        new Set(rawParts).forEach(part => {
+          (index.firstNames.get(part) || []).forEach(entry => firstNameMatches.add(entry));
+        });
+      }
+      const possiblePeople = Array.from(fullNameMatches.size ? fullNameMatches : firstNameMatches)
+        .sort((a, b) => a.order - b.order)
+        .map(entry => entry.person);
+      return {
+        person: possiblePeople.length === 1 ? possiblePeople[0] : null,
+        possiblePeople
+      };
+    }
+
+    function quickGrabPersonContract(grab, people = [], peopleIndex = null) {
+      if (grab?.personLocked === true) {
+        const lockedPerson = grab.relatedPersonId
+          ? peopleIndex?.peopleById?.get(grab.relatedPersonId) || people.find(person => person.id === grab.relatedPersonId) || null
+          : null;
+        return lockedPerson
+          ? {
+              person: lockedPerson,
+              possiblePeople: [lockedPerson],
+              ambiguous: false,
+              lockedTargetMissing: false
+            }
+          : {
+              person: null,
+              possiblePeople: [],
+              ambiguous: true,
+              lockedTargetMissing: true
+            };
+      }
+      const match = quickGrabPersonMatch(grab?.rawContent || "", people, peopleIndex);
+      return {
+        ...match,
+        ambiguous: match.possiblePeople.length > 1,
+        lockedTargetMissing: false
+      };
+    }
+
+    function quickGrabTrustedRecord(grab, people = [], peopleIndex = null) {
+      const person = quickGrabPersonContract(grab, people, peopleIndex).person;
+      return {
+        ...grab,
+        relatedPersonId: person?.id || ""
+      };
+    }
+
     function parseQuickGrab(rawContent, tags = [], urgency = "Whenever", peopleList = null) {
       const raw = rawContent.trim();
-      const lower = raw.toLowerCase();
       const knownPeople = peopleList || (db && db.people ? db.people : []);
-      const related = knownPeople.find(person => {
-        const name = String(person?.name || "").trim().toLowerCase();
-        if (!name) return false;
-        return lower.includes(name.split(" ")[0]) || lower.includes(name);
-      }) || null;
+      const related = quickGrabPersonMatch(raw, knownPeople).person;
       const hasPrayer = /\bpray|prayer|sick|surgery|wisdom|anxiety|hard\b/i.test(raw);
       const hasMeeting = /\bmet|coffee|talked|lunch|meeting|called|sat down\b/i.test(raw);
       const hasFollow = /\bfollow up|check in|remind me|ask .* about|send .* text|send .* note\b/i.test(raw);
@@ -6441,10 +6536,16 @@
       const to = personById(toId);
       if (!from || !to) return;
       recordUndo("person merge");
-      ["notes", "meetingNotes", "prayerRequests", "tasks", "quickGrabs"].forEach(collection => {
+      ["notes", "meetingNotes", "prayerRequests", "tasks"].forEach(collection => {
         db[collection].forEach(record => {
           if (record.relatedPersonId === fromId) record.relatedPersonId = toId;
         });
+      });
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
+      db.quickGrabs.forEach(grab => {
+        if (quickGrabPersonContract(grab, db.people, quickGrabPeopleIndex).person?.id !== fromId) return;
+        grab.relatedPersonId = toId;
+        grab.personLocked = true;
       });
       Object.keys(to).forEach(key => {
         if ((to[key] === "" || to[key] === null || to[key] === undefined) && from[key]) to[key] = from[key];
@@ -6500,7 +6601,7 @@
         `;
         return;
       }
-      if (recoveryRetryRequired()) {
+      if (recoveryRetryRequired() && !transientCaptureDeletionRetryRequired()) {
         const app = document.getElementById("app");
         app.removeAttribute?.("aria-busy");
         app.innerHTML = `
@@ -7218,8 +7319,9 @@
     }
 
     function sensitiveRecordCount() {
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
       return DATA_COLLECTIONS.reduce((count, collection) =>
-        count + (Array.isArray(db[collection]) ? db[collection].filter(item => recordIsSensitive(item, collection)).length : 0), 0);
+        count + (Array.isArray(db[collection]) ? db[collection].filter(item => recordIsSensitive(item, collection, quickGrabPeopleIndex)).length : 0), 0);
     }
 
     function totalRecordCount() {
@@ -7504,9 +7606,9 @@
       `;
     }
 
-    function renderCaptureWaitingRow(grab) {
-      const person = personById(grab.relatedPersonId);
-      const sensitive = recordIsSensitive(grab, "quickGrabs") || (person && recordIsSensitive(person, "people"));
+    function renderCaptureWaitingRow(grab, quickGrabPeopleIndex = null) {
+      const person = quickGrabPersonContract(grab, db.people, quickGrabPeopleIndex).person;
+      const sensitive = recordIsSensitive(grab, "quickGrabs", quickGrabPeopleIndex) || (person && recordIsSensitive(person, "people"));
       const personLabel = person?.name;
       const preview = conciseText(maskedText(sensitive, "Sensitive capture hidden.", grab.rawContent), 160);
       return `
@@ -7526,6 +7628,7 @@
         .filter(grab => !["Converted", "Done", "Archived"].includes(grab.status))
         .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
       const waiting = allWaiting.slice(0, 5);
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
       return `
         ${renderTopbar("Capture", "What do I need to remember?", false)}
         <section class="section" data-calm-section="capture">
@@ -7535,7 +7638,7 @@
           <section class="section" data-calm-section="waiting-captures">
             <details class="disclosure">
               <summary>Waiting to be sorted (${allWaiting.length})</summary>
-              <div class="calm-list">${waiting.map(renderCaptureWaitingRow).join("")}</div>
+              <div class="calm-list">${waiting.map(grab => renderCaptureWaitingRow(grab, quickGrabPeopleIndex)).join("")}</div>
               ${allWaiting.length > waiting.length ? `<div class="meta">Showing the 5 most recent. Open Unprocessed captures in More for the full list.</div>` : ""}
             </details>
           </section>
@@ -7578,9 +7681,9 @@
       `;
     }
 
-    function renderQuickGrabCard(grab, mode = "full") {
-      const person = personById(grab.relatedPersonId);
-      const sensitive = recordIsSensitive(grab, "quickGrabs") || (person && recordIsSensitive(person, "people"));
+    function renderQuickGrabCard(grab, mode = "full", quickGrabPeopleIndex = null) {
+      const person = quickGrabPersonContract(grab, db.people, quickGrabPeopleIndex).person;
+      const sensitive = recordIsSensitive(grab, "quickGrabs", quickGrabPeopleIndex) || (person && recordIsSensitive(person, "people"));
       const personLabel = person?.name;
       const sensitivePreview = conciseText(maskedText(sensitive, "Sensitive grabbed item - tap to view.", grab.rawContent), 180);
       const expanded = view.expandedQuickGrabIds.includes(grab.id);
@@ -7688,7 +7791,8 @@
     function buildSearchResults(query) {
       const q = query.toLowerCase();
       const matches = fields => fields.filter(Boolean).join(" ").toLowerCase().includes(q);
-      const isSensitive = (record, collection) => aiPrivacyTierForRecord(record, collection) !== "Normal";
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
+      const isSensitive = (record, collection) => aiPrivacyTierForRecord(record, collection, quickGrabPeopleIndex) !== "Normal";
       const personMap = personMapFrom(db.people);
       const prayerMap = new Map(db.prayerRequests.map(prayer => [prayer.id, prayer]));
       const people = db.people
@@ -7709,15 +7813,15 @@
           };
         });
       const quickGrabs = db.quickGrabs
-        .filter(grab => {
-          const person = personMap.get(grab.relatedPersonId);
-          const sensitive = isSensitive(grab, "quickGrabs") || isSensitive(person, "people");
-          if (!settings.includeArchivedInSearch && grab.status === "Archived") return false;
-          return matches([grab.rawContent, grab.detectedPersonName, grab.detectedPrayerRequest, grab.detectedFollowUp, grab.detectedMeetingSummary, grab.category, grab.status, grab.urgency]);
-        })
         .map(grab => {
-          const person = personMap.get(grab.relatedPersonId);
-          const sensitive = isSensitive(grab, "quickGrabs") || isSensitive(person, "people");
+          const person = quickGrabPersonContract(grab, db.people, quickGrabPeopleIndex).person;
+          return { grab, person, sensitive: isSensitive(grab, "quickGrabs") || isSensitive(person, "people") };
+        })
+        .filter(({ grab, person }) => {
+          if (!settings.includeArchivedInSearch && grab.status === "Archived") return false;
+          return matches([grab.rawContent, person?.name, grab.detectedPrayerRequest, grab.detectedFollowUp, grab.detectedMeetingSummary, grab.category, grab.status, grab.urgency]);
+        })
+        .map(({ grab, sensitive }) => {
           return {
             kind: "Quick Grab",
             title: `${grab.category} Quick Grab`,
@@ -8232,8 +8336,8 @@
       return `${allowed.length} inspected, ${blocked.length} excluded from ${dataJanitorCollectionLabel(collection).toLowerCase()}.`;
     }
 
-    function dataJanitorPrivacyTierForRecord(record, collection) {
-      const tier = aiPrivacyTierForRecord(record, collection);
+    function dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex = null) {
+      const tier = aiPrivacyTierForRecord(record, collection, quickGrabPeopleIndex);
       if (collection === "aiProposals" && tier === "Normal") {
         if (record?.sensitivityRisk === "high") return "Sensitive";
         if (record?.sensitivityRisk === "medium") return "Private";
@@ -8241,8 +8345,8 @@
       return tier;
     }
 
-    function dataJanitorRecordAllowedInContext(record, collection) {
-      const tier = dataJanitorPrivacyTierForRecord(record, collection);
+    function dataJanitorRecordAllowedInContext(record, collection, quickGrabPeopleIndex = null) {
+      const tier = dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex);
       if (tier === "Do Not Send to AI") return false;
       if (tier === "Highly Sensitive") return settings?.aiAllowHighlySensitive === true;
       if (tier === "Sensitive") return settings?.aiAllowSensitive === true;
@@ -8250,12 +8354,13 @@
     }
 
     function dataJanitorAllowedRecordsByCollection() {
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
       return DATA_JANITOR_COLLECTIONS.reduce((memo, collection) => {
         const records = Array.isArray(db[collection]) ? db[collection] : [];
         memo[collection] = {
           all: records,
-          allowed: records.filter(record => dataJanitorRecordAllowedInContext(record, collection)),
-          blocked: records.filter(record => !dataJanitorRecordAllowedInContext(record, collection))
+          allowed: records.filter(record => dataJanitorRecordAllowedInContext(record, collection, quickGrabPeopleIndex)),
+          blocked: records.filter(record => !dataJanitorRecordAllowedInContext(record, collection, quickGrabPeopleIndex))
         };
         return memo;
       }, {});
@@ -8263,6 +8368,7 @@
 
     function buildDataJanitorContextReview() {
       const recordsByCollection = dataJanitorAllowedRecordsByCollection();
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
       const context = {
         used: [],
         notUsed: [
@@ -8275,9 +8381,9 @@
       };
       DATA_JANITOR_COLLECTIONS.forEach(collection => {
         const group = recordsByCollection[collection];
-        const sensitive = group.all.filter(record => ["Sensitive", "Highly Sensitive"].includes(dataJanitorPrivacyTierForRecord(record, collection)));
-        const privateCount = group.all.filter(record => dataJanitorPrivacyTierForRecord(record, collection) === "Private").length;
-        const tier = sensitive.some(record => dataJanitorPrivacyTierForRecord(record, collection) === "Highly Sensitive")
+        const sensitive = group.all.filter(record => ["Sensitive", "Highly Sensitive"].includes(dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex)));
+        const privateCount = group.all.filter(record => dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex) === "Private").length;
+        const tier = sensitive.some(record => dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex) === "Highly Sensitive")
           ? "Highly Sensitive"
           : sensitive.length
             ? "Sensitive"
@@ -8290,14 +8396,14 @@
           summary: dataJanitorCollectionSummary(collection, group.allowed, group.blocked)
         });
         group.blocked.slice(0, 4).forEach(record => {
-          const blockedTier = dataJanitorPrivacyTierForRecord(record, collection);
+          const blockedTier = dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex);
           context.notUsed.push({
             label: `${dataJanitorCollectionLabel(collection)} excluded`,
             tier: blockedTier,
             summary: `${aiRecordPreview(record, collection)} (${aiContextBlockReason(blockedTier)})`
           });
         });
-        if (group.blocked.some(record => dataJanitorPrivacyTierForRecord(record, collection) === "Do Not Send to AI")) {
+        if (group.blocked.some(record => dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex) === "Do Not Send to AI")) {
           context.warnings.push(`${dataJanitorCollectionLabel(collection)} marked Do Not Send to AI were excluded from cleanup review.`);
         }
         if (sensitive.length) {
@@ -8337,6 +8443,7 @@
       const notes = recordsByCollection.notes.allowed;
       const meetingNotes = recordsByCollection.meetingNotes.allowed;
       const aiProposals = recordsByCollection.aiProposals.allowed;
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(people);
       const donorPeople = people.filter(person =>
         person.personType === "Donor" ||
         /donor|supporter|alumni/i.test(`${person.personType || ""} ${person.rufInvolvement || ""} ${person.donorStatus || ""}`)
@@ -8362,7 +8469,7 @@
           ...meetingNotes.filter(meeting => !meeting.relatedPersonId).map(record => ({ collection: "meetingNotes", record })),
           ...prayerRequests.filter(prayer => !prayer.relatedPersonId).map(record => ({ collection: "prayerRequests", record })),
           ...tasks.filter(task => !task.relatedPersonId).map(record => ({ collection: "tasks", record })),
-          ...quickGrabs.filter(grab => grab.category === "People" && !grab.relatedPersonId).map(record => ({ collection: "quickGrabs", record }))
+          ...quickGrabs.filter(grab => grab.category === "People" && !quickGrabPersonContract(grab, people, quickGrabPeopleIndex).person).map(record => ({ collection: "quickGrabs", record }))
         ],
         oldPendingAiProposals: aiProposals.filter(proposal => ["pending", "edited"].includes(proposal.status) && dataJanitorDateBefore(proposal.updatedAt || proposal.createdAt, daysAgo(30)))
       };
@@ -8503,20 +8610,20 @@
 
     const WEEKLY_RESET_COLLECTIONS = ["quickGrabs", "tasks", "people", "prayerRequests", "aiProposals"];
 
-    function weeklyResetAllowedRecordsByCollection() {
+    function weeklyResetAllowedRecordsByCollection(quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people)) {
       return WEEKLY_RESET_COLLECTIONS.reduce((memo, collection) => {
         const records = Array.isArray(db[collection]) ? db[collection] : [];
         memo[collection] = {
           all: records,
-          allowed: records.filter(record => dataJanitorRecordAllowedInContext(record, collection)),
-          blocked: records.filter(record => !dataJanitorRecordAllowedInContext(record, collection))
+          allowed: records.filter(record => dataJanitorRecordAllowedInContext(record, collection, quickGrabPeopleIndex)),
+          blocked: records.filter(record => !dataJanitorRecordAllowedInContext(record, collection, quickGrabPeopleIndex))
         };
         return memo;
       }, {});
     }
 
-    function weeklyResetMaxTier(records, collection) {
-      const tiers = records.map(record => dataJanitorPrivacyTierForRecord(record, collection));
+    function weeklyResetMaxTier(records, collection, quickGrabPeopleIndex = null) {
+      const tiers = records.map(record => dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex));
       if (tiers.includes("Highly Sensitive")) return "Highly Sensitive";
       if (tiers.includes("Sensitive")) return "Sensitive";
       if (tiers.includes("Private")) return "Private";
@@ -8586,29 +8693,30 @@
     }
 
     function buildWeeklyResetContextReview() {
-      const recordsByCollection = weeklyResetAllowedRecordsByCollection();
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
+      const recordsByCollection = weeklyResetAllowedRecordsByCollection(quickGrabPeopleIndex);
       const findings = weeklyResetFindings(recordsByCollection);
       const backupHealth = backupHealthState();
       const context = {
         used: [
           {
             label: "Open Quick Grabs",
-            tier: weeklyResetMaxTier(recordsByCollection.quickGrabs.allowed, "quickGrabs"),
+            tier: weeklyResetMaxTier(recordsByCollection.quickGrabs.allowed, "quickGrabs", quickGrabPeopleIndex),
             summary: `${findings.openQuickGrabs.length} open, ${findings.staleQuickGrabs.length} stale.`
           },
           {
             label: "Due follow-up tasks",
-            tier: weeklyResetMaxTier(recordsByCollection.tasks.allowed, "tasks"),
+            tier: weeklyResetMaxTier(recordsByCollection.tasks.allowed, "tasks", quickGrabPeopleIndex),
             summary: `${findings.dueFollowUpTasks.length} due or overdue task${findings.dueFollowUpTasks.length === 1 ? "" : "s"}.`
           },
           {
             label: "People needing care",
-            tier: weeklyResetMaxTier(recordsByCollection.people.allowed, "people"),
+            tier: weeklyResetMaxTier(recordsByCollection.people.allowed, "people", quickGrabPeopleIndex),
             summary: `${findings.peopleNeedingCare.length} person${findings.peopleNeedingCare.length === 1 ? "" : "s"} with a due, stale, or missing care rhythm.`
           },
           {
             label: "Prayer reset priorities",
-            tier: weeklyResetMaxTier(recordsByCollection.prayerRequests.allowed, "prayerRequests"),
+            tier: weeklyResetMaxTier(recordsByCollection.prayerRequests.allowed, "prayerRequests", quickGrabPeopleIndex),
             summary: `${findings.activePrayerRequests.length} active, ${findings.prayerRequestsNeedingFollowUp.length} needing follow-up, ${findings.answeredPrayerRequests.length} answered.`
           },
           {
@@ -8628,7 +8736,7 @@
           },
           {
             label: "Pending AIProposals",
-            tier: weeklyResetMaxTier(recordsByCollection.aiProposals.allowed, "aiProposals"),
+            tier: weeklyResetMaxTier(recordsByCollection.aiProposals.allowed, "aiProposals", quickGrabPeopleIndex),
             summary: `${findings.pendingAiProposals.length} pending or edited proposal${findings.pendingAiProposals.length === 1 ? "" : "s"} may need review.`
           }
         ],
@@ -8645,17 +8753,17 @@
       WEEKLY_RESET_COLLECTIONS.forEach(collection => {
         const group = recordsByCollection[collection];
         group.blocked.slice(0, 4).forEach(record => {
-          const tier = dataJanitorPrivacyTierForRecord(record, collection);
+          const tier = dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex);
           context.notUsed.push({
             label: `${dataJanitorCollectionLabel(collection)} excluded`,
             tier,
             summary: `${aiRecordPreview(record, collection)} (${aiContextBlockReason(tier)})`
           });
         });
-        if (group.blocked.some(record => dataJanitorPrivacyTierForRecord(record, collection) === "Do Not Send to AI")) {
+        if (group.blocked.some(record => dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex) === "Do Not Send to AI")) {
           context.warnings.push(`${dataJanitorCollectionLabel(collection)} marked Do Not Send to AI were excluded from Weekly Reset Agent context.`);
         }
-        const sensitiveCount = group.all.filter(record => ["Sensitive", "Highly Sensitive"].includes(dataJanitorPrivacyTierForRecord(record, collection))).length;
+        const sensitiveCount = group.all.filter(record => ["Sensitive", "Highly Sensitive"].includes(dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex))).length;
         if (sensitiveCount) {
           context.warnings.push(`${dataJanitorCollectionLabel(collection)} includes ${sensitiveCount} Sensitive or Highly Sensitive item${sensitiveCount === 1 ? "" : "s"}; review before using this reset plan.`);
         }
@@ -8935,15 +9043,15 @@
       return aiRecordPreview(record, collection);
     }
 
-    function donorUpdateRecordAllowedInContext(record, collection) {
-      const tier = dataJanitorPrivacyTierForRecord(record, collection);
+    function donorUpdateRecordAllowedInContext(record, collection, quickGrabPeopleIndex = null) {
+      const tier = dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex);
       if (tier === "Do Not Send to AI" || tier === "Highly Sensitive" || tier === "Sensitive" || tier === "Private") return false;
       if (collection === "prayerRequests" && record.shareableStatus === "Private") return false;
       return true;
     }
 
-    function donorUpdateRecordBlockReason(record, collection) {
-      const tier = dataJanitorPrivacyTierForRecord(record, collection);
+    function donorUpdateRecordBlockReason(record, collection, quickGrabPeopleIndex = null) {
+      const tier = dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex);
       if (tier === "Do Not Send to AI") return "Do Not Send to AI.";
       if (tier === "Highly Sensitive") return "Highly Sensitive records are always excluded from donor updates.";
       if (tier === "Sensitive") return "Sensitive records are excluded by default from donor updates.";
@@ -8954,13 +9062,14 @@
 
     function donorUpdateRecordsByCollection(options = {}) {
       const window = donorUpdateDateWindow(options);
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
       return DONOR_UPDATE_COLLECTIONS.reduce((memo, collection) => {
         const records = Array.isArray(db[collection]) ? db[collection] : [];
         const inRange = records.filter(record => donorUpdateInDateWindow(record, collection, window));
         memo[collection] = {
           all: inRange,
-          allowed: inRange.filter(record => donorUpdateRecordAllowedInContext(record, collection)),
-          blocked: inRange.filter(record => !donorUpdateRecordAllowedInContext(record, collection))
+          allowed: inRange.filter(record => donorUpdateRecordAllowedInContext(record, collection, quickGrabPeopleIndex)),
+          blocked: inRange.filter(record => !donorUpdateRecordAllowedInContext(record, collection, quickGrabPeopleIndex))
         };
         return memo;
       }, {});
@@ -8975,8 +9084,10 @@
       return pattern.test(String(text || ""));
     }
 
-    function donorUpdatePotentiallyIdentifiable(record, collection) {
-      const person = personById(record.relatedPersonId);
+    function donorUpdatePotentiallyIdentifiable(record, collection, quickGrabPeopleIndex = null) {
+      const person = collection === "quickGrabs"
+        ? quickGrabPersonContract(record, db.people, quickGrabPeopleIndex).person
+        : personById(record.relatedPersonId);
       const text = donorUpdateRecordText(record, collection);
       return Boolean(
         person && (
@@ -8988,14 +9099,14 @@
       );
     }
 
-    function donorUpdateSourceItem(record, collection, label = "") {
+    function donorUpdateSourceItem(record, collection, label = "", quickGrabPeopleIndex = null) {
       return {
         id: record.id,
         collection,
         label: label || dataJanitorCollectionLabel(collection),
         text: donorUpdateSanitizeText(donorUpdateRecordText(record, collection)).slice(0, 240),
         date: donorUpdateRecordDate(record, collection),
-        requiresPermission: donorUpdatePotentiallyIdentifiable(record, collection)
+        requiresPermission: donorUpdatePotentiallyIdentifiable(record, collection, quickGrabPeopleIndex)
       };
     }
 
@@ -9012,6 +9123,7 @@
         privacyWarnings: [],
         markSensitiveCandidates: []
       };
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
       const sources = [
         ...recordsByCollection.quickGrabs.allowed.map(record => ({ record, collection: "quickGrabs" })),
         ...recordsByCollection.notes.allowed.map(record => ({ record, collection: "notes" })),
@@ -9019,7 +9131,7 @@
       ];
       sources.forEach(({ record, collection }) => {
         const text = donorUpdateRecordText(record, collection);
-        const item = donorUpdateSourceItem(record, collection);
+        const item = donorUpdateSourceItem(record, collection, "", quickGrabPeopleIndex);
         if (dataJanitorLooksSensitiveText(text)) findings.markSensitiveCandidates.push({ record, collection });
         if (donorUpdateCategoryEnabled(options, "ministryHighlights") && donorUpdateTextLooksLike(text, /\b(large group|bible study|ministry|campus|discipleship|leadership|encouraged|ruf|retreat|conference|small group)\b/i)) {
           findings.ministryHighlights.push(item);
@@ -9033,7 +9145,9 @@
         if (donorUpdateCategoryEnabled(options, "events") && donorUpdateTextLooksLike(text, /\b(event|large group|retreat|conference|training|dinner|cookout|prayer walk)\b/i)) {
           findings.events.push(item);
         }
-        const person = personById(record.relatedPersonId);
+        const person = collection === "quickGrabs"
+          ? quickGrabPersonContract(record, db.people, quickGrabPeopleIndex).person
+          : personById(record.relatedPersonId);
         if (donorUpdateCategoryEnabled(options, "peopleStories") && person && donorUpdatePersonIsStudent(person) && item.text) {
           findings.anonymizedStories.push({
             ...item,
@@ -9059,7 +9173,7 @@
       }
       DONOR_UPDATE_COLLECTIONS.forEach(collection => {
         recordsByCollection[collection].blocked.slice(0, 8).forEach(record => {
-          findings.excludedItems.push(`${dataJanitorCollectionLabel(collection)} excluded: ${donorUpdateRecordBlockReason(record, collection)}`);
+          findings.excludedItems.push(`${dataJanitorCollectionLabel(collection)} excluded: ${donorUpdateRecordBlockReason(record, collection, quickGrabPeopleIndex)}`);
         });
       });
       if (findings.markSensitiveCandidates.length) {
@@ -9095,6 +9209,7 @@
       const recordsByCollection = donorUpdateRecordsByCollection(normalized);
       const findings = donorUpdateFindings(recordsByCollection, normalized);
       const window = donorUpdateDateWindow(normalized);
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
       const context = {
         used: [
           { label: "Date range", tier: "Normal", summary: `${window.label}: ${window.start} to ${window.end}.` },
@@ -9119,20 +9234,20 @@
       DONOR_UPDATE_COLLECTIONS.forEach(collection => {
         const group = recordsByCollection[collection];
         group.blocked.slice(0, 5).forEach(record => {
-          const tier = dataJanitorPrivacyTierForRecord(record, collection);
+          const tier = dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex);
           context.notUsed.push({
             label: `${dataJanitorCollectionLabel(collection)} excluded`,
             tier,
-            summary: `${donorUpdateSanitizeText(aiRecordPreview(record, collection)) || "Record"} (${donorUpdateRecordBlockReason(record, collection)})`
+            summary: `${donorUpdateSanitizeText(aiRecordPreview(record, collection)) || "Record"} (${donorUpdateRecordBlockReason(record, collection, quickGrabPeopleIndex)})`
           });
         });
-        if (group.blocked.some(record => dataJanitorPrivacyTierForRecord(record, collection) === "Do Not Send to AI")) {
+        if (group.blocked.some(record => dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex) === "Do Not Send to AI")) {
           context.warnings.push(`${dataJanitorCollectionLabel(collection)} marked Do Not Send to AI were excluded from Donor Update Builder context.`);
         }
-        if (group.blocked.some(record => dataJanitorPrivacyTierForRecord(record, collection) === "Highly Sensitive")) {
+        if (group.blocked.some(record => dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex) === "Highly Sensitive")) {
           context.warnings.push(`${dataJanitorCollectionLabel(collection)} includes Highly Sensitive records that are always excluded from donor updates.`);
         }
-        if (group.blocked.some(record => dataJanitorPrivacyTierForRecord(record, collection) === "Sensitive")) {
+        if (group.blocked.some(record => dataJanitorPrivacyTierForRecord(record, collection, quickGrabPeopleIndex) === "Sensitive")) {
           context.warnings.push(`${dataJanitorCollectionLabel(collection)} includes Sensitive records that are excluded by default from donor updates.`);
         }
       });
@@ -9289,6 +9404,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function buildQuickGrabAiContextReview(grabId) {
       const grab = db.quickGrabs.find(item => item.id === grabId);
+      const personContract = grab ? quickGrabPersonContract(grab, db.people) : null;
       const candidatePeople = grab ? quickGrabCandidatePeopleForBackend(grab) : [];
       const blockedPeople = grab ? quickGrabBlockedPeopleForBackend(grab) : [];
       const context = {
@@ -9304,6 +9420,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         blocked: false
       };
       context.used.push({ label: "Current AI mode", tier: "Normal", summary: quickGrabBackendModeEnabled() ? "Backend Quick Grab is selected. The browser calls only /api/ai/quick-grab after approval." : "Local Mock Only is selected. No data leaves this browser." });
+      if (personContract?.lockedTargetMissing) {
+        context.notUsed.push({ label: "One Quick Grab text", tier: "Do Not Send to AI", summary: "Blocked because the person locked to this capture no longer exists. Resolve the person locally before backend processing." });
+        context.blocked = true;
+        return context;
+      }
       if (blockedPeople.length) {
         context.notUsed.push({ label: "One Quick Grab text", tier: "Do Not Send to AI", summary: `Blocked because linked or candidate person context is not approved. Local preview: ${String(grab.rawContent || "Quick Grab").slice(0, 280)}` });
         context.notUsed.push({ label: "Linked or candidate people", tier: "Do Not Send to AI", summary: blockedPeople.map(person => `${person.name} (${person.id})`).join(", ") });
@@ -9947,8 +10068,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return "Active";
     }
 
-    function checkbox(id, label, checked) {
-      return `<label class="check"><input type="checkbox" id="${id}" ${checked ? "checked" : ""}> ${escapeHtml(label)}</label>`;
+    function checkbox(id, label, checked, disabled = false) {
+      return `<label class="check"><input type="checkbox" id="${id}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}> ${escapeHtml(label)}</label>`;
     }
 
     function quickGrabMockSensitivityWarnings(grab) {
@@ -9968,9 +10089,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const raw = String(grab?.rawContent || "");
       const lower = raw.toLowerCase();
       const parsed = parseQuickGrab(raw, grab?.category ? [grab.category] : [], grab?.urgency || "Whenever", db.people);
-      const possiblePeople = parsed.detectedPersonName ? similarPeople(parsed.detectedPersonName) : [];
-      const personMatchAmbiguous = possiblePeople.length > 1;
-      const matchedPerson = !personMatchAmbiguous && parsed.relatedPersonId ? personById(parsed.relatedPersonId) : null;
+      const personContract = quickGrabPersonContract(grab, db.people);
+      const possiblePeople = personContract.possiblePeople;
+      const personMatchAmbiguous = personContract.ambiguous;
+      const matchedPerson = personContract.person;
       const hasMeeting = Boolean(parsed.detectedMeetingSummary) || /\b(met|meeting|coffee|lunch|called|talked|sat down|conversation)\b/i.test(raw);
       const hasPrayer = Boolean(parsed.detectedPrayerRequest) || /\b(pray|prayer|wisdom|sick|surgery|anxiety|hard|grief)\b/i.test(raw);
       const hasFollowUp = Boolean(parsed.detectedFollowUp || parsed.detectedFollowUpDate) || /\b(follow up|check in|ask .* about|send .* text|remind me|reach out)\b/i.test(raw);
@@ -10128,12 +10250,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function quickGrabCandidateRecordsForBackend(grab) {
-      const flags = quickGrabMockFlags(grab);
-      const linkedPerson = grab?.relatedPersonId ? personById(grab.relatedPersonId) : null;
-      return [linkedPerson, flags.matchedPerson, ...flags.possiblePeople]
+      const personContract = quickGrabPersonContract(grab, db.people);
+      return [personContract.person, ...personContract.possiblePeople]
         .filter(Boolean)
         .map(person => personById(person.id) || person)
-        .filter(person => person.id && person.name);
+        .filter(person => person.id && person.name)
+        .filter((person, index, people) => people.findIndex(candidate => candidate.id === person.id) === index);
     }
 
     function quickGrabBlockedPeopleForBackend(grab) {
@@ -10142,6 +10264,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function buildQuickGrabBackendPayload(grab) {
+      if (quickGrabPersonContract(grab, db.people).lockedTargetMissing) {
+        throw new Error("quick_grab_locked_person_missing");
+      }
       const privacyTier = aiPrivacyTierForRecord(grab, "quickGrabs");
       return {
         sourceType: "quickGrab",
@@ -10175,8 +10300,14 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function normalizeBackendQuickGrabProposal(responseBody, grab) {
       const source = responseBody && responseBody.proposal && typeof responseBody.proposal === "object" ? responseBody.proposal : {};
+      const personContract = quickGrabPersonContract(grab, db.people);
+      const permittedPersonId = personContract.person?.id || "";
       const proposal = normalizeAiProposal({
         ...source,
+        relatedPersonIdSuggestion: permittedPersonId,
+        relatedPersonId: permittedPersonId,
+        personId: permittedPersonId,
+        targetPersonId: permittedPersonId,
         sourceType: "quickGrab",
         sourceId: grab.id,
         proposalKey: captureProposalKey(grab),
@@ -10195,14 +10326,26 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         ])),
         result: {
           ...(source.result && typeof source.result === "object" ? source.result : {}),
-          possiblePersonId: source.relatedPersonIdSuggestion || source.result?.possiblePersonId || "",
-          possiblePersonName: source.detectedPersonName || source.result?.possiblePersonName || "",
+          possiblePersonId: permittedPersonId,
+          relatedPersonIdSuggestion: permittedPersonId,
+          relatedPersonId: permittedPersonId,
+          personId: permittedPersonId,
+          targetPersonId: permittedPersonId,
+          possiblePersonName: personContract.person?.name || source.detectedPersonName || source.result?.possiblePersonName || "",
+          possiblePersonIds: personContract.possiblePeople.map(person => person.id),
+          personMatchAmbiguous: personContract.ambiguous,
           backendRoute: responseBody?.route || "/api/ai/quick-grab",
           backendMode: responseBody?.mode || "unknown",
           proposalOnly: true
         }
       });
-      proposal.proposedActions = proposal.proposedActions.map(normalizeBackendQuickGrabAction);
+      proposal.proposedActions = proposal.proposedActions.map((rawAction, index) => {
+        const action = normalizeBackendQuickGrabAction(rawAction, index);
+        for (const field of ["relatedPersonId", "personId", "targetPersonId"]) {
+          if (action[field] && action[field] !== permittedPersonId) action[field] = "";
+        }
+        return action;
+      });
       if (!proposal.title) proposal.title = "Quick Grab backend proposal";
       if (!proposal.summary) proposal.summary = "Review these Quick Grab suggestions before changing ministry records.";
       if (!proposal.contextPreview) proposal.contextPreview = "One Quick Grab, today's date, privacy flags, selected tags/urgency, and candidate people names/ids only.";
@@ -10213,11 +10356,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function saveQuickGrabAiProposal(proposal, undoLabel, toastMessage) {
       if (recoveryMutationBlocked()) return false;
       const grab = db.quickGrabs.find(item => item.id === proposal?.sourceId);
-      if (grab) {
-        proposal.proposalKey = proposal.proposalKey || captureProposalKey(grab);
-        proposal.sourceCaptureRevision = grab.captureRevision;
-        proposal.processorVersion = CAPTURE_PROCESSOR_VERSION;
-      }
+      if (!grab) return false;
+      proposal.proposalKey = proposal.proposalKey || captureProposalKey(grab);
+      proposal.sourceCaptureRevision = grab.captureRevision;
+      proposal.processorVersion = CAPTURE_PROCESSOR_VERSION;
       const existing = proposal?.proposalKey
         ? (db.aiProposals || []).find(item => item.proposalKey === proposal.proposalKey)
         : null;
@@ -10258,7 +10400,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return "Backend Quick Grab is not available. No records were changed.";
     }
 
-    async function restoreCancelledQuickGrabMutation(grabId, beforeGrab, beforeAutoMemoryVault, beforeAutoMemoryLocal) {
+    async function restoreCancelledQuickGrabMutation(grabId, beforeGrab, beforeAutoMemoryVault, beforeAutoMemoryLocal, options = {}) {
+      const cancellationOwnershipIsCurrent = typeof options.ownershipIsCurrent === "function"
+        ? options.ownershipIsCurrent
+        : () => recoveryTransactionPending;
       const restoredDb = cloneJson(db);
       const currentIndex = restoredDb.quickGrabs.findIndex(item => item.id === grabId);
       if (currentIndex >= 0) restoredDb.quickGrabs[currentIndex] = cloneJson(beforeGrab);
@@ -10291,7 +10436,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           () => encryptPayload(stagedPayload, ownedPassphrase),
           "Device Vault cancellation encryption"
         );
-        const ownershipIsCurrent = () => recoveryTransactionPending
+        const ownershipIsCurrent = () => cancellationOwnershipIsCurrent()
           && recoveryEpoch === ownedEpoch
           && vaultPassphrase === ownedPassphrase
           && vaultSaveRequestedRevision === ownedRevision
@@ -10333,6 +10478,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         vaultSaveCompletedRevision = ownedRevision + 1;
         return true;
       }
+      if (!cancellationOwnershipIsCurrent()) return false;
       const localSnapshot = writeLocalStorageBatch([
         [STORAGE_KEY, JSON.stringify(restoredDb)],
         [AUTO_MEMORY_KEY, beforeAutoMemoryLocal]
@@ -10345,6 +10491,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             [AUTO_MEMORY_KEY, autoMemoryValue]
           ]);
         }
+        if (!cancellationOwnershipIsCurrent()) throw new Error("Quick Grab cancellation ownership changed before publication.");
       } catch (error) {
         restoreLocalStorageSnapshot(localSnapshot);
         throw error;
@@ -10353,11 +10500,63 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return true;
     }
 
+    function backendQuickGrabMutationForCapture(grabId) {
+      return Array.from(activeMutations.values()).find(mutation => mutation.kind === "backend-quick-grab"
+        && mutation.sourceId === grabId
+        && mutation.epoch === recoveryEpoch
+        && (!mutation.cancelled || mutation.cancelNeedsRetry)) || null;
+    }
+
+    async function discardTransientQuickGrabDuringBackendMutation(sheet, mutation) {
+      if (!sheet || view.sheet !== sheet || sheet.cancelPending) return false;
+      const grabIndex = db.quickGrabs.findIndex(item => item.id === sheet.sourceId);
+      const beforeGrab = grabIndex >= 0 ? cloneJson(db.quickGrabs[grabIndex]) : null;
+      sheet.cancelPending = true;
+      sheet.cancelNeedsRetry = false;
+      render({ mutationEffects: false });
+      mutation.cancelled = true;
+      mutation.cancelNeedsRetry = true;
+      if (grabIndex >= 0) db.quickGrabs.splice(grabIndex, 1);
+      try {
+        const cancelled = mutation.cancel && await mutation.cancel({
+          ownershipIsCurrent: () => view.sheet === sheet
+            && sheet.cancelPending === true
+            && activeMutations.get(mutation.id) === mutation
+        });
+        if (!cancelled) throw new Error("Transient capture cancellation did not reach durable storage.");
+        mutation.cancelNeedsRetry = false;
+        if (activeMutations.get(mutation.id) === mutation) activeMutations.delete(mutation.id);
+        if (sheet.cancelUndoId) undoStack = undoStack.filter(entry => entry.id !== sheet.cancelUndoId);
+        if (view.quickGrabId === sheet.sourceId) view.quickGrabId = null;
+        if (view.sheet === sheet) view.sheet = null;
+        render({ mutationEffects: false });
+        restoreSheetReturnFocus();
+        showToast("Capture deleted.");
+        return true;
+      } catch (error) {
+        if (beforeGrab && !db.quickGrabs.some(item => item.id === beforeGrab.id)) {
+          db.quickGrabs.splice(Math.min(grabIndex, db.quickGrabs.length), 0, beforeGrab);
+        }
+        mutation.cancelled = true;
+        mutation.cancelNeedsRetry = true;
+        sheet.cancelPending = false;
+        sheet.cancelNeedsRetry = true;
+        showToast("Could not delete this capture safely. Try again.", "error");
+        render({ mutationEffects: false });
+        return false;
+      }
+    }
+
     async function createQuickGrabBackendAiProposal(grabId) {
       if (recoveryMutationBlocked()) return false;
       const grab = db.quickGrabs.find(item => item.id === grabId);
       if (!grab) {
         showToast("That Quick Grab is no longer available.");
+        return;
+      }
+      if (quickGrabPersonContract(grab, db.people).lockedTargetMissing) {
+        markCaptureProcessingFailure(grabId, "The person locked to this capture no longer exists. Choose a person locally before backend processing.");
+        showToast("Choose a person for this capture before backend processing.");
         return;
       }
       const privacyTier = aiPrivacyTierForRecord(grab, "quickGrabs");
@@ -10385,10 +10584,34 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const beforeAutoMemoryVault = cloneJson(loadAutoMemoryVault());
       const beforeAutoMemoryLocal = settings.localEncryptionEnabled ? null : localStorage.getItem(AUTO_MEMORY_KEY);
       const abortController = typeof AbortController !== "undefined" ? new AbortController() : null;
-      const mutation = registerActiveMutation("backend-quick-grab", { blocking: false });
-      mutation.cancel = async () => {
-        try { abortController?.abort(); } catch (error) {}
-        return restoreCancelledQuickGrabMutation(grabId, beforeGrab, beforeAutoMemoryVault, beforeAutoMemoryLocal);
+      const retainedMutation = backendQuickGrabMutationForCapture(grabId);
+      if (retainedMutation && !retainedMutation.operationSettled) {
+        showToast("This capture is already processing. Your text is safe.");
+        return false;
+      }
+      const mutation = retainedMutation || registerActiveMutation("backend-quick-grab", { blocking: false });
+      if (!retainedMutation) {
+        mutation.sourceId = grabId;
+        mutation.retainForTransientDismissal = Boolean(view.sheet?.type === "ai-gate"
+          && view.sheet?.deleteOnCancel === true
+          && view.sheet?.sourceId === grabId);
+        mutation.cancellationBeforeGrab = beforeGrab;
+        mutation.cancellationBeforeAutoMemoryVault = beforeAutoMemoryVault;
+        mutation.cancellationBeforeAutoMemoryLocal = beforeAutoMemoryLocal;
+      }
+      mutation.cancelled = false;
+      mutation.cancelNeedsRetry = false;
+      mutation.operationSettled = false;
+      mutation.abortController = abortController;
+      mutation.cancel = async (options = {}) => {
+        try { mutation.abortController?.abort(); } catch (error) {}
+        return restoreCancelledQuickGrabMutation(
+          grabId,
+          mutation.cancellationBeforeGrab,
+          mutation.cancellationBeforeAutoMemoryVault,
+          mutation.cancellationBeforeAutoMemoryLocal,
+          options
+        );
       };
       grab.processingState = "processing";
       grab.processingError = "";
@@ -10408,8 +10631,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           throw new Error("safe_backend_quick_grab_unavailable");
         }
         const proposal = normalizeBackendQuickGrabProposal(body, grab);
-        saveQuickGrabAiProposal(proposal, "backend Quick Grab AI proposal", "Backend Quick Grab proposal created. Review before saving anything.");
-        return true;
+        return Boolean(saveQuickGrabAiProposal(proposal, "backend Quick Grab AI proposal", "Backend Quick Grab proposal created. Review before saving anything."));
       } catch {
         if (!activeMutationIsCurrent(mutation)) return false;
         if (settings.aiMockMode) {
@@ -10954,7 +11176,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function renderSnooze() {
       const grab = db.quickGrabs.find(item => item.id === view.quickGrabId);
       if (!grab) return `${renderTopbar("Snooze", "That grabbed item could not be found.")}${emptyState("Choose another item.")}`;
-      const linkedPerson = personById(grab.relatedPersonId);
+      const linkedPerson = quickGrabPersonContract(grab, db.people).person;
       const sensitive = recordIsSensitive(grab, "quickGrabs") || recordIsSensitive(linkedPerson, "people");
       return `
         ${renderTopbar("Snooze", "Move this loose end to a gentler time.", false)}
@@ -11590,6 +11812,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function renderFifteenMinutes() {
       const items = promptQuickGrabs().slice(0, 3);
       const tasks = taskDueSoon().slice(0, 3);
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
       return `
         ${renderTopbar("I Have 15 Minutes", "A small list for the window you actually have.")}
         <div class="grid two">
@@ -11597,7 +11820,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             <div class="section-header">
               <h2 class="section-title">Clear a Few Quick Grabs</h2>
             </div>
-            ${items.length ? items.map(renderQuickGrabCard).join("") : emptyState("No loose reminders are asking for attention right now.")}
+            ${items.length ? items.map(grab => renderQuickGrabCard(grab, "full", quickGrabPeopleIndex)).join("") : emptyState("No loose reminders are asking for attention right now.")}
           </section>
           <section class="section">
             <div class="section-header">
@@ -11637,6 +11860,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function renderWeeklyReset() {
       const items = openQuickGrabs().filter(grab => ["New", "Needs Processing", "Prompt Me"].includes(grab.status));
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
       return `
         ${renderTopbar("Weekly Reset", "A steady review so Quick Grab stays useful instead of becoming a junk drawer.")}
         ${renderWaitingReview()}
@@ -11651,7 +11875,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               <button class="button primary" data-action="weekly-reset-agent">Build Weekly Reset Plan</button>
             </div>
           </div>
-          ${items.length ? items.map(renderQuickGrabCard).join("") : emptyState("No Quick Grabs need processing right now.")}
+          ${items.length ? items.map(grab => renderQuickGrabCard(grab, "full", quickGrabPeopleIndex)).join("") : emptyState("No Quick Grabs need processing right now.")}
         </section>
       `;
     }
@@ -12620,8 +12844,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function linkedRecordCountForPerson(personId) {
-      return ["notes", "meetingNotes", "prayerRequests", "tasks", "quickGrabs"]
+      const directRecords = ["notes", "meetingNotes", "prayerRequests", "tasks"]
         .reduce((total, collection) => total + db[collection].filter(record => record.relatedPersonId === personId).length, 0);
+      const quickGrabPeopleIndex = buildQuickGrabPersonIndex(db.people);
+      const quickGrabRecords = db.quickGrabs
+        .filter(grab => quickGrabPersonContract(grab, db.people, quickGrabPeopleIndex).person?.id === personId)
+        .length;
+      return directRecords + quickGrabRecords;
     }
 
     function renderMergePersonSheet(sheet) {
@@ -12771,6 +13000,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const context = buildAiGateContext(sheet);
       const warnings = Array.from(new Set(context.warnings.filter(Boolean)));
       const blocked = Boolean(context.blocked);
+      const transientDeletionPending = sheet?.deleteOnCancel === true && sheet?.cancelPending === true;
+      const transientDeletionRetry = sheet?.deleteOnCancel === true && sheet?.cancelNeedsRetry === true;
+      const gateControlsDisabled = transientDeletionPending || transientDeletionRetry;
+      const closeLabel = transientDeletionRetry ? "Retry delete" : "Close";
+      const cancelLabel = transientDeletionRetry ? "Retry delete" : "Cancel";
       const targetId = sheet?.proposalId || sheet?.sourceId || "";
       const canMarkDoNotSend = sheet?.nextAction !== "prayerSteward";
       const gateTitle = quickGrabAiGateTitle(sheet);
@@ -12785,24 +13019,26 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const tierOptions = AI_PRIVACY_TIERS.map(tier => `<option value="${escapeHtml(tier)}" ${tier === selectedTier ? "selected" : ""}>${escapeHtml(tier)}</option>`).join("");
       return `
         <div class="sheet-backdrop" data-action="sheet-close">
-          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="ai-gate-sheet-title" data-sheet-panel>
+          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="ai-gate-sheet-title" aria-busy="${transientDeletionPending ? "true" : "false"}" data-sheet-panel>
             <div class="sheet-head">
               <div>
                 <h2 id="ai-gate-sheet-title">${escapeHtml(gateTitle)}</h2>
                 <p class="page-kicker">${escapeHtml(gateKicker)}</p>
               </div>
-              <button class="button small" data-action="sheet-close" aria-label="Close">Close</button>
+              <button class="button small" data-action="sheet-close" aria-label="${escapeHtml(closeLabel)}" ${transientDeletionPending ? "disabled" : ""}>${escapeHtml(closeLabel)}</button>
             </div>
             <div class="sheet-form">
+              ${transientDeletionPending ? `<div class="notice secure" role="status" aria-live="polite">Deleting capture safely…</div>` : ""}
+              ${transientDeletionRetry ? `<div class="notice danger" role="alert">The capture was not deleted. Retry delete before continuing.</div>` : ""}
               <div class="notice secure">Ask every time is locked on. Current mode: ${escapeHtml(aiGateModeLabel(sheet))}. Review what would be used before continuing.</div>
               ${canMarkDoNotSend ? `
                 <div class="field">
                   <label for="sheet-ai-privacy-tier">Sensitivity</label>
-                  <select class="select" id="sheet-ai-privacy-tier">${tierOptions}</select>
+                  <select class="select" id="sheet-ai-privacy-tier" ${gateControlsDisabled ? "disabled" : ""}>${tierOptions}</select>
                   <div class="meta">This label stays with the local item and controls whether AI may use it; it does not hide the content from you.</div>
                   <div class="action-row" style="margin-top:10px;">
-                    <button class="button" data-action="ai-gate-set-tier" data-id="${escapeHtml(targetId)}">Save sensitivity</button>
-                    <button class="button danger" data-action="ai-gate-do-not-send" data-id="${escapeHtml(targetId)}">Mark item Do Not Send to AI</button>
+                    <button class="button" data-action="ai-gate-set-tier" data-id="${escapeHtml(targetId)}" ${gateControlsDisabled ? "disabled" : ""}>Save sensitivity</button>
+                    <button class="button danger" data-action="ai-gate-do-not-send" data-id="${escapeHtml(targetId)}" ${gateControlsDisabled ? "disabled" : ""}>Mark item Do Not Send to AI</button>
                   </div>
                 </div>
               ` : ""}
@@ -12819,11 +13055,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                 <div class="field-label">Sensitivity warnings</div>
                 ${warnings.length ? `<div class="settings-list">${warnings.map(warning => `<div class="notice danger">${escapeHtml(warning)}</div>`).join("")}</div>` : `<div class="meta">No sensitivity warnings for this step.</div>`}
               </div>
-              ${checkbox("sheet-ai-gate-confirm", gateConfirmLabel, false)}
+              ${checkbox("sheet-ai-gate-confirm", gateConfirmLabel, false, gateControlsDisabled)}
             </div>
             <div class="sheet-actions">
-              <button class="button" data-action="sheet-close">Cancel</button>
-              <button class="button primary" data-action="ai-gate-continue" data-id="${escapeHtml(targetId)}" ${gateCanContinue && !blocked ? "" : "disabled"}>${escapeHtml(gateContinueLabel)}</button>
+              <button class="button" data-action="sheet-close" ${transientDeletionPending ? "disabled" : ""}>${escapeHtml(cancelLabel)}</button>
+              <button class="button primary" data-action="ai-gate-continue" data-id="${escapeHtml(targetId)}" ${gateCanContinue && !blocked && !gateControlsDisabled ? "" : "disabled"}>${escapeHtml(gateContinueLabel)}</button>
             </div>
           </section>
         </div>
@@ -13500,6 +13736,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function closeSheet(options = {}) {
       if (careSaveIsPending()) return false;
+      if (view.sheet?.cancelPending) return false;
       if (protectedBackupExportOwnsSheet(view.sheet)) {
         if (!options.force) return false;
         invalidateProtectedBackupExport();
@@ -13509,6 +13746,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         const sheet = view.sheet;
         const grabIndex = db.quickGrabs.findIndex(item => item.id === sheet.sourceId);
         if (sheet.deleteOnCancel === true) {
+          const mutation = backendQuickGrabMutationForCapture(sheet.sourceId);
+          if (mutation) return discardTransientQuickGrabDuringBackendMutation(sheet, mutation);
           if (grabIndex >= 0) db.quickGrabs.splice(grabIndex, 1);
           if (sheet.cancelUndoId) undoStack = undoStack.filter(entry => entry.id !== sheet.cancelUndoId);
           if (view.quickGrabId === sheet.sourceId) view.quickGrabId = null;
@@ -14105,18 +14344,22 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return aiActionId(action, index);
     }
 
-    function aiActionSourceQuickGrabId(proposal, action = {}) {
-      if (proposal?.sourceType === "quickGrab" && proposal.sourceId) return proposal.sourceId;
-      return action.createdFromQuickGrabId || action.sourceQuickGrabId || "";
-    }
-
-    function aiActionSourceQuickGrab(proposal, selected = []) {
-      const sourceId = selected.map(item => aiActionSourceQuickGrabId(proposal, item.action)).find(Boolean)
-        || (proposal?.sourceType === "quickGrab" ? proposal.sourceId : "");
-      return sourceId ? db.quickGrabs.find(grab => grab.id === sourceId) || null : null;
+    function aiActionSourceQuickGrabIds(proposal, selected = []) {
+      const ids = [];
+      if (proposal?.sourceType === "quickGrab" && proposal.sourceId) ids.push(proposal.sourceId);
+      selected.forEach(item => {
+        const action = item.action || {};
+        if (action.createdFromQuickGrabId) ids.push(action.createdFromQuickGrabId);
+        if (action.sourceQuickGrabId) ids.push(action.sourceQuickGrabId);
+      });
+      return Array.from(new Set(ids.filter(Boolean)));
     }
 
     function aiActionExistingPersonId(proposal, sourceQuickGrab, action = {}) {
+      if (sourceQuickGrab) {
+        return quickGrabPersonContract(sourceQuickGrab, db.people).person?.id || "";
+      }
+      if (proposal?.sourceType === "quickGrab") return "";
       const result = proposal?.result && typeof proposal.result === "object" ? proposal.result : {};
       const explicitCandidates = [
         action.relatedPersonId,
@@ -14125,25 +14368,31 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       ].filter(Boolean);
       const inferredCandidates = result.personMatchAmbiguous === true
         ? []
-        : [result.possiblePersonId, sourceQuickGrab?.relatedPersonId].filter(Boolean);
+        : [result.possiblePersonId].filter(Boolean);
       const candidates = [...explicitCandidates, ...inferredCandidates];
       return candidates.find(id => personById(id)) || "";
     }
 
     function aiActionPersonName(proposal, sourceQuickGrab, action = {}) {
       const result = proposal?.result && typeof proposal.result === "object" ? proposal.result : {};
-      return String(action.name || action.personName || result.possiblePersonName || sourceQuickGrab?.detectedPersonName || "").trim();
+      const currentSourceName = sourceQuickGrab
+        ? parseQuickGrab(sourceQuickGrab.rawContent || "", [], sourceQuickGrab.urgency || "Whenever", db.people).detectedPersonName
+        : "";
+      if (sourceQuickGrab) return String(currentSourceName || "").trim();
+      return String(action.name || action.personName || result.possiblePersonName || "").trim();
     }
 
     function aiBestDetectedPersonName(proposal, sourceQuickGrab, selected = []) {
       const result = proposal?.result && typeof proposal.result === "object" ? proposal.result : {};
+      const currentSourceName = sourceQuickGrab
+        ? parseQuickGrab(sourceQuickGrab.rawContent || "", [], sourceQuickGrab.urgency || "Whenever", db.people).detectedPersonName
+        : "";
+      if (sourceQuickGrab) return String(currentSourceName || "").trim();
       const candidates = [
         result.possiblePersonName,
-        sourceQuickGrab?.detectedPersonName,
         proposal?.detectedPersonName,
         proposal?.title,
         proposal?.summary,
-        sourceQuickGrab?.rawContent,
         ...selected.flatMap(item => [item.action?.name, item.action?.personName, item.action?.title, item.action?.label, item.action?.summary])
       ];
       for (const candidate of candidates) {
@@ -14221,13 +14470,24 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const selected = actionIndexes
         .map(index => ({ index, action: actions[index] }))
         .filter(item => item.action && aiActionIsExecutable(item.action));
-      const sourceQuickGrab = aiActionSourceQuickGrab(proposal, selected);
-      const sourceQuickGrabId = selected.map(item => aiActionSourceQuickGrabId(proposal, item.action)).find(Boolean)
-        || (proposal?.sourceType === "quickGrab" ? proposal.sourceId : "");
+      const sourceQuickGrabIds = aiActionSourceQuickGrabIds(proposal, selected);
+      const sourceQuickGrabId = sourceQuickGrabIds.length === 1 ? sourceQuickGrabIds[0] : "";
+      const sourceQuickGrab = sourceQuickGrabId ? db.quickGrabs.find(grab => grab.id === sourceQuickGrabId) || null : null;
+      const sourceQuickGrabBindingErrors = [];
+      if (proposal?.sourceType === "quickGrab" && !proposal.sourceId) {
+        sourceQuickGrabBindingErrors.push("The source Quick Grab is no longer identified. Review the proposal again before saving.");
+      }
+      if (sourceQuickGrabIds.length > 1) {
+        sourceQuickGrabBindingErrors.push("Selected actions reference more than one Quick Grab. Review one source capture at a time.");
+      } else if (sourceQuickGrabId && !sourceQuickGrab) {
+        sourceQuickGrabBindingErrors.push("A referenced Quick Grab no longer exists. Review the current capture before saving.");
+      }
       const createPersonItem = selected.find(item => aiActionType(item.action) === "createPerson");
-      const existingPersonId = selected
-        .map(item => aiActionExistingPersonId(proposal, sourceQuickGrab, item.action))
-        .find(Boolean) || aiActionExistingPersonId(proposal, sourceQuickGrab, {});
+      const existingPersonId = sourceQuickGrabBindingErrors.length
+        ? ""
+        : selected
+          .map(item => aiActionExistingPersonId(proposal, sourceQuickGrab, item.action))
+          .find(Boolean) || aiActionExistingPersonId(proposal, sourceQuickGrab, {});
       const personChoice = normalizeAiSheetPersonChoice(options.personChoice || {});
       const chosenExistingPersonId = personChoice.existingPersonId || "";
       const resolvedPersonId = chosenExistingPersonId || existingPersonId;
@@ -14243,6 +14503,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
       if (!proposal) errors.push("This AI suggestion is no longer available.");
       if (!selected.length) errors.push("No supported actions are selected.");
+      errors.push(...sourceQuickGrabBindingErrors);
       for (const index of actionIndexes) {
         const action = actions[index];
         if (action && !aiActionIsExecutable(action)) errors.push(`${labelFromCamel(aiActionType(action))} is review-only in this build.`);
@@ -14291,6 +14552,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         selected,
         sourceQuickGrab,
         sourceQuickGrabId,
+        sourceQuickGrabIds,
+        sourceQuickGrabBindingErrors,
         existingPersonId: resolvedPersonId,
         actionExistingPersonId: existingPersonId,
         chosenExistingPersonId,
@@ -14332,6 +14595,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     function applyAiProposalActions(proposal, validation, options = {}) {
       if (!proposal || !aiProposalCanExecute(proposal) || proposal.result?.executedAt) {
         throw new Error("These approved updates were already saved.");
+      }
+      if (validation?.sourceQuickGrabBindingErrors?.length) {
+        throw new Error(validation.sourceQuickGrabBindingErrors[0]);
       }
       const createdIds = [];
       const createdTypes = [];
@@ -14462,7 +14728,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         grab.status = "Converted";
         grab.convertedToTypes = Array.from(new Set([...(grab.convertedToTypes || []), ...createdTypes]));
         grab.convertedRecordIds = Array.from(new Set([...(grab.convertedRecordIds || []), ...createdIds]));
-        if (relatedPersonId && !grab.relatedPersonId) grab.relatedPersonId = relatedPersonId;
+        grab.relatedPersonId = relatedPersonId || "";
+        grab.personLocked = Boolean(relatedPersonId);
         grab.updatedAt = nowISO();
       }
 
@@ -14749,15 +15016,20 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	      const button = event.currentTarget;
       const action = button.dataset.action;
       const id = button.dataset.id;
-	      if (recoveryTransactionPending || (recoveryRetryRequired() && action !== "undo-last")) {
+	      const transientCancelRetry = action === "sheet-close"
+	        && view.sheet?.type === "ai-gate"
+	        && view.sheet?.deleteOnCancel === true
+	        && view.sheet?.cancelNeedsRetry === true;
+	      if (view.sheet?.cancelPending || recoveryTransactionPending || (recoveryRetryRequired() && action !== "undo-last" && !transientCancelRetry)) {
 	        event.preventDefault?.();
 	        event.stopPropagation?.();
 	        return false;
 	      }
-	      if (recoveryRetryRequired() && action === "undo-last") {
+	      if (recoveryRetryRequired() && action === "undo-last" && !view.sheet?.cancelNeedsRetry) {
         undoLast();
         return true;
       }
+	      if (recoveryRetryRequired() && action === "undo-last") return false;
 	      if (view.aiConfirmSaving) {
 	        event.preventDefault?.();
 	        event.stopPropagation?.();
