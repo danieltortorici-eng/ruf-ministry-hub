@@ -1437,7 +1437,7 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
   })()`);
   assert(!sensitiveProposal.gate.includes("TOPSECRET") && !sensitiveProposal.card.includes("TOPSECRET") && !sensitiveProposal.confirm.includes("TOPSECRET") && !sensitiveProposal.legacyConfirm.includes("TOPSECRET"), "blocked AI context, review, and confirmation surfaces never expose sensitive capture text");
   assert(!sensitiveProposal.waiting.includes("Secret Person") && !sensitiveProposal.cardBefore.includes("Secret Person"), "capture waiting and review cards mask sensitive linked person identity");
-  assert(sensitiveProposal.proposal.contextPreview === "Sensitive context hidden until approval." && sensitiveProposal.proposal.rawInputPreview === "Sensitive input hidden until approval.", "sensitive proposal previews are redacted at durable creation time");
+  assert(sensitiveProposal.proposal.contextPreview === "TOPSECRET pastoral counseling detail" && sensitiveProposal.proposal.rawInputPreview === "TOPSECRET pastoral counseling detail", "sensitive proposal previews remain exact in durable storage while unlocked v38 review surfaces mask them");
   assert(sensitiveProposal.proposal.aiPrivacyTier === "Sensitive" && sensitiveProposal.sourceDeletedCard.includes("Sensitive suggested updates") && !sensitiveProposal.sourceDeletedCard.includes("TOPSECRET"), "sensitive proposal privacy remains masked after its source capture is removed");
   assert(sensitiveProposal.duplicateConfirm.includes("Sensitive person details hidden") && !sensitiveProposal.duplicateConfirm.includes("Similar people already exist: Secret Person"), "sensitive final approval warnings do not reveal duplicate person names");
 
@@ -1450,9 +1450,9 @@ async function testAdversarialApprovalAndPersistenceBoundaries() {
     view.sheet = { type: "ai-gate", proposalId: proposal.id };
     markAiGateDoNotSend();
     db.quickGrabs = [];
-    return { tier: proposal.aiPrivacyTier, context: proposal.contextPreview, card: renderAiProposalCard(proposal) };
+    return { tier: proposal.aiPrivacyTier, context: proposal.contextPreview, rawInput: proposal.rawInputPreview, card: renderAiProposalCard(proposal) };
   })()`);
-  assert(gateDeletion.tier === "Do Not Send to AI" && gateDeletion.context === "Sensitive context hidden until approval." && !gateDeletion.card.includes("Gate marked raw title") && !gateDeletion.card.includes("Gate marked raw input"), "marking a proposal Do Not Send persists redaction after its source is removed");
+  assert(gateDeletion.tier === "Do Not Send to AI" && gateDeletion.context === "" && gateDeletion.rawInput === "Gate marked raw input" && !gateDeletion.card.includes("Gate marked raw title") && !gateDeletion.card.includes("Gate marked raw input"), "marking a proposal Do Not Send preserves durable preview fields while v38 review stays masked after its source is removed");
 
   const sensitiveResult = appEval(`(() => {
     const proposal = emptyAiProposal({ id: "sensitive-result", proposalType: "prayerSteward", sensitivityRisk: "medium", result: { steward: { activeOlderThan30: ["Hidden person: raw prayer detail"] } } });
@@ -2217,8 +2217,8 @@ async function testAdversarialCalmOsDataShapes() {
     return { excluded, masked, revealed, taskId: task.id, linkedPrayerId: linkedPrayer.id, linkedGrabId: linkedGrab.id };
   })()`);
   assert(!searchPrivacy.excluded.includes("Private pastoral search phrase") && !searchPrivacy.excluded.includes("Private task search phrase") && !searchPrivacy.excluded.includes("Private linked prayer phrase") && !searchPrivacy.excluded.includes("Private linked capture phrase") && !searchPrivacy.excluded.includes("Sensitive Search Person"), "Search excludes sensitive private text and linked identities unless sensitive search is explicitly enabled");
-  assert(searchPrivacy.masked.includes("Sensitive care detail hidden") && searchPrivacy.masked.includes("Sensitive follow-up task") && searchPrivacy.masked.includes("Sensitive grabbed item - open to process") && !searchPrivacy.masked.includes("Private pastoral search phrase") && !searchPrivacy.masked.includes("Private task search phrase") && !searchPrivacy.masked.includes("Private linked capture phrase"), "enabled sensitive Search still masks private previews by default");
-  assert(searchPrivacy.revealed.includes("Private pastoral search phrase") && searchPrivacy.revealed.includes("Private task search phrase"), "private Search text appears only after both explicit search and preview settings allow it");
+  assert(!searchPrivacy.masked.includes("Private pastoral search phrase") && !searchPrivacy.masked.includes("Private task search phrase") && !searchPrivacy.masked.includes("Private linked capture phrase") && !searchPrivacy.masked.includes("Sensitive Search Person"), "rollback Search exclusion resists a direct sensitive-search setting mutation");
+  assert(!searchPrivacy.revealed.includes("Private pastoral search phrase") && !searchPrivacy.revealed.includes("Private task search phrase") && !searchPrivacy.revealed.includes("Private linked capture phrase") && !searchPrivacy.revealed.includes("Sensitive Search Person"), "rollback concealment resists combined direct search and preview setting mutations");
 
   resetApp("emptyData()");
   const missingDates = appEval(`(() => {
@@ -2709,7 +2709,10 @@ function testExportAndPrivacyHelpers() {
 
   assert(appEval('maskedText(true, "Hidden", "Visible")') === "Hidden", "sensitive previews are masked when enabled");
   appEval("settings.maskSensitivePreviews = false");
-  assert(appEval('maskedText(true, "Hidden", "Visible")') === "Visible", "sensitive previews can be revealed by setting");
+  assert(appEval('maskedText(true, "Hidden", "Visible")') === "Hidden", "rollback concealment remains enforced after a direct visibility-setting mutation");
+  const normalizedRollbackPrivacy = appEval('normalizeSettings({ maskSensitivePreviews: false, includeSensitiveInSearch: true })');
+  assert(normalizedRollbackPrivacy.maskSensitivePreviews === false && normalizedRollbackPrivacy.includeSensitiveInSearch === true, "rollback settings normalization preserves carried v39 visibility preferences for the later successor");
+  assert(appEval("ROLLBACK_MASK_CLASSIFIED_PREVIEWS && !ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH") === true, "rollback runtime policy locks classified concealment on and sensitive search off independently of stored preferences");
 }
 
 async function testAutoMemoryVault() {
@@ -3276,8 +3279,8 @@ async function testContextualDatesAndLegacyProfileCompatibility() {
 
 function testServiceWorkerShape() {
   assert(/const APP_VERSION = "2026\.07\.\d{2}-calm-os-[^"]+"/.test(html), "deploy app version is in the Calm OS release family");
-  assert(html.includes('const APP_VERSION = "2026.07.20-calm-os-core-v38"'), "deploy app declares the reviewed v38 Auto Memory boundary");
-  assert(serviceWorkerSource.includes('const CACHE_NAME = "ruf-ministry-hub-v87-calm-os-core-v38"'), "service worker cache identity matches the reviewed v38 app");
+  assert(html.includes('const APP_VERSION = "2026.07.21-calm-os-core-v38r2"'), "deploy app declares the data-preserving fail-closed v38r2 rollback boundary");
+  assert(serviceWorkerSource.includes('const CACHE_NAME = "ruf-ministry-hub-v90-calm-os-core-v38r2"'), "service worker cache identity matches the reviewed v38r2 rollback app");
   const appUnlockSource = html.slice(html.indexOf("function unlockApp()"), html.indexOf("async function unlockVault()"));
   assert(
     appUnlockSource.indexOf('showToast("Unlocked.")') < appUnlockSource.indexOf("requestPageHeadingFocus()")

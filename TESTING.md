@@ -94,6 +94,18 @@ To test another copy of the app, pass its folder:
 RUF_HUB_APP_DIR="/path/to/ruf-ministry-hub-deploy" node tests/regression-harness.js
 ```
 
+Run the exact cross-version classified-proposal rollback guard with three explicit deploy roots:
+
+```sh
+RUF_HUB_PRE_ROLLBACK_APP_DIR="/path/to/exact-v39-deploy-root" \
+RUF_HUB_ROLLBACK_APP_DIR="/path/to/data-preserving-v38r2-deploy-root" \
+RUF_HUB_POST_ROLLBACK_APP_DIR="/path/to/exact-v39-or-compatible-successor-deploy-root" \
+RUF_HUB_REQUIRE_ROLLBACK_MASKING=true \
+node tests/calm-rollback-roundtrip-regression.js
+```
+
+This dependency-free synthetic check uses one fictional origin and a fresh VM runtime per phase. It proves that classified proposal preview fields, identifiers, source links, action counts, privacy tiers, and an unknown future field survive v39 → v38r2 normalize/save/Do Not Send → v39 load/save; that genuine v39 visibility preferences survive an unrelated v38r2 settings save and vault-settings normalization; that v38r2 nevertheless forces classified preview concealment and sensitive-search exclusion through rollback-only runtime policy; and that Do Not Send reaches zero `fetch` calls. It checks normalized rendered sentinels so whitespace rendering cannot hide an exposure. The release work order supplies exact expected app versions. It reads no browser profile, IndexedDB, backup, export, credential, or real ministry record and makes no network request. “No record side effects” in this guard means no structured target ministry record is created; the synthetic source/proposal privacy metadata and blocked-processing status intentionally change locally.
+
 ## What It Covers
 
 - Current screen rendering for Today, Autopilot, Quick Grab, Quick Review, Search, People, Person Profile, Prayer, 15 Minutes, Weekly Reset, Settings, App Coach, Duplicate People, iPhone Readiness, and App Manual.

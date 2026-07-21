@@ -16,6 +16,13 @@ The second release-candidate audit verified the 390px and 430px layout contracts
 
 The next preview candidate is app/package `2026.07.16-calm-os-core-v8` with cache `ruf-ministry-hub-v57-calm-os-core-v8`. Its source, preview, and physical evidence remain invalid until the bounded fix is frozen, tested, pushed through the sole release lane, deployed to the preview-only QA project, and rechecked.
 
+## `CALM-ROLLBACK-BASELINE-53` data-preserving v38r2 gate
+
+- Candidate identity: app/package `2026.07.21-calm-os-core-v38r2`, cache `ruf-ministry-hub-v90-calm-os-core-v38r2`. It intentionally retains the v38 interface, locks classified preview concealment on and sensitive search off through rollback-only runtime policy, and preserves both v39 proposal preview fields and carried visibility preferences for the later successor. Automated round-trip evidence is not physical-device, preview, provider, production, or rollback-execution evidence.
+- On one disposable stable preview origin containing only invented data, run the affected sequence without clearing site data: load the compatible v39 release, confirm its unlocked classified preview is visible, create one classified fictional proposal, update to v38r2, reload and mark its linked source Do Not Send, then update to the compatible v39 successor.
+- Pass only when v38r2 reveals none of the classified proposal text or sensitive-search content despite the carried v39 visibility state, creates no structured target record or request, and retains the proposal/source exactly once; the successor must show the exact preview fields once while remaining Do Not Send with zero request. The source/proposal privacy metadata and blocked-processing status may change locally as part of the synthetic exercise. Reopen offline after one online load and confirm the shell and fictional state load while `/api/*` is never served from cache.
+- Fail on a blank screen, failed update, lost or placeholder preview, duplicate/missing record, revealed v38r2 text, sensitive-search exposure, any request, offline-shell failure, or app/package/cache/CSP identity mismatch. Stop with `SENSITIVE_STOP` if an existing real vault, browser store, backup, export, credential, or ministry record appears; do not inspect or describe it.
+
 ## `CALM-AUTO-MEMORY-38` local v38 strict snapshot recheck
 
 - Local candidate identity: app/package `2026.07.20-calm-os-core-v38`, cache `ruf-ministry-hub-v87-calm-os-core-v38`. It is local-only and is not committed, previewed, provider-verified, production-verified, rollback-verified, existing-real-vault verified, or physical-device verified. Use only a disposable origin, fictional records, and fictional neutral PINs/passphrases.

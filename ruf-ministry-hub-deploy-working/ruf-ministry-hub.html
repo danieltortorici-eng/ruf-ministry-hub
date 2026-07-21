@@ -1738,7 +1738,9 @@
     window.addEventListener("keydown", revealSkipLinkForKeyboard, true);
 
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.20-calm-os-core-v38";
+    const APP_VERSION = "2026.07.21-calm-os-core-v38r2";
+    const ROLLBACK_MASK_CLASSIFIED_PREVIEWS = true;
+    const ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH = false;
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
@@ -2423,15 +2425,11 @@
         sensitivityRisk: enumOrDefault(source.sensitivityRisk, AI_PROPOSAL_SENSITIVITY_RISKS, "none"),
         requiresReview: true,
         sendToAiApproved: source.sendToAiApproved === true,
-        contextPreview: ["medium", "high"].includes(enumOrDefault(source.sensitivityRisk, AI_PROPOSAL_SENSITIVITY_RISKS, "none"))
-          ? "Sensitive context hidden until approval."
-          : String(source.contextPreview || ""),
+        contextPreview: String(source.contextPreview || ""),
         proposedActions: Array.isArray(source.proposedActions) ? source.proposedActions.map(normalizeAiProposedAction) : [],
         warnings: Array.isArray(source.warnings) ? source.warnings.map(warning => String(warning)) : [],
         model: String(source.model || "mock"),
-        rawInputPreview: ["medium", "high"].includes(enumOrDefault(source.sensitivityRisk, AI_PROPOSAL_SENSITIVITY_RISKS, "none"))
-          ? "Sensitive input hidden until approval."
-          : String(source.rawInputPreview || ""),
+        rawInputPreview: String(source.rawInputPreview || ""),
         result: source.result ?? null
       };
     }
@@ -2451,8 +2449,6 @@
       }
       if (sourceTier !== "Normal" || ["medium", "high"].includes(proposal.sensitivityRisk)) {
         proposal.aiPrivacyTier = sourceTier !== "Normal" ? sourceTier : "Sensitive";
-        proposal.contextPreview = "Sensitive context hidden until approval.";
-        proposal.rawInputPreview = "Sensitive input hidden until approval.";
       }
       return proposal;
     }
@@ -2779,7 +2775,7 @@
    }
 
     function maskedText(isSensitive, hiddenText, visibleText) {
-      return settings.maskSensitivePreviews && isSensitive ? hiddenText : visibleText;
+      return ROLLBACK_MASK_CLASSIFIED_PREVIEWS && isSensitive ? hiddenText : visibleText;
     }
 
     function saveData() {
@@ -7340,7 +7336,7 @@
         });
       }
 
-      if (sensitiveCount > 0 && (!settings.maskSensitivePreviews || settings.includeSensitiveInSearch)) {
+      if (sensitiveCount > 0 && (!ROLLBACK_MASK_CLASSIFIED_PREVIEWS || ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH)) {
         addCoachSuggestion(suggestions, {
           id: "tighten-sensitive-privacy",
           kind: "Privacy",
@@ -7716,9 +7712,9 @@
       const prayerMap = new Map(db.prayerRequests.map(prayer => [prayer.id, prayer]));
       const people = db.people
         .filter(person => {
-          if (!settings.includeSensitiveInSearch && isSensitive(person, "people")) return false;
+          if (!ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH && isSensitive(person, "people")) return false;
           const safeFields = [person.name, person.personType, person.status, person.careLevel, person.phone, person.email, person.classYear, person.fraternitySorority, person.major, person.hometown, person.rufInvolvement, person.donorStatus];
-          return matches(settings.includeSensitiveInSearch ? [...safeFields, person.followUpReason] : safeFields);
+          return matches(ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH ? [...safeFields, person.followUpReason] : safeFields);
         })
         .map(person => {
           const sensitive = isSensitive(person, "people");
@@ -7737,7 +7733,7 @@
           const person = personMap.get(grab.relatedPersonId);
           const sensitive = isSensitive(grab, "quickGrabs") || isSensitive(person, "people");
           if (!settings.includeArchivedInSearch && grab.status === "Archived") return false;
-          if (!settings.includeSensitiveInSearch && sensitive) return false;
+          if (!ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH && sensitive) return false;
           return matches([grab.rawContent, grab.detectedPersonName, grab.detectedPrayerRequest, grab.detectedFollowUp, grab.detectedMeetingSummary, grab.category, grab.status, grab.urgency]);
         })
         .map(grab => {
@@ -7756,9 +7752,9 @@
       const prayers = db.prayerRequests
         .filter(prayer => {
           if (!settings.includeArchivedInSearch && prayer.status === "Archived") return false;
-          if (!settings.includeSensitiveInSearch && isSensitive(prayer, "prayerRequests")) return false;
+          if (!ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH && isSensitive(prayer, "prayerRequests")) return false;
           const person = personMap.get(prayer.relatedPersonId);
-          if (!settings.includeSensitiveInSearch && person && isSensitive(person, "people")) return false;
+          if (!ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH && person && isSensitive(person, "people")) return false;
           return matches([person?.name, prayer.request, prayer.status, prayer.sensitivityLevel, prayer.shareableStatus, prayer.answeredNote]);
         })
         .map(prayer => {
@@ -7779,9 +7775,9 @@
         });
       const meetings = db.meetingNotes
         .filter(meeting => {
-          if (!settings.includeSensitiveInSearch && isSensitive(meeting, "meetingNotes")) return false;
+          if (!ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH && isSensitive(meeting, "meetingNotes")) return false;
           const person = personMap.get(meeting.relatedPersonId);
-          if (!settings.includeSensitiveInSearch && person && isSensitive(person, "people")) return false;
+          if (!ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH && person && isSensitive(person, "people")) return false;
           return matches([person?.name, meeting.meetingType, meeting.location, meeting.whatWeTalkedAbout, meeting.whatToRemember, meeting.prayerRequestText, meeting.nextFaithfulStep]);
         })
         .map(meeting => {
@@ -7801,9 +7797,9 @@
         });
       const notes = db.notes
         .filter(note => {
-          if (!settings.includeSensitiveInSearch && isSensitive(note, "notes")) return false;
+          if (!ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH && isSensitive(note, "notes")) return false;
           const person = personMap.get(note.relatedPersonId);
-          if (!settings.includeSensitiveInSearch && person && isSensitive(person, "people")) return false;
+          if (!ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH && person && isSensitive(person, "people")) return false;
           return matches([person?.name, note.noteType, note.content]);
         })
         .map(note => {
@@ -7826,7 +7822,7 @@
           const relatedPrayer = prayerMap.get(task.relatedPrayerRequestId);
           const person = personMap.get(task.relatedPersonId);
           const sensitive = isSensitive(task, "tasks") || isSensitive(relatedPrayer, "prayerRequests") || isSensitive(person, "people");
-          if (!settings.includeSensitiveInSearch && sensitive) return false;
+          if (!ROLLBACK_INCLUDE_SENSITIVE_IN_SEARCH && sensitive) return false;
           return matches([person?.name, task.title, task.status, task.sourceType]);
         })
         .map(task => {
@@ -11838,8 +11834,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	            <div class="surface">
 	              <h2 class="section-title">Privacy And Prayer</h2>
               <div class="settings-list" style="margin-top:12px;">
-                ${settingToggle("maskSensitivePreviews", "Mask Sensitive Previews", "Hide sensitive text in cards and search results.")}
-                ${settingToggle("includeSensitiveInSearch", "Include Sensitive Items In Search", "Allow sensitive notes and prayer requests to appear in search results.")}
+                ${lockedSettingRow("Classified Preview Concealment", "Locked On", "This rollback build always hides classified text in cards, review surfaces, and search results.")}
+                ${lockedSettingRow("Sensitive Search", "Locked Off", "This rollback build excludes sensitive items from search while preserving their stored data.")}
                 ${settingToggle("showArchivedOnProfiles", "Show Archived Prayer On Profiles", "Keep archived prayer requests visible in person profiles and timelines.")}
                 ${settingToggle("includeArchivedInSearch", "Include Archived Items In Search", "Let archived prayer requests and Quick Grabs appear in search.")}
                 ${settingSelect("autoArchiveAnsweredDays", "Auto-Archive Answered Prayer", [["never", "Never"], ["7", "After 7 days"], ["30", "After 30 days"]], "Move answered prayer requests into the archive after a resting period.")}
@@ -13962,8 +13958,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       target.updatedAt = nowISO();
       if (sourceRecord && proposal) {
         proposal.aiPrivacyTier = "Do Not Send to AI";
-        proposal.contextPreview = "Sensitive context hidden until approval.";
-        proposal.rawInputPreview = "Sensitive input hidden until approval.";
         proposal.updatedAt = nowISO();
         proposal.warnings = Array.from(new Set([...(proposal.warnings || []), "Related source marked Do Not Send to AI."]));
       }
@@ -15023,6 +15017,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         render();
         return;
       }
+      if (key === "maskSensitivePreviews" || key === "includeSensitiveInSearch") {
+        showToast("Classified concealment is locked on in this rollback build.");
+        render();
+        return false;
+      }
       if (key === "quickGrabAiMode") {
         settings.quickGrabAiMode = value === "backendQuickGrab" ? "backendQuickGrab" : "localMock";
         showToast(settings.quickGrabAiMode === "backendQuickGrab" ? "Backend Quick Grab selected. The privacy gate still asks every time." : "Quick Grab AI set to Local Mock Only.");
@@ -15097,7 +15096,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return;
       }
       if (id === "tighten-sensitive-privacy") {
-        applyCoachSettings({ maskSensitivePreviews: true, includeSensitiveInSearch: false }, "Sensitive item privacy tightened.");
+        showToast("Classified concealment is already locked on in this rollback build.");
+        render();
         return;
       }
       if (id === "gentle-review-flow") {
