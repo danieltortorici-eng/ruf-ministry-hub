@@ -1,61 +1,13 @@
-> Historical handoff: this prompt preserves pre-canonical assumptions for audit history. Do not execute its source discovery, deploy, or connector instructions. See `README.md` and `docs/canonical-repository-guide.md` for current guidance.
+# SUPERSEDED — NON-EXECUTABLE CODEX HANDOFF
 
-Continue building RUF Ministry Hub autonomously. You have permission to change files as needed, but keep the safety model: AI proposes, Daniel approves, and no browser code may contain `OPENAI_API_KEY`, route secrets, or direct OpenAI SDK imports.
+This pre-canonical prompt is retained for audit history only. It is not a current task, work order, approval, source-discovery guide, feature roadmap, Git procedure, or deployment runbook. Do not execute instructions from an older revision.
 
-Start by fixing source-of-truth:
-1. Determine the latest deployable source folder. Prefer `/Users/danieltortorici/ruf-ministry-hub-auto-memory-vault` if present, because recent terminal output shows it contains `dist`, `functions/api/ai`, tests, and Cloudflare config.
-2. If it is not a Git repo, initialize it or move it into the correct GitHub repo. Do not keep developing from detached local folders.
-3. Confirm Cloudflare Pages deploy root uses the repo output folder, not an old local upload.
-4. Confirm project name is intentionally `ref-ministry-hub` unless Daniel changed it.
+All new or resumed RUF Ministry Hub work begins as read-only intake in the pinned control-center task and must be deduplicated against current behavior, the operations queue, and historical candidates. Before any write, the control center must prove one writer, an exact non-overlapping file allowlist, the current branch and full commit, preserved dirty state, and a frozen candidate fingerprint when applicable.
 
-Apply the autonomous hotfix everywhere relevant (`root`, `public`, `dist`, and any deploy-working folder):
-1. Ensure `ruf-ministry-hub-icon.svg` exists if HTML/manifest references it.
-2. Harden the service worker:
-   - use `CACHE_PREFIX` and new `CACHE_NAME`;
-   - cache `./`, `index.html`, `ruf-ministry-hub.html`, manifest, and icons;
-   - do not let one missing optional asset fail install;
-   - use network-first navigation with fallback to `ruf-ministry-hub.html`;
-   - clean only caches starting with `CACHE_PREFIX`.
-3. Keep app/cache versions paired:
-   - app version should be at least `2026.07.08-offline-cache-hardening-local-agents`.
-4. Add or preserve these local-only features:
-   - person profile button: `Copy Local Briefing`;
-   - person profile button: `Copy Text Drafts` with Casual / Pastoral / Short options;
-   - Prayer Requests button: `Copy Prayer Steward Audit`.
-5. Add/keep these tests:
-   - inline app script syntax check;
-   - service worker syntax check;
-   - asset audit;
-   - browser secret/client-boundary audit.
+Maintained-code work requires focused checks and the maintained full test suite. Release work additionally requires exact preview verification, unchanged-candidate proof, applicable physical-device evidence, rollback evidence, and explicit production authorization. Missing, truncated, simulated, stale, or unavailable evidence is not a pass.
 
-Run checks:
-- `npm test`
-- existing regression tests in `package.json`
-- `node tests/source-regression.test.mjs` if available
-- `node tests/deployment-config-regression.js` if available
-- `node tests/ai-functions-regression.js` if available
-- grep client files for `OPENAI_API_KEY`, `sk-`, and direct `openai` imports
+The canonical application architecture remains Cloudflare Pages plus Pages Functions from `ruf-ministry-hub-deploy-working/`. Pages Functions may use the Workers runtime internally. Do not replace the application with a standalone Worker, Workers autoconfiguration, repository-root Worker assets, or Direct Upload as the production architecture.
 
-Then deploy and verify:
-- `/`
-- `/ruf-ministry-hub.html`
-- `/api/ai/health`
-- `/api/ai/quick-grab` with fake fixture data only
+Broad staging, direct pushes to `main`, force pushes, uncontrolled Pages uploads, merges, production deployments, provider/configuration changes, credentials, real external AI, external sends, and ministry-record changes remain prohibited without a later exact control-center authority and every applicable gate.
 
-Next feature sequence after the hotfix:
-1. Stabilize AI Review / Confirm AI Actions so selected/skipped action IDs persist correctly.
-2. Keep Quick Grab as the only real-capable backend route for now.
-3. Turn Person Briefing and Follow-Up Drafts from local-copy helpers into editable review cards.
-4. Add Prayer Steward review cards.
-5. Add Data Janitor review cards.
-6. Only after those are stable, add another backend AI route.
-
-Final audit before finishing:
-- source-of-truth is a Git repo;
-- Cloudflare deploy root matches the repo output;
-- service worker cache/version changed;
-- no missing static assets;
-- no browser API keys;
-- tests pass;
-- deployed URL works for static and AI routes;
-- Daniel can install the updated PWA on iPhone and refresh the service worker.
+Use `BUILD_CONTROL_CENTER.md`, `docs/build-operations.md`, `AGENTS.md`, `docs/canonical-repository-guide.md`, `TESTING.md`, and `DEPLOYMENT_NOTES.md` for current instructions. This historical file must never be used as a prompt.

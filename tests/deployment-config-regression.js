@@ -130,6 +130,49 @@ function testWranglerGuardrail() {
   assert(!/"directory"\s*:\s*"\."/.test(wrangler), "root wrangler config does not publish repository root as assets");
 }
 
+function testDeploymentInstructionAuthority() {
+  const supersededInstructionPaths = [
+    "DEPLOY_TO_GITHUB_CLOUDFLARE_CODEX.md",
+    "CODEX_NEXT_PROMPT.md"
+  ];
+  const activeInstructionPaths = [
+    "AGENTS.md",
+    "README.md",
+    "DEPLOYMENT_NOTES.md",
+    "docs/build-operations.md",
+    "docs/canonical-repository-guide.md"
+  ];
+  const executableUnsafePatterns = [
+    /^git\s+add\s+(?:\.|-A)(?:\s|$)/i,
+    /^git\s+push(?:\s+\S+)*\s+main(?:\s|$)/i,
+    /^(?:npx\s+)?wrangler\s+deploy(?:\s|$)/i,
+    /^(?:npx\s+)?wrangler\s+pages\s+deploy(?:\s|$)/i
+  ];
+
+  function unsafeCommandLines(source) {
+    return source
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => executableUnsafePatterns.some(pattern => pattern.test(line)));
+  }
+
+  supersededInstructionPaths.forEach(relativePath => {
+    const source = read(relativePath);
+    assert(source.startsWith("# SUPERSEDED — NON-EXECUTABLE"), `${relativePath} is unmistakably superseded`);
+    assert(!/```(?:ba)?sh\b/i.test(source), `${relativePath} contains no executable shell block`);
+    assert(unsafeCommandLines(source).length === 0, `${relativePath} contains no executable unsafe deployment command`);
+  });
+
+  activeInstructionPaths.forEach(relativePath => {
+    if (!fs.existsSync(path.resolve(repoRoot, relativePath))) {
+      assert(relativePath === "docs/build-operations.md", `${relativePath} may be absent only from the pre-governance base`);
+      return;
+    }
+    const unsafeLines = unsafeCommandLines(read(relativePath));
+    assert(unsafeLines.length === 0, `${relativePath} contains no active broad-stage, direct-main, or Wrangler deploy command`);
+  });
+}
+
 function testProductionAiSafetyAssets() {
   const worker = read("cloudflare/ai-rate-limiter/worker.js");
   const limiterConfig = read("cloudflare/ai-rate-limiter/wrangler.jsonc");
@@ -216,6 +259,7 @@ function run() {
   testAiApprovalFixInDeploySource();
   testStaticSecurityHeaders();
   testWranglerGuardrail();
+  testDeploymentInstructionAuthority();
   testProductionAiSafetyAssets();
   testIgnoreGuardrails();
   testDeploymentNotes();
