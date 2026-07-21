@@ -12,7 +12,7 @@ From the repository root, run:
 npm test
 ```
 
-This runs app syntax checks for the compatibility root and canonical deploy v38; the asset, generated-output drift, and secret-boundary audits; both copies of the Pages Function syntax checks; the deploy service worker and AI rate-limiter Worker checks; the 15 maintained app/repository regression suites below; and the deterministic incident-response simulations.
+This runs app syntax checks for the compatibility root and canonical deploy v39; the asset, generated-output drift, and secret-boundary audits; both copies of the Pages Function syntax checks; the deploy service worker and AI rate-limiter Worker checks; the maintained app/repository regression suites below; and the deterministic incident-response simulations.
 
 The same command runs in `.github/workflows/ci.yml` for every pull request and push to `main`. The workflow uses read-only permissions, cancels superseded runs, and retains failure logs for 7 days.
 
@@ -113,7 +113,7 @@ RUF_HUB_APP_DIR="/path/to/ruf-ministry-hub-deploy" node tests/regression-harness
 - Physical iPhone/Safari download initiation, Files visibility, exported-file contents, passphrase recovery, preview headers/assets, provider state, and production behavior remain `NOT VERIFIED`. Automated success proves initiation only and must not be upgraded to file durability.
 - Calm OS removes redundant ADHD/Attention controls, and legacy Today visibility settings cannot fragment the fixed Today contract.
 - Autopilot next-step selection remains covered, and obsolete attention-preset code cannot mutate the fixed Today contract.
-- Core local actions for follow-ups, prayer status, tasks, exports, and privacy masking.
+- Core local actions for follow-ups, prayer status, tasks, exports, always-visible classified content in the unlocked app, and fail-closed outward privacy tiers.
 - Person profile quick actions for notes, meeting notes, prayer requests, follow-up tasks, profile edits, text draft copying, in-app quick-action sheets, edit-field sheets, create-person sheets, and prayer action sheets.
 - Data safety sheets for encrypted backup export, demo reset confirmation, and duplicate-person merge confirmation.
 - Security sheets for App Lock PIN setup/removal and Device Vault enable/disable.

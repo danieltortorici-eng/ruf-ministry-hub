@@ -16,6 +16,14 @@ The second release-candidate audit verified the 390px and 430px layout contracts
 
 The next preview candidate is app/package `2026.07.16-calm-os-core-v8` with cache `ruf-ministry-hub-v57-calm-os-core-v8`. Its source, preview, and physical evidence remain invalid until the bounded fix is frozen, tested, pushed through the sole release lane, deployed to the preview-only QA project, and rechecked.
 
+## `CALM-LOCAL-VISIBILITY-46` local v39 recheck
+
+- Local candidate identity: app/package `2026.07.20-calm-os-core-v39`, cache `ruf-ministry-hub-v88-calm-os-core-v39`. It is local-only and is not committed, previewed, provider-verified, production-verified, rollback-verified, or physical-device verified.
+- Exact-v38 preview evidence from Daniel: Safari and the saved Home Screen app displayed normally. A fictional new capture remained under **Waiting to be sorted** after Cancel, and **Mark item Do Not Send to AI** was not visible. Treat those as one manual display pass plus two observed Quick Capture failures; they do not transfer to v39.
+- With fictional text, press **Process** and confirm the sensitivity selector and **Mark item Do Not Send to AI** appear near the top, before the long context lists. Press header Close, footer Cancel, Escape, and the backdrop in separate attempts; each must delete only that newly typed transient capture, remove it from **Waiting to be sorted**, and create no proposal or structured record. A previously saved capture opened with **Process** must remain saved when its review is dismissed.
+- Repeat with **Normal**, **Private**, **Sensitive**, **Highly Sensitive**, and **Do Not Send to AI**. Confirm full local text and linked names remain visible in Capture, Today, Search, profiles, prayers, tasks, AI context review, Suggested updates, and final approval while the app is unlocked. Each classification label must remain visible. **Do Not Send to AI** must keep the capture local and visible while blocking any request.
+- Recheck in iPhone Safari and the installed Home Screen app, including largest Dynamic Type, VoiceOver, landscape, update-ready behavior, an offline reopen, and rollback. Automated and simulated-browser results do not prove any of those physical or deployed boundaries.
+
 ## `CALM-AUTO-MEMORY-38` local v38 strict snapshot recheck
 
 - Local candidate identity: app/package `2026.07.20-calm-os-core-v38`, cache `ruf-ministry-hub-v87-calm-os-core-v38`. It is local-only and is not committed, previewed, provider-verified, production-verified, rollback-verified, existing-real-vault verified, or physical-device verified. Use only a disposable origin, fictional records, and fictional neutral PINs/passphrases.

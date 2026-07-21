@@ -1738,7 +1738,7 @@
     window.addEventListener("keydown", revealSkipLinkForKeyboard, true);
 
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.20-calm-os-core-v38";
+    const APP_VERSION = "2026.07.20-calm-os-core-v39";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
@@ -1789,8 +1789,8 @@
       showAdvancedActions: false,
       promptMeAfterHours: "24",
       autoOpenQuickGrabReview: true,
-      maskSensitivePreviews: true,
-      includeSensitiveInSearch: false,
+      maskSensitivePreviews: false,
+      includeSensitiveInSearch: true,
       includeArchivedInSearch: true,
       showArchivedOnProfiles: true,
       autoArchiveAnsweredDays: "never",
@@ -2233,6 +2233,8 @@
       merged.todayRecommendationDeferrals = merged.todayRecommendationDeferrals && typeof merged.todayRecommendationDeferrals === "object" && !Array.isArray(merged.todayRecommendationDeferrals)
         ? merged.todayRecommendationDeferrals
         : {};
+      merged.maskSensitivePreviews = false;
+      merged.includeSensitiveInSearch = true;
       merged.aiEnabled = false;
       merged.aiMockMode = merged.aiMockMode !== false;
       merged.askBeforeAiEveryTime = true;
@@ -2240,7 +2242,7 @@
       merged.aiAllowHighlySensitive = merged.aiAllowHighlySensitive === true;
       merged.aiAllowDoNotSend = false;
       merged.aiDefaultContextScope = AI_CONTEXT_SCOPES.includes(merged.aiDefaultContextScope) ? merged.aiDefaultContextScope : "minimal";
-      merged.aiShowContextPreview = merged.aiShowContextPreview !== false;
+      merged.aiShowContextPreview = true;
       merged.aiLogProposals = merged.aiLogProposals !== false;
       merged.quickGrabAiMode = ["localMock", "backendQuickGrab"].includes(merged.quickGrabAiMode) ? merged.quickGrabAiMode : "localMock";
       return merged;
@@ -2423,15 +2425,11 @@
         sensitivityRisk: enumOrDefault(source.sensitivityRisk, AI_PROPOSAL_SENSITIVITY_RISKS, "none"),
         requiresReview: true,
         sendToAiApproved: source.sendToAiApproved === true,
-        contextPreview: ["medium", "high"].includes(enumOrDefault(source.sensitivityRisk, AI_PROPOSAL_SENSITIVITY_RISKS, "none"))
-          ? "Sensitive context hidden until approval."
-          : String(source.contextPreview || ""),
+        contextPreview: String(source.contextPreview || ""),
         proposedActions: Array.isArray(source.proposedActions) ? source.proposedActions.map(normalizeAiProposedAction) : [],
         warnings: Array.isArray(source.warnings) ? source.warnings.map(warning => String(warning)) : [],
         model: String(source.model || "mock"),
-        rawInputPreview: ["medium", "high"].includes(enumOrDefault(source.sensitivityRisk, AI_PROPOSAL_SENSITIVITY_RISKS, "none"))
-          ? "Sensitive input hidden until approval."
-          : String(source.rawInputPreview || ""),
+        rawInputPreview: String(source.rawInputPreview || ""),
         result: source.result ?? null
       };
     }
@@ -2451,8 +2449,6 @@
       }
       if (sourceTier !== "Normal" || ["medium", "high"].includes(proposal.sensitivityRisk)) {
         proposal.aiPrivacyTier = sourceTier !== "Normal" ? sourceTier : "Sensitive";
-        proposal.contextPreview = "Sensitive context hidden until approval.";
-        proposal.rawInputPreview = "Sensitive input hidden until approval.";
       }
       return proposal;
     }
@@ -2779,7 +2775,7 @@
    }
 
     function maskedText(isSensitive, hiddenText, visibleText) {
-      return settings.maskSensitivePreviews && isSensitive ? hiddenText : visibleText;
+      return visibleText;
     }
 
     function saveData() {
@@ -6671,12 +6667,8 @@
         if (bucket.length > MAX_TODAY_CANDIDATES_PER_TIER) bucket.length = MAX_TODAY_CANDIDATES_PER_TIER;
         candidatesByTier.set(recommendation.tier, bucket);
       };
-      const personDetail = person => aiPrivacyTierForRecord(person, "people") === "Normal"
-        ? String(person.followUpReason || "A follow-up is ready.")
-        : "Sensitive care detail hidden.";
-      const personLabel = (person, fallback = "this person") => recordIsSensitive(person, "people")
-        ? "a private person"
-        : String(person?.name || fallback);
+      const personDetail = person => String(person.followUpReason || "A follow-up is ready.");
+      const personLabel = (person, fallback = "this person") => String(person?.name || fallback);
 
       people.forEach(person => {
         if (!personIsActive(person)) return;
@@ -6707,8 +6699,7 @@
         const relatedPrayer = prayerMap.get(task.relatedPrayerRequestId);
         const person = personMap.get(task.relatedPersonId);
         if (person && !personIsActive(person)) return;
-        const sensitive = recordIsSensitive(relatedPrayer, "prayerRequests") || recordIsSensitive(task, "tasks") || recordIsSensitive(person, "people");
-        const taskPersonLabel = person && recordIsSensitive(person, "people") ? "a private person" : person?.name;
+        const taskPersonLabel = person?.name;
         add({
           id: `task-due:${task.id}`,
           tier: 3,
@@ -6719,8 +6710,8 @@
           personId: person?.id || "",
           subjectKey: person?.id ? `person:${person.id}` : `task:${task.id}`,
           sortDate: task.dueDate,
-          title: sensitive ? "Complete a sensitive follow-up" : String(task.title || "Complete this follow-up"),
-          detail: sensitive ? "Sensitive follow-up detail hidden." : (taskPersonLabel ? `For ${taskPersonLabel}` : "A concrete follow-up is ready."),
+          title: String(task.title || "Complete this follow-up"),
+          detail: taskPersonLabel ? `For ${taskPersonLabel}` : "A concrete follow-up is ready.",
           dateText: formatDueDate(task.dueDate, reference),
           proactive: false
         });
@@ -6733,7 +6724,6 @@
         if (capture.urgency !== "Important" && capture.urgency !== "Today" && (dueDelta === null || dueDelta > 0)) return;
         prioritizedCaptureIds.add(capture.id);
         const person = personMap.get(capture.relatedPersonId);
-        const sensitive = recordIsSensitive(capture, "quickGrabs") || recordIsSensitive(person, "people");
         add({
           id: `capture-due:${capture.id}`,
           tier: 4,
@@ -6745,7 +6735,7 @@
           subjectKey: `capture:${capture.id}`,
           sortDate: capture.remindAt || capture.createdAt,
           title: "Process this capture",
-          detail: sensitive ? "Sensitive capture hidden." : String(capture.rawContent || "Unprocessed capture"),
+          detail: String(capture.rawContent || "Unprocessed capture"),
           dateText: dueDelta !== null && dueDelta <= 0 ? "Ready today" : "Important",
           proactive: false
         });
@@ -6758,7 +6748,6 @@
         if (delta === null || delta > 0) return;
         const person = personMap.get(prayer.relatedPersonId);
         if (person && !personIsActive(person)) return;
-        const sensitive = recordIsSensitive(prayer, "prayerRequests") || recordIsSensitive(person, "people");
         add({
           id: `prayer-follow-up:${prayer.id}`,
           tier: 5,
@@ -6769,8 +6758,8 @@
           personId: person?.id || "",
           subjectKey: person?.id ? `person:${person.id}` : `prayer:${prayer.id}`,
           sortDate: prayer.followUpDate,
-          title: sensitive ? "Follow up on a private prayer request" : (person ? `Follow up on prayer with ${personLabel(person)}` : "Follow up on a prayer request"),
-          detail: sensitive ? "Sensitive prayer concern hidden." : String(prayer.request || "Prayer follow-up is ready."),
+          title: person ? `Follow up on prayer with ${personLabel(person)}` : "Follow up on a prayer request",
+          detail: String(prayer.request || "Prayer follow-up is ready."),
           dateText: formatFollowUpDate(prayer.followUpDate, reference),
           proactive: false
         });
@@ -6803,7 +6792,6 @@
         .filter(capture => recordSnoozeIsDue(capture, reference))
         .forEach(capture => {
           const person = personMap.get(capture.relatedPersonId);
-          const sensitive = recordIsSensitive(capture, "quickGrabs") || recordIsSensitive(person, "people");
           add({
             id: `capture-oldest:${capture.id}`,
             tier: 7,
@@ -6815,7 +6803,7 @@
             subjectKey: `capture:${capture.id}`,
             sortDate: capture.createdAt,
             title: "Sort one saved thought",
-            detail: sensitive ? "Sensitive capture hidden." : String(capture.rawContent || "Unprocessed capture"),
+            detail: String(capture.rawContent || "Unprocessed capture"),
             dateText: formatHistoryDate(capture.createdAt, "Captured", reference),
             proactive: false
           });
@@ -7340,17 +7328,6 @@
         });
       }
 
-      if (sensitiveCount > 0 && (!settings.maskSensitivePreviews || settings.includeSensitiveInSearch)) {
-        addCoachSuggestion(suggestions, {
-          id: "tighten-sensitive-privacy",
-          kind: "Privacy",
-          title: "Tighten sensitive item privacy",
-          detail: "Sensitive previews or sensitive search results are currently more visible.",
-          reason: "Masking sensitive previews keeps shoulder-glance moments safer on a phone.",
-          primaryLabel: "Tighten Privacy"
-        });
-      }
-
       if (openItems.length >= thresholds.openGrabs || promptItems.length >= thresholds.promptItems) {
         addCoachSuggestion(suggestions, {
           id: "gentle-review-flow",
@@ -7530,7 +7507,7 @@
     function renderCaptureWaitingRow(grab) {
       const person = personById(grab.relatedPersonId);
       const sensitive = recordIsSensitive(grab, "quickGrabs") || (person && recordIsSensitive(person, "people"));
-      const personLabel = sensitive ? "Private person" : person?.name;
+      const personLabel = person?.name;
       const preview = conciseText(maskedText(sensitive, "Sensitive capture hidden.", grab.rawContent), 160);
       return `
         <article class="calm-list-row">
@@ -7604,7 +7581,7 @@
     function renderQuickGrabCard(grab, mode = "full") {
       const person = personById(grab.relatedPersonId);
       const sensitive = recordIsSensitive(grab, "quickGrabs") || (person && recordIsSensitive(person, "people"));
-      const personLabel = sensitive ? "Private person" : person?.name;
+      const personLabel = person?.name;
       const sensitivePreview = conciseText(maskedText(sensitive, "Sensitive grabbed item - tap to view.", grab.rawContent), 180);
       const expanded = view.expandedQuickGrabIds.includes(grab.id);
       const showActions = mode !== "summary";
@@ -7716,9 +7693,8 @@
       const prayerMap = new Map(db.prayerRequests.map(prayer => [prayer.id, prayer]));
       const people = db.people
         .filter(person => {
-          if (!settings.includeSensitiveInSearch && isSensitive(person, "people")) return false;
           const safeFields = [person.name, person.personType, person.status, person.careLevel, person.phone, person.email, person.classYear, person.fraternitySorority, person.major, person.hometown, person.rufInvolvement, person.donorStatus];
-          return matches(settings.includeSensitiveInSearch ? [...safeFields, person.followUpReason] : safeFields);
+          return matches([...safeFields, person.followUpReason]);
         })
         .map(person => {
           const sensitive = isSensitive(person, "people");
@@ -7737,7 +7713,6 @@
           const person = personMap.get(grab.relatedPersonId);
           const sensitive = isSensitive(grab, "quickGrabs") || isSensitive(person, "people");
           if (!settings.includeArchivedInSearch && grab.status === "Archived") return false;
-          if (!settings.includeSensitiveInSearch && sensitive) return false;
           return matches([grab.rawContent, grab.detectedPersonName, grab.detectedPrayerRequest, grab.detectedFollowUp, grab.detectedMeetingSummary, grab.category, grab.status, grab.urgency]);
         })
         .map(grab => {
@@ -7756,9 +7731,7 @@
       const prayers = db.prayerRequests
         .filter(prayer => {
           if (!settings.includeArchivedInSearch && prayer.status === "Archived") return false;
-          if (!settings.includeSensitiveInSearch && isSensitive(prayer, "prayerRequests")) return false;
           const person = personMap.get(prayer.relatedPersonId);
-          if (!settings.includeSensitiveInSearch && person && isSensitive(person, "people")) return false;
           return matches([person?.name, prayer.request, prayer.status, prayer.sensitivityLevel, prayer.shareableStatus, prayer.answeredNote]);
         })
         .map(prayer => {
@@ -7766,7 +7739,7 @@
           const sensitive = isSensitive(prayer, "prayerRequests") || isSensitive(person, "people");
           return {
             kind: "Prayer Request",
-            title: sensitive ? "Private person" : (person ? person.name : "Unlinked person"),
+            title: person ? person.name : "Unlinked person",
             meta: `${prayer.status} - ${dateLabel(prayer.dateAdded)}`,
             preview: maskedText(sensitive, "Sensitive prayer request - open related profile.", prayer.request),
             personId: prayer.relatedPersonId,
@@ -7779,9 +7752,7 @@
         });
       const meetings = db.meetingNotes
         .filter(meeting => {
-          if (!settings.includeSensitiveInSearch && isSensitive(meeting, "meetingNotes")) return false;
           const person = personMap.get(meeting.relatedPersonId);
-          if (!settings.includeSensitiveInSearch && person && isSensitive(person, "people")) return false;
           return matches([person?.name, meeting.meetingType, meeting.location, meeting.whatWeTalkedAbout, meeting.whatToRemember, meeting.prayerRequestText, meeting.nextFaithfulStep]);
         })
         .map(meeting => {
@@ -7789,7 +7760,7 @@
           const sensitive = isSensitive(meeting, "meetingNotes") || isSensitive(person, "people");
           return {
             kind: "Meeting Note",
-            title: sensitive ? "Private meeting note" : `${meeting.meetingType} meeting${person ? " with " + person.name : ""}`,
+            title: `${meeting.meetingType} meeting${person ? " with " + person.name : ""}`,
             meta: dateLabel(meeting.meetingDate),
             preview: maskedText(sensitive, "Sensitive meeting note - open related profile.", meeting.whatWeTalkedAbout),
             personId: meeting.relatedPersonId,
@@ -7801,9 +7772,7 @@
         });
       const notes = db.notes
         .filter(note => {
-          if (!settings.includeSensitiveInSearch && isSensitive(note, "notes")) return false;
           const person = personMap.get(note.relatedPersonId);
-          if (!settings.includeSensitiveInSearch && person && isSensitive(person, "people")) return false;
           return matches([person?.name, note.noteType, note.content]);
         })
         .map(note => {
@@ -7811,7 +7780,7 @@
           const sensitive = isSensitive(note, "notes") || isSensitive(person, "people");
           return {
             kind: "Note",
-            title: sensitive ? "Private note" : `${note.noteType}${person ? " - " + person.name : ""}`,
+            title: `${note.noteType}${person ? " - " + person.name : ""}`,
             meta: dateLabel(note.noteDate),
             preview: maskedText(sensitive, "Sensitive note - open related profile.", note.content),
             personId: note.relatedPersonId,
@@ -7826,7 +7795,6 @@
           const relatedPrayer = prayerMap.get(task.relatedPrayerRequestId);
           const person = personMap.get(task.relatedPersonId);
           const sensitive = isSensitive(task, "tasks") || isSensitive(relatedPrayer, "prayerRequests") || isSensitive(person, "people");
-          if (!settings.includeSensitiveInSearch && sensitive) return false;
           return matches([person?.name, task.title, task.status, task.sourceType]);
         })
         .map(task => {
@@ -7996,7 +7964,7 @@
       const warning = aiContextWarningForTier(tier, label);
       if (warning) context.warnings.push(warning);
       if (!aiRecordAllowedInContext(record, collection)) {
-        context.notUsed.push({ ...item, summary: `${aiContextBlockReason(tier)} Sensitive details remain hidden.` });
+        context.notUsed.push({ ...item, summary: `${aiContextBlockReason(tier)} Local preview: ${item.summary || "No preview available."}` });
         return;
       }
       if (["Private", "Sensitive", "Highly Sensitive"].includes(tier)) {
@@ -9337,8 +9305,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       };
       context.used.push({ label: "Current AI mode", tier: "Normal", summary: quickGrabBackendModeEnabled() ? "Backend Quick Grab is selected. The browser calls only /api/ai/quick-grab after approval." : "Local Mock Only is selected. No data leaves this browser." });
       if (blockedPeople.length) {
-        context.notUsed.push({ label: "One Quick Grab text", tier: "Do Not Send to AI", summary: "Blocked because linked or candidate person context is not approved. Sensitive details remain local." });
-        context.notUsed.push({ label: "Linked or candidate people", tier: "Do Not Send to AI", summary: "Sensitive person context hidden." });
+        context.notUsed.push({ label: "One Quick Grab text", tier: "Do Not Send to AI", summary: `Blocked because linked or candidate person context is not approved. Local preview: ${String(grab.rawContent || "Quick Grab").slice(0, 280)}` });
+        context.notUsed.push({ label: "Linked or candidate people", tier: "Do Not Send to AI", summary: blockedPeople.map(person => `${person.name} (${person.id})`).join(", ") });
         context.blocked = true;
         return context;
       }
@@ -9382,7 +9350,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return buildAiContextReview(null);
     }
 
-    function renderAiContextList(items, emptyText, hideSensitive = false) {
+    function renderAiContextList(items, emptyText) {
       if (!items.length) return `<div class="meta">${escapeHtml(emptyText)}</div>`;
       return `
         <div class="settings-list">
@@ -9392,7 +9360,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                 <strong>${escapeHtml(item.label)}</strong>
                 <span class="pill ${aiPrivacyTierTone(item.tier)}">${escapeHtml(item.tier)}</span>
               </div>
-              ${settings.aiShowContextPreview ? `<div class="meta">${escapeHtml(hideSensitive && item.tier !== "Normal" ? "Sensitive context hidden." : (item.summary || "No preview available."))}</div>` : `<div class="meta">Preview hidden by AI privacy setting.</div>`}
+              <div class="meta">${escapeHtml(item.summary || "No preview available.")}</div>
             </div>
           `).join("")}
         </div>
@@ -9431,15 +9399,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
-    function renderAiProposalResultDetails(proposal, sensitive = false) {
-      if (sensitive && proposal?.result) {
-        return `
-          <div class="notice sensitive">
-            <strong>Suggested result details hidden.</strong>
-            <div class="meta">Review the approved source and selected actions before saving sensitive details.</div>
-          </div>
-        `;
-      }
+    function renderAiProposalResultDetails(proposal) {
       return [
         renderAiBriefingResult(proposal),
         renderAiFollowUpDraftResult(proposal),
@@ -9457,11 +9417,16 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const sourceRecord = aiProposalSourceRecord(proposal);
       const sourceTier = sourceRecord ? aiPrivacyTierForRecord(sourceRecord, aiSourceCollectionForProposal(proposal)) : aiPrivacyTierForRecord(proposal, "aiProposals");
       const sensitiveProposal = aiProposalDisplaySensitive(proposal);
-      const contextPreview = maskedText(sensitiveProposal, "Sensitive context hidden. Review the approved source to continue.", proposal.contextPreview);
-      const rawInputPreview = maskedText(sensitiveProposal, "Sensitive input hidden. Review the approved source to continue.", proposal.rawInputPreview);
-      const displayTitle = sensitiveProposal ? "Sensitive suggested updates" : (proposal.title || "Untitled suggestion");
-      const displayProposalSummary = sensitiveProposal ? "Sensitive proposal details are hidden until you review the approved source." : (proposal.summary || "Review this suggestion before deciding what to do with it.");
-      const displayWarnings = sensitiveProposal && warnings.length ? ["Sensitive warning details hidden."] : warnings;
+      const sourcePreview = sourceRecord ? aiRecordPreview(sourceRecord, aiSourceCollectionForProposal(proposal)) : "";
+      const contextPreview = proposal.contextPreview === "Sensitive context hidden until approval." && sourcePreview
+        ? sourcePreview
+        : proposal.contextPreview;
+      const rawInputPreview = proposal.rawInputPreview === "Sensitive input hidden until approval." && sourcePreview
+        ? sourcePreview
+        : proposal.rawInputPreview;
+      const displayTitle = proposal.title || "Untitled suggestion";
+      const displayProposalSummary = proposal.summary || "Review this suggestion before deciding what to do with it.";
+      const displayWarnings = warnings;
       const canOpenSource = aiProposalCanOpenSource(proposal);
       const focused = view.aiReviewFocusId === proposal.id;
       const canExecute = aiProposalCanExecute(proposal);
@@ -9494,7 +9459,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           <div class="meta">Source: ${escapeHtml(sourceLabel)}</div>
           ${contextPreview ? `<p class="item-preview"><strong>Context:</strong> ${escapeHtml(conciseText(contextPreview, 240))}</p>` : ""}
           ${rawInputPreview ? `<p class="item-preview"><strong>Input preview:</strong> ${escapeHtml(conciseText(rawInputPreview, 360))}</p>` : ""}
-          ${renderAiProposalResultDetails(proposal, sensitiveProposal)}
+          ${renderAiProposalResultDetails(proposal)}
           <div class="field">
             <div class="field-label">Warnings</div>
             ${displayWarnings.length ? `<div class="settings-list">${displayWarnings.map(warning => `<div class="notice danger">${escapeHtml(warning)}</div>`).join("")}</div>` : `<div class="meta">No warnings attached.</div>`}
@@ -9711,9 +9676,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
     }
 
     function aiActionDisplaySummary(proposal, action) {
-      const sourceRecord = aiProposalSourceRecord(proposal);
-      const sourceTier = sourceRecord ? aiPrivacyTierForRecord(sourceRecord, aiSourceCollectionForProposal(proposal)) : aiPrivacyTierForRecord(proposal, "aiProposals");
-      if (sourceTier !== "Normal" || ["medium", "high"].includes(proposal?.sensitivityRisk)) return "Sensitive proposed update hidden.";
       return aiActionSummary(action);
     }
 
@@ -9894,20 +9856,18 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const selected = validation.selected || [];
       const proposalWarnings = Array.isArray(proposal.warnings) ? proposal.warnings : [];
       const sensitiveProposal = aiProposalDisplaySensitive(proposal);
-      const displayProposalTitle = sensitiveProposal ? "Sensitive suggested updates" : (proposal.title || "Untitled suggestion");
-      const displayProposalSummary = sensitiveProposal ? "Sensitive proposal details are hidden until final approval." : (proposal.summary || "Review this suggestion before saving selected actions.");
+      const displayProposalTitle = proposal.title || "Untitled suggestion";
+      const displayProposalSummary = proposal.summary || "Review this suggestion before saving selected actions.";
       const visibleErrors = Array.from(new Set([...(validation.errors || []), ...((state.validationErrors || []).filter(Boolean))]));
-      const displayProposalWarnings = sensitiveProposal && proposalWarnings.length ? ["Sensitive warning details hidden."] : proposalWarnings;
+      const displayProposalWarnings = proposalWarnings;
       const rawWarnings = [...displayProposalWarnings, ...(validation.warnings || []), ...((state.validationWarnings || []).filter(Boolean))];
-      const visibleWarnings = sensitiveProposal && rawWarnings.length
-        ? ["Sensitive warning details hidden."]
-        : Array.from(new Set(rawWarnings));
+      const visibleWarnings = Array.from(new Set(rawWarnings));
       const needsPersonChoice = selected.some(item => aiActionNeedsPerson(item.action) || aiActionType(item.action) === "createNote")
         || validation.needsPersonResolution
         || validation.willCreatePerson
         || validation.personResolutionErrors.length;
       const suggestedName = validation.newPersonName || validation.suggestedPersonName || "";
-      const duplicateNames = sensitiveProposal ? "Sensitive person details hidden" : validation.duplicatePeople.map(person => person.name).join(", ");
+      const duplicateNames = validation.duplicatePeople.map(person => person.name).join(", ");
       const selectedPersonId = personChoice.existingPersonId || validation.existingPersonId || "";
       const saving = Boolean(view.aiConfirmSaving);
       const peopleOptions = db.people
@@ -10973,7 +10933,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       render();
     }
 
-    function openQuickGrabMockAiGate(grabId) {
+    function openQuickGrabMockAiGate(grabId, options = {}) {
       const grab = db.quickGrabs.find(item => item.id === grabId);
       if (!grab) {
         showToast("That Quick Grab is no longer available.");
@@ -10984,9 +10944,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         sourceType: "quickGrab",
         sourceId: grabId,
         nextAction: "quickGrabParse",
-        intentLabel: quickGrabBackendModeEnabled() ? "Quick Grab text for backend parsing" : "Quick Grab text for mock parsing"
+        intentLabel: quickGrabBackendModeEnabled() ? "Quick Grab text for backend parsing" : "Quick Grab text for mock parsing",
+        deleteOnCancel: options.deleteOnCancel === true,
+        cancelUndoId: String(options.cancelUndoId || "")
       };
-      render();
+      render(options.deleteOnCancel === true ? { mutationEffects: false } : {});
     }
 
     function renderSnooze() {
@@ -11575,7 +11537,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const person = personById(prayer.relatedPersonId);
       const sensitive = recordIsSensitive(prayer, "prayerRequests");
       const personSensitive = person && recordIsSensitive(person, "people");
-      const personLabel = sensitive || personSensitive ? "Private person" : (person ? person.name : "Unlinked person");
+      const personLabel = person ? person.name : "Unlinked person";
       const expanded = view.expandedPrayerIds.includes(prayer.id);
       return `
         <article class="item compact focus-card ${prayer.status === "Follow-Up Needed" ? "important" : ""}">
@@ -11602,7 +11564,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             ${prayer.status !== "Archived" && prayer.status !== "Answered" ? `<button class="button small" data-action="prayer-follow-date" data-id="${escapeHtml(prayer.id)}">Set Follow-Up Date</button>` : ""}
             ${prayer.status !== "Archived" && prayer.status !== "Answered" ? `<button class="button small" data-action="prayer-archive" data-id="${escapeHtml(prayer.id)}">Archive</button>` : ""}
             ${settings.inlineEditing && prayer.status !== "Archived" ? `<button class="button small" data-action="edit-record-field" data-collection="prayerRequests" data-field="request" data-label="Prayer request" data-id="${escapeHtml(prayer.id)}">Edit Request</button>` : ""}
-            ${person && !sensitive && !personSensitive && prayer.status !== "Archived" ? `<button class="button small" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Person Profile</button>` : ""}
+            ${person && prayer.status !== "Archived" ? `<button class="button small" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Person Profile</button>` : ""}
           </div>
         </article>
       `;
@@ -11663,8 +11625,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             ${visible.length ? `<div class="calm-list">${visible.map(task => {
               const person = personById(task.relatedPersonId);
               const sensitive = recordIsSensitive(task, "tasks") || recordIsSensitive(person, "people");
-              const title = sensitive ? "Sensitive waiting item" : String(task.title || "Waiting follow-up");
-              const owner = sensitive ? "Private person" : String(person?.name || "Unlinked person");
+              const title = String(task.title || "Waiting follow-up");
+              const owner = String(person?.name || "Unlinked person");
               return `<article class="calm-list-row" data-waiting-task-id="${escapeHtml(task.id)}"><div><strong>${escapeHtml(title)}</strong><div class="meta">${escapeHtml(owner)} · ${escapeHtml(waitingReviewDateText(task))}</div></div><span class="pill violet">Waiting</span></article>`;
             }).join("")}</div>` : `<div class="meta">No follow-ups are waiting on someone else.</div>`}
             ${waiting.length > visible.length ? `<div class="meta" style="margin-top:var(--space-3);">Showing ${visible.length} of ${waiting.length} waiting items.</div>` : ""}
@@ -11789,7 +11751,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	                ${settingToggle("aiAllowHighlySensitive", "Allow Highly Sensitive Context In Mock Gate", "Let Highly Sensitive records appear only when you intentionally turn this on.")}
 	                ${lockedSettingRow("Do Not Send to AI", "Never Allowed", "Records marked Do Not Send to AI are always excluded from AI context.")}
 	                ${lockedSettingRow("Default Context Scope", "Minimal", "Only the selected proposal and related source record are considered.")}
-	                ${settingToggle("aiShowContextPreview", "Show Context Preview", "Show the local text preview inside the gate before continuing.")}
+	                ${lockedSettingRow("AI review previews", "Always visible", "Full local context stays visible while the app is unlocked; privacy tiers still control whether it may be used by AI.")}
 	                ${settingToggle("aiLogProposals", "Keep AI Proposal Log", "Keep mock suggestions in the local AI Review inbox for audit and review.")}
 	              </div>
 	            </div>
@@ -11838,8 +11800,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	            <div class="surface">
 	              <h2 class="section-title">Privacy And Prayer</h2>
               <div class="settings-list" style="margin-top:12px;">
-                ${settingToggle("maskSensitivePreviews", "Mask Sensitive Previews", "Hide sensitive text in cards and search results.")}
-                ${settingToggle("includeSensitiveInSearch", "Include Sensitive Items In Search", "Allow sensitive notes and prayer requests to appear in search results.")}
+                ${lockedSettingRow("Sensitive content in unlocked app", "Visible", "Sensitivity labels remain visible, but local cards and detail screens show their full content.")}
+                ${lockedSettingRow("Sensitive items in search", "Included", "Search includes classified local records while the app is unlocked.")}
                 ${settingToggle("showArchivedOnProfiles", "Show Archived Prayer On Profiles", "Keep archived prayer requests visible in person profiles and timelines.")}
                 ${settingToggle("includeArchivedInSearch", "Include Archived Items In Search", "Let archived prayer requests and Quick Grabs appear in search.")}
                 ${settingSelect("autoArchiveAnsweredDays", "Auto-Archive Answered Prayer", [["never", "Never"], ["7", "After 7 days"], ["30", "After 30 days"]], "Move answered prayer requests into the archive after a resting period.")}
@@ -12310,7 +12272,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const relatedPrayer = db.prayerRequests.find(item => item.id === task.relatedPrayerRequestId);
       const sensitive = recordIsSensitive(task, "tasks") || recordIsSensitive(relatedPrayer, "prayerRequests");
       const personSensitive = person && recordIsSensitive(person, "people");
-      const personLabel = sensitive || personSensitive ? "Private person" : person?.name;
+      const personLabel = person?.name;
       return `
         <article class="item compact">
           <div class="item-title-row">
@@ -12327,7 +12289,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
           <div class="action-row">
             <button class="button small" data-action="task-done" data-id="${escapeHtml(task.id)}">Done</button>
             <button class="button small" data-action="followup-draft" data-source-type="followUpTask" data-id="${escapeHtml(task.id)}">Draft Follow-Up</button>
-            ${person && !sensitive && !personSensitive ? `<button class="button small primary" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Person Profile</button>` : ""}
+            ${person ? `<button class="button small primary" data-action="person-open" data-id="${escapeHtml(person.id)}">Open Person Profile</button>` : ""}
             ${settings.inlineEditing ? `<button class="button small" data-action="edit-record-field" data-collection="tasks" data-field="title" data-label="Task" data-id="${escapeHtml(task.id)}">Edit Task</button>` : ""}
           </div>
         </article>
@@ -12816,6 +12778,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const gateConfirmLabel = quickGrabAiGateConfirmLabel(sheet);
       const gateContinueLabel = quickGrabAiGateContinueLabel(sheet);
       const gateCanContinue = aiGateAllowsContinue(sheet);
+      const proposal = sheet?.proposalId ? aiProposalById(sheet.proposalId) : null;
+      const sourceRecord = proposal ? aiProposalSourceRecord(proposal) : aiSourceRecord(sheet?.sourceType, sheet?.sourceId);
+      const tierTarget = sourceRecord || proposal;
+      const selectedTier = tierTarget ? aiPrivacyTierForRecord(tierTarget, sourceRecord ? aiSourceCollectionForType(sheet?.sourceType) : "aiProposals") : "Normal";
+      const tierOptions = AI_PRIVACY_TIERS.map(tier => `<option value="${escapeHtml(tier)}" ${tier === selectedTier ? "selected" : ""}>${escapeHtml(tier)}</option>`).join("");
       return `
         <div class="sheet-backdrop" data-action="sheet-close">
           <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="ai-gate-sheet-title" data-sheet-panel>
@@ -12828,6 +12795,17 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             </div>
             <div class="sheet-form">
               <div class="notice secure">Ask every time is locked on. Current mode: ${escapeHtml(aiGateModeLabel(sheet))}. Review what would be used before continuing.</div>
+              ${canMarkDoNotSend ? `
+                <div class="field">
+                  <label for="sheet-ai-privacy-tier">Sensitivity</label>
+                  <select class="select" id="sheet-ai-privacy-tier">${tierOptions}</select>
+                  <div class="meta">This label stays with the local item and controls whether AI may use it; it does not hide the content from you.</div>
+                  <div class="action-row" style="margin-top:10px;">
+                    <button class="button" data-action="ai-gate-set-tier" data-id="${escapeHtml(targetId)}">Save sensitivity</button>
+                    <button class="button danger" data-action="ai-gate-do-not-send" data-id="${escapeHtml(targetId)}">Mark item Do Not Send to AI</button>
+                  </div>
+                </div>
+              ` : ""}
               ${blocked ? `<div class="notice danger">This item cannot continue because its AI privacy tier blocks context use.</div>` : ""}
               <div class="field">
                 <div class="field-label">What will be used</div>
@@ -12845,7 +12823,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
             </div>
             <div class="sheet-actions">
               <button class="button" data-action="sheet-close">Cancel</button>
-              ${canMarkDoNotSend ? `<button class="button danger" data-action="ai-gate-do-not-send" data-id="${escapeHtml(targetId)}">Mark item Do Not Send to AI</button>` : ""}
               <button class="button primary" data-action="ai-gate-continue" data-id="${escapeHtml(targetId)}" ${gateCanContinue && !blocked ? "" : "disabled"}>${escapeHtml(gateContinueLabel)}</button>
             </div>
           </section>
@@ -12859,8 +12836,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       const selected = validation.selected || [];
       const sourceQuickGrab = validation.sourceQuickGrab;
       const sensitiveProposal = aiProposalDisplaySensitive(proposal);
-      const duplicateNames = sensitiveProposal ? "Sensitive person details hidden" : validation.duplicatePeople.map(person => person.name).join(", ");
-      const visibleValidationWarnings = sensitiveProposal && validation.warnings.length ? ["Sensitive warning details hidden."] : validation.warnings;
+      const duplicateNames = validation.duplicatePeople.map(person => person.name).join(", ");
+      const visibleValidationWarnings = validation.warnings;
       const disabled = validation.errors.length ? "disabled" : "";
       return `
         <div class="sheet-backdrop" data-action="sheet-close">
@@ -13198,7 +13175,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     function renderCareFollowUpSavingSheet(sheet = {}) {
       const person = personById(sheet.personId);
-      const name = person && !recordIsSensitive(person, "people") ? person.name : "this person";
+      const name = person ? person.name : "this person";
       return `
         <div class="sheet-backdrop">
           <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="care-follow-up-saving-title" aria-busy="true" data-sheet-panel>
@@ -13228,7 +13205,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
               <button class="button quiet" data-action="sheet-close" aria-label="Close" ${disabled}>Close</button>
             </div>
             <div class="sheet-form">
-              <div class="notice"><strong>${escapeHtml(recordIsSensitive(person, "people") ? "Private person" : person.name)}</strong><div class="meta">Nothing changes until you save.</div></div>
+              <div class="notice"><strong>${escapeHtml(person.name)}</strong><div class="meta">Nothing changes until you save.</div></div>
               ${sheetField("Care cadence", `<select class="select" id="sheet-care-cadence" ${disabled}>${FOLLOW_UP_CADENCES.map(value => `<option value="${escapeHtml(value)}" ${value === cadence ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>`)}
               ${sheetField("Custom days", `<input class="input" id="sheet-care-custom-days" type="number" min="1" max="${MAX_FOLLOW_UP_CUSTOM_DAYS}" step="1" value="${escapeHtml(customDays)}" aria-describedby="sheet-care-custom-help" ${disabled}><div class="meta" id="sheet-care-custom-help">Used only when Care cadence is Custom days.</div>`)}
               ${sheetField("Next follow-up date", `<input class="input" id="sheet-care-next-date" type="date" value="${escapeHtml(suggestedDate)}" ${disabled}><div class="meta">You may change or clear the suggestion. No message or appointment is created.</div>`)}
@@ -13527,6 +13504,29 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         if (!options.force) return false;
         invalidateProtectedBackupExport();
       }
+      let closeMessage = "";
+      if (view.sheet?.type === "ai-gate" && view.sheet?.nextAction === "quickGrabParse") {
+        const sheet = view.sheet;
+        const grabIndex = db.quickGrabs.findIndex(item => item.id === sheet.sourceId);
+        if (sheet.deleteOnCancel === true) {
+          if (grabIndex >= 0) db.quickGrabs.splice(grabIndex, 1);
+          if (sheet.cancelUndoId) undoStack = undoStack.filter(entry => entry.id !== sheet.cancelUndoId);
+          if (view.quickGrabId === sheet.sourceId) view.quickGrabId = null;
+          closeMessage = "Capture deleted.";
+        } else if (grabIndex >= 0 && db.quickGrabs[grabIndex].processingState === "awaitingApproval") {
+          const beforeGrab = cloneJson(db.quickGrabs[grabIndex]);
+          db.quickGrabs[grabIndex].processingState = "unprocessed";
+          db.quickGrabs[grabIndex].processingError = "";
+          db.quickGrabs[grabIndex].updatedAt = nowISO();
+          try {
+            if (!saveData()) throw new Error("capture cancellation was not saved");
+          } catch (error) {
+            db.quickGrabs[grabIndex] = beforeGrab;
+            showToast("Could not close this review safely. Try again.", "error");
+            return false;
+          }
+        }
+      }
       const dictationTargetId = view.sheet?.type === "dictation" && view.sheet?.kind === "start"
         ? view.sheet.targetId
         : "";
@@ -13534,6 +13534,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (dictationTargetId) renderWithoutRestoringAutosaveTarget(dictationTargetId);
       else render(options.force ? { mutationEffects: false } : {});
       restoreSheetReturnFocus();
+      if (closeMessage) showToast(closeMessage);
       return true;
     }
 
@@ -13957,13 +13958,12 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return;
       }
       const target = sourceRecord || proposal;
-      recordUndo("AI privacy tier");
+      if (sheet.deleteOnCancel !== true) recordUndo("AI privacy tier");
       target.aiPrivacyTier = "Do Not Send to AI";
+      target.aiDoNotSendToAi = true;
       target.updatedAt = nowISO();
       if (sourceRecord && proposal) {
         proposal.aiPrivacyTier = "Do Not Send to AI";
-        proposal.contextPreview = "Sensitive context hidden until approval.";
-        proposal.rawInputPreview = "Sensitive input hidden until approval.";
         proposal.updatedAt = nowISO();
         proposal.warnings = Array.from(new Set([...(proposal.warnings || []), "Related source marked Do Not Send to AI."]));
       }
@@ -13971,6 +13971,39 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       view.sheet = null;
       showToast("Marked Do Not Send to AI.");
       render();
+    }
+
+    function setAiGatePrivacyTier() {
+      const sheet = view.sheet;
+      if (!sheet || sheet.type !== "ai-gate") return false;
+      const tier = document.getElementById("sheet-ai-privacy-tier")?.value || "";
+      if (!AI_PRIVACY_TIERS.includes(tier)) {
+        reportFieldError("sheet-ai-privacy-tier", "Choose a valid sensitivity level.");
+        return false;
+      }
+      const proposal = sheet.proposalId ? aiProposalById(sheet.proposalId) : null;
+      const sourceRecord = proposal ? aiProposalSourceRecord(proposal) : aiSourceRecord(sheet.sourceType, sheet.sourceId);
+      const target = sourceRecord || proposal;
+      if (!target) {
+        showToast("That AI suggestion is no longer available.");
+        return false;
+      }
+      if (tier === "Do Not Send to AI") {
+        markAiGateDoNotSend();
+        return true;
+      }
+      if (sheet.deleteOnCancel !== true) recordUndo("AI privacy tier");
+      target.aiPrivacyTier = tier;
+      target.aiDoNotSendToAi = tier === "Do Not Send to AI";
+      target.updatedAt = nowISO();
+      if (proposal && sourceRecord) {
+        proposal.aiPrivacyTier = tier;
+        proposal.updatedAt = nowISO();
+      }
+      if (sheet.deleteOnCancel !== true) saveData();
+      showToast(`Sensitivity set to ${tier}.`);
+      render(sheet.deleteOnCancel === true ? { mutationEffects: false } : {});
+      return true;
     }
 
     function updateAiProposalStatus(id, status, options = {}) {
@@ -14789,6 +14822,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         markAiGateDoNotSend();
         return;
       }
+      if (action === "ai-gate-set-tier") {
+        setAiGatePrivacyTier();
+        return;
+      }
       if (action === "ai-action-confirm-save") {
         submitAiActionConfirmSheet();
         return;
@@ -15096,10 +15133,6 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         enableLocalEncryption();
         return;
       }
-      if (id === "tighten-sensitive-privacy") {
-        applyCoachSettings({ maskSensitivePreviews: true, includeSensitiveInSearch: false }, "Sensitive item privacy tightened.");
-        return;
-      }
       if (id === "gentle-review-flow") {
         applyCoachSettings({ reviewBatchSize: "1", launchScreen: "quick" }, "Capture now opens as the one-card review starting point.");
         return;
@@ -15229,7 +15262,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return true;
     }
 
-    function beginCaptureProcessing(grabId) {
+    function beginCaptureProcessing(grabId, options = {}) {
       const grab = db.quickGrabs.find(item => item.id === grabId);
       if (!grab) {
         showToast("That capture is no longer available.");
@@ -15249,8 +15282,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       grab.processingError = "";
       grab.lastProcessingAttemptAt = nowISO();
       grab.updatedAt = nowISO();
-      saveData();
-      openQuickGrabMockAiGate(grab.id);
+      if (options.deleteOnCancel !== true) saveData();
+      openQuickGrabMockAiGate(grab.id, options);
       return true;
     }
 
@@ -15277,8 +15310,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       });
       grab.captureOrigin = source;
       recordUndo("capture");
+      const captureUndoId = undoStack[0]?.label === "capture" ? undoStack[0].id : "";
       db.quickGrabs.unshift(grab);
-      saveData();
+      if (mode !== "process") saveData();
       clearCaptureDraft(source, personId);
       view.quickGrabDraftText = "";
       view.quickGrabDraftSource = "";
@@ -15291,7 +15325,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       }
       if (textarea) textarea.value = "";
       if (mode === "process") {
-        beginCaptureProcessing(grab.id);
+        beginCaptureProcessing(grab.id, { deleteOnCancel: true, cancelUndoId: captureUndoId });
         return grab;
       }
       view.screen = source === "profile" ? "person" : source === "today" ? "today" : "quick";

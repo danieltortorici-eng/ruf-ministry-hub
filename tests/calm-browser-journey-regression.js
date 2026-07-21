@@ -1216,7 +1216,10 @@ async function runJourney(page, baseUrl, apiRequests, requestLog) {
   assert.equal(await page.evaluate("db.aiProposals.length"), beforeProcessProposals);
   assert.equal(page.consoleMessages.some(message => message.includes(fragmentCapture) || message.includes(processFragment)), false);
   await page.click('[data-action="sheet-close"]');
-  pass("fragment-only shared capture stays out of requests/logs, imports once, and waits for explicit save or privacy review");
+  await waitFor(() => page.evaluate(`view.sheet === null && !db.quickGrabs.some(grab => grab.rawContent === ${JSON.stringify(processFragment)})`), "canceled fragment Process deletion");
+  assert.equal(await page.evaluate(`db.quickGrabs.filter(grab => grab.rawContent === ${JSON.stringify(processFragment)}).length`), 0);
+  assert.equal(await page.evaluate("db.aiProposals.length"), beforeProcessProposals);
+  pass("fragment-only shared capture stays out of requests/logs, imports once, and Cancel deletes the transient Process capture");
 
   await page.click('.mobile-nav [data-action="nav"][data-screen="quick"]');
   assert.equal(await page.evaluate("Boolean(document.querySelector('[data-action=\"voice-capture\"]'))"), false, "dictation is absent until the current disclosure is explicitly accepted");
