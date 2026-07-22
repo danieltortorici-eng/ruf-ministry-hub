@@ -14,13 +14,19 @@ function assert(condition, label) {
 
 function loadPagesFunction(relativePath, overrides = {}) {
   const filePath = path.resolve(appDir, relativePath);
-  const source = fs.readFileSync(filePath, "utf8");
+  let source = fs.readFileSync(filePath, "utf8");
   const exportNames = Array.from(source.matchAll(/export\s+(?:async\s+)?function\s+([A-Za-z0-9_]+)/g)).map(match => match[1]);
-  const runnable = source.replace(/export\s+/g, "");
+  let policySource = "";
+  if (source.includes("./quick-grab-pilot-policy.js")) {
+    policySource = fs.readFileSync(path.resolve(appDir, "functions/api/ai/quick-grab-pilot-policy.js"), "utf8").replace(/export\s+/g, "");
+    source = source.replace(/import\s*\{[\s\S]*?\}\s*from\s*"\.\/quick-grab-pilot-policy\.js";\s*/, "");
+  }
+  const runnable = `${policySource}\n${source.replace(/export\s+/g, "")}`;
   const context = {
     console,
     Request,
     Response,
+    URL,
     TextEncoder,
     TextDecoder,
     AbortController,
@@ -112,6 +118,8 @@ async function testHealthEndpoint() {
   assert(mock.model === "gpt-5.6", "health endpoint reports default GPT-5.6 model");
   assert(mock.reasoningEffort === "low", "health endpoint reports default reasoning effort");
   assert(mock.storedServerSide === false, "health endpoint reports no server-side storage");
+  assert(mock.fictionalQuickGrabPilot.defaultOff === true, "health endpoint reports fictional pilot default off");
+  assert(mock.fictionalQuickGrabPilot.mutatesRecords === false, "health endpoint reports fictional pilot cannot mutate records");
 
   const realResponse = await health.onRequestGet({
     env: realEnv({
@@ -691,7 +699,8 @@ function testNoApiKeyInFrontendOrRepo() {
 function testRootAndDeployFunctionCopiesMatch() {
   [
     "functions/api/ai/health.js",
-    "functions/api/ai/quick-grab.js"
+    "functions/api/ai/quick-grab.js",
+    "functions/api/ai/quick-grab-pilot-policy.js"
   ].forEach(relativePath => {
     const rootSource = fs.readFileSync(path.resolve(repoRoot, relativePath), "utf8");
     const deploySource = fs.readFileSync(path.resolve(appDir, relativePath), "utf8");

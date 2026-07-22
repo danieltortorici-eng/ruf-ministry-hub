@@ -64,6 +64,7 @@ function testPagesFunctionRoutesExist() {
   const fallback = read(fallbackPath);
   const nestedFallback = read(nestedFallbackPath);
   const middleware = read(middlewarePath);
+  const policyPath = "ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab-pilot-policy.js";
   assert(fs.existsSync(path.resolve(repoRoot, healthPath)), `${healthPath} exists`);
   assert(fs.existsSync(path.resolve(repoRoot, quickGrabPath)), `${quickGrabPath} exists`);
   assert(/export\s+async\s+function\s+onRequestGet/.test(health), "health endpoint is a Pages Function GET handler");
@@ -71,11 +72,26 @@ function testPagesFunctionRoutesExist() {
   assert(fs.existsSync(path.resolve(repoRoot, fallbackPath)), `${fallbackPath} exists`);
   assert(fs.existsSync(path.resolve(repoRoot, nestedFallbackPath)), `${nestedFallbackPath} exists`);
   assert(fs.existsSync(path.resolve(repoRoot, middlewarePath)), `${middlewarePath} exists`);
+  assert(fs.existsSync(path.resolve(repoRoot, policyPath)), `${policyPath} exists`);
   assert(/export\s+function\s+onRequest/.test(fallback), "unknown API routes have a Pages Function catch-all handler");
   assert(/export\s+function\s+onRequest/.test(nestedFallback), "unknown nested AI routes have a Pages Function catch-all handler");
   assert(fallback.includes('status: 404') && fallback.includes('"Cache-Control": "no-store"'), "unknown API routes fail closed without caching");
   assert(nestedFallback.includes('status: 404') && nestedFallback.includes('"Cache-Control": "no-store"'), "unknown nested AI routes fail closed without caching");
   assert(middleware.includes('method_not_allowed') && middleware.includes('return next()'), "AI middleware allows only named route and method combinations");
+}
+
+function testFictionalQuickGrabPilotConfig() {
+  const config = read("cloudflare/ai-rate-limiter/wrangler.pilot.jsonc");
+  const worker = read("cloudflare/ai-rate-limiter/worker.js");
+  const rootPolicy = read("functions/api/ai/quick-grab-pilot-policy.js");
+  const deployPolicy = read("ruf-ministry-hub-deploy-working/functions/api/ai/quick-grab-pilot-policy.js");
+  assert(rootPolicy === deployPolicy, "fictional pilot policy mirror is byte-for-byte identical");
+  assert(config.includes('"workers_dev": false'), "fictional pilot limiter has no workers.dev route");
+  assert(!/"routes?"\s*:/.test(config), "fictional pilot limiter declares no route");
+  assert(config.includes('"observability": { "enabled": false }'), "fictional pilot limiter disables provider logging");
+  assert(!/"vars"\s*:|"secrets"\s*:/.test(config), "fictional pilot limiter config contains no variables or secrets");
+  assert(worker.includes("issuePilotGrant") && worker.includes("consumePilotGrantAndReserve"), "fictional pilot limiter provides approval and budget RPC methods");
+  assert(worker.includes('return json({ ok: false, error: "not_found" }, 404)'), "fictional pilot limiter public handler remains 404");
 }
 
 function assertAiApprovalFix(relativePath) {
@@ -240,6 +256,7 @@ function run() {
   testIgnoreGuardrails();
   testDeploymentNotes();
   testCanonicalDocumentation();
+  testFictionalQuickGrabPilotConfig();
   console.log("All deployment config regression checks passed.");
 }
 

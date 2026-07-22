@@ -1,3 +1,5 @@
+import { QUICK_GRAB_PILOT_POLICY, quickGrabPilotConfiguration } from "./quick-grab-pilot-policy.js";
+
 const DEFAULT_MODEL = "gpt-5.6";
 const DEFAULT_REASONING_EFFORT = "low";
 
@@ -11,7 +13,7 @@ function json(payload, status = 200) {
   });
 }
 
-export async function onRequestGet({ env = {} }) {
+export async function onRequestGet({ request = new Request("https://invalid.example"), env = {} }) {
   const hasOpenAIKey = Boolean(env.OPENAI_API_KEY);
   const mockRequested = env.AI_MOCK_MODE !== "false";
   const tokenProtected = Boolean(env.RUF_HUB_AI_ACCESS_TOKEN);
@@ -26,6 +28,8 @@ export async function onRequestGet({ env = {} }) {
   const configurationIssues = [];
   if (realModeRequested && !authenticationConfigured) configurationIssues.push("authentication_not_configured");
   if (realModeRequested && !durableRateLimitConfigured) configurationIssues.push("rate_limit_not_configured");
+  const pilotConfiguration = quickGrabPilotConfiguration(request, env);
+  const pilotReady = pilotConfiguration.available && accessProtected && durableRateLimitConfigured && hasOpenAIKey;
 
   return json({
     ok: effectiveMode !== "blocked",
@@ -43,7 +47,18 @@ export async function onRequestGet({ env = {} }) {
     configurationIssues,
     model: env.OPENAI_MODEL || DEFAULT_MODEL,
     reasoningEffort: env.OPENAI_REASONING_EFFORT || DEFAULT_REASONING_EFFORT,
-    storedServerSide: false
+    storedServerSide: false,
+    fictionalQuickGrabPilot: {
+      policyVersion: QUICK_GRAB_PILOT_POLICY.version,
+      model: QUICK_GRAB_PILOT_POLICY.model,
+      defaultOff: true,
+      availableOnThisHost: pilotReady,
+      accessRequired: true,
+      providerConfigured: hasOpenAIKey,
+      durableLimiterConfigured: durableRateLimitConfigured,
+      storesProposals: false,
+      mutatesRecords: false
+    }
   }, effectiveMode === "blocked" ? 503 : 200);
 }
 
