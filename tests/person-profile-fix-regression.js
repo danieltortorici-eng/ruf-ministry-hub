@@ -11,6 +11,8 @@ if (!scriptMatch) throw new Error("Could not find app script in ruf-ministry-hub
 
 const storage = Object.create(null);
 const elements = Object.create(null);
+let promptCalls = 0;
+let networkCalls = 0;
 
 function makeElement(idOrTag) {
   const key = String(idOrTag || "element");
@@ -38,8 +40,13 @@ function makeElement(idOrTag) {
     },
     remove() {},
     addEventListener() {},
-    focus() {},
-    setSelectionRange() {},
+    focus() {
+      sandbox.__focusedElementId = this.id;
+    },
+    setSelectionRange(start, end) {
+      this.selectionStart = start;
+      this.selectionEnd = end;
+    },
     click() {},
     get innerHTML() {
       return this._innerHTML || "";
@@ -96,6 +103,10 @@ const sandbox = {
       }
     }
   },
+  fetch() {
+    networkCalls += 1;
+    return Promise.reject(new Error("network is unavailable in this synthetic test"));
+  },
   document: {
     body: makeElement("body"),
     activeElement: null,
@@ -143,6 +154,7 @@ sandbox.window = {
     return true;
   },
   prompt() {
+    promptCalls += 1;
     return null;
   }
 };
@@ -204,7 +216,7 @@ function resetApp() {
   `);
 }
 
-function run() {
+async function run() {
   resetApp();
   const personId = db().people[0].id;
 
@@ -320,7 +332,80 @@ function run() {
   assert(db().people.at(-1).email === "jordan@example.com" && db().people.at(-1).personType === "Alumni", "create person sheet saves details");
   assert(appEval("view.screen") === "person" && appEval("view.personId") === db().people.at(-1).id, "create person sheet opens new profile");
 
+  const copyText = "Fictional multiline copy text.\nSecond line — no real ministry data.";
+  const copyStateBefore = JSON.stringify({ db: db(), storage, undoStack: appEval("undoStack"), aiProposals: db().aiProposals });
+  promptCalls = 0;
+  networkCalls = 0;
+  sandbox.navigator.clipboard = null;
+  await appEval(`copyPlainText(${JSON.stringify(copyText)}, "Copied.", "Legacy prompt")`);
+  assert(appEval("view.sheet && view.sheet.type") === "copy-text", "missing Clipboard API opens the in-app copy sheet");
+  const copySheetHtml = appEval("renderSheet()");
+  assert(copySheetHtml.includes('role="dialog"') && copySheetHtml.includes('aria-modal="true"'), "copy fallback is an accessible modal dialog");
+  assert(copySheetHtml.includes('id="copy-text-value"') && copySheetHtml.includes("readonly") && copySheetHtml.includes('data-action="copy-text-select"'), "copy fallback renders a readonly selectable field");
+  assert(copySheetHtml.includes("Fictional multiline copy text.") && copySheetHtml.includes("Second line — no real ministry data."), "copy fallback preserves multiline Unicode text");
+  assert(promptCalls === 0, "copy fallback never opens a browser prompt");
+
+  makeElement("copy-text-value").value = copyText;
+  appEval("selectCopyTextSheetValue()");
+  assert(sandbox.__focusedElementId === "copy-text-value", "copy fallback focuses the text field before selection");
+  assert(makeElement("copy-text-value").selectionStart === 0 && makeElement("copy-text-value").selectionEnd === copyText.length, "copy fallback selects the complete text");
+  appEval("closeSheet()");
+
+  sandbox.navigator.clipboard = {
+    writeText() {
+      return Promise.reject(new Error("fictional clipboard rejection"));
+    }
+  };
+  await appEval(`copyPlainText(${JSON.stringify(copyText)}, "Copied.", "Copy text")`);
+  assert(appEval("view.sheet && view.sheet.type") === "copy-text", "rejected Clipboard API opens the same copy sheet");
+  assert(!makeElement("toast").textContent.includes("Copied."), "rejected Clipboard API does not announce copy success");
+  appEval("closeSheet()");
+
+  sandbox.navigator.clipboard = {
+    writeText() {
+      throw new Error("fictional synchronous clipboard failure");
+    }
+  };
+  await appEval(`copyPlainText(${JSON.stringify(copyText)}, "Copied.", "Copy text")`);
+  assert(appEval("view.sheet && view.sheet.type") === "copy-text", "synchronous Clipboard API failure opens the same copy sheet");
+  appEval("closeSheet()");
+
+  sandbox.navigator.clipboard = null;
+  const nestedCopyButton = makeElement("nested-copy-button");
+  nestedCopyButton.dataset = { action: "profile-followup-copy", id: personId, draftIndex: "2" };
+  const nestedCopyDescriptor = appEval('focusDescriptorFor(document.getElementById("nested-copy-button"))');
+  assert(nestedCopyDescriptor.draftIndex === "2", "copy focus descriptor preserves the exact draft variant");
+  appEval(`view.sheet = { type: "profile-followup", personId: ${JSON.stringify(personId)}, draftIndex: 2 }`);
+  await appEval(`copyPlainText(${JSON.stringify(copyText)}, "Copied.", "Copy text", ${JSON.stringify(nestedCopyDescriptor)})`);
+  assert(appEval("view.sheet && view.sheet.type") === "copy-text", "copy fallback can open above an existing workflow sheet");
+  sandbox.document.querySelectorAll = selector => String(selector).includes("[data-action]") ? [nestedCopyButton] : [];
+  appEval("closeSheet()");
+  assert(appEval("view.sheet && view.sheet.type") === "profile-followup" && appEval("view.sheet.draftIndex") === 2, "closing copy fallback restores the existing workflow sheet");
+  assert(sandbox.__focusedElementId === "nested-copy-button", "closing nested copy fallback restores the exact invoking copy control");
+  sandbox.document.querySelectorAll = () => [];
+  appEval("view.sheet = null");
+
+  let successfulClipboardCalls = 0;
+  sandbox.navigator.clipboard = {
+    writeText(value) {
+      successfulClipboardCalls += 1;
+      sandbox.__copiedText = String(value || "");
+      return Promise.resolve();
+    }
+  };
+  await appEval(`copyPlainText(${JSON.stringify(copyText)}, "Copied.", "Copy text")`);
+  assert(successfulClipboardCalls === 1 && sandbox.__copiedText === copyText, "available Clipboard API receives the exact text once");
+  assert(appEval("view.sheet") === null && makeElement("toast").textContent.includes("Copied."), "successful Clipboard API keeps the sheet closed and announces success");
+
+  const copyStateAfter = JSON.stringify({ db: db(), storage, undoStack: appEval("undoStack"), aiProposals: db().aiProposals });
+  assert(copyStateAfter === copyStateBefore, "copy attempts do not mutate records, storage, proposals, or Undo");
+  assert(networkCalls === 0, "copy attempts make no network request");
+  assert((html.match(/window\.prompt\(/g) || []).length === 5, "only five non-copy browser prompts remain after the four copy fallbacks are removed");
+
   console.log("All current person profile regression checks passed.");
 }
 
-run();
+run().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});

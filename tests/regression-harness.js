@@ -3889,8 +3889,8 @@ async function testContextualDatesAndLegacyProfileCompatibility() {
 
 function testServiceWorkerShape() {
   assert(/const APP_VERSION = "2026\.07\.\d{2}-calm-os-[^"]+"/.test(html), "deploy app version is in the Calm OS release family");
-  assert(html.includes('const APP_VERSION = "2026.07.21-calm-os-core-v41"'), "deploy app declares the reviewed v41 transient-capture cancellation boundary");
-  assert(serviceWorkerSource.includes('const CACHE_NAME = "ruf-ministry-hub-v92-calm-os-core-v41"'), "service worker cache identity matches the reviewed v41 app");
+  assert(html.includes('const APP_VERSION = "2026.07.21-calm-os-core-v42"'), "deploy app declares the local v42 accessible copy fallback boundary");
+  assert(serviceWorkerSource.includes('const CACHE_NAME = "ruf-ministry-hub-v93-calm-os-core-v42"'), "service worker cache identity matches the local v42 app");
   const appUnlockSource = html.slice(html.indexOf("function unlockApp()"), html.indexOf("async function unlockVault()"));
   assert(
     appUnlockSource.indexOf('showToast("Unlocked.")') < appUnlockSource.indexOf("requestPageHeadingFocus()")

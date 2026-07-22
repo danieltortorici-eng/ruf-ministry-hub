@@ -1738,7 +1738,7 @@
     window.addEventListener("keydown", revealSkipLinkForKeyboard, true);
 
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.21-calm-os-core-v41";
+    const APP_VERSION = "2026.07.21-calm-os-core-v42";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
@@ -4093,12 +4093,47 @@
       return appBaseUrl() + "#quickgrab=[Shortcut Input]";
     }
 
-    function copyShortcutUrl() {
+    function copyShortcutUrl(returnFocusDescriptor = null) {
       const url = shortcutTemplateUrl();
-      if (typeof navigator !== "undefined" && navigator.clipboard) {
-        navigator.clipboard.writeText(url).then(() => showToast("Shortcut URL copied."));
-      } else {
-        window.prompt("Shortcut URL:", url);
+      return copyTextWithFallback(url, "Shortcut URL copied.", "Copy Shortcut URL", returnFocusDescriptor);
+    }
+
+    function openCopyTextSheet(title, text, returnFocusDescriptor = null) {
+      const value = String(text || "").trim();
+      if (!value) return false;
+      const returnSheet = view.sheet?.type && view.sheet.type !== "copy-text" ? cloneJson(view.sheet) : null;
+      view.sheet = {
+        type: "copy-text",
+        title: String(title || "Copy text").replace(/:\s*$/, ""),
+        text: value,
+        returnSheet,
+        returnFocusDescriptor: returnFocusDescriptor ? cloneJson(returnFocusDescriptor) : null
+      };
+      render();
+      return true;
+    }
+
+    function copyTextWithFallback(text, successMessage, fallbackTitle = "Copy text", returnFocusDescriptor = null) {
+      const value = String(text || "").trim();
+      if (!value) {
+        showToast("Nothing helpful to copy yet.");
+        return Promise.resolve(false);
+      }
+      const showFallback = () => {
+        openCopyTextSheet(fallbackTitle, value, returnFocusDescriptor);
+        return false;
+      };
+      const clipboard = typeof navigator !== "undefined" ? navigator.clipboard : null;
+      if (!clipboard || typeof clipboard.writeText !== "function") return Promise.resolve(showFallback());
+      try {
+        return Promise.resolve(clipboard.writeText(value))
+          .then(() => {
+            showToast(successMessage);
+            return true;
+          })
+          .catch(showFallback);
+      } catch (error) {
+        return Promise.resolve(showFallback());
       }
     }
 
@@ -5431,7 +5466,7 @@
               ? { kind: "copy", copyKey: element.dataset.copyKey }
               : null;
       if (!descriptor) return null;
-      ["id", "screen", "filter", "from", "to", "sourceType", "actionIndex"].forEach(key => {
+      ["id", "screen", "filter", "from", "to", "sourceType", "actionIndex", "draftIndex", "field"].forEach(key => {
         if (element.dataset[key] !== undefined) descriptor[key] = element.dataset[key];
       });
       if (element.dataset.kind !== undefined) descriptor.actionKind = element.dataset.kind;
@@ -5446,6 +5481,10 @@
     function restoreSheetReturnFocus() {
       const descriptor = sheetReturnFocusDescriptor;
       sheetReturnFocusDescriptor = null;
+      restoreFocusDescriptor(descriptor);
+    }
+
+    function restoreFocusDescriptor(descriptor) {
       if (!descriptor) return;
       const restore = () => {
         const controls = Array.from(document.querySelectorAll("[data-action], [data-setting-toggle], [data-setting-select], [data-copy-key]"));
@@ -13345,10 +13384,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       render();
     }
 
-    function copyProfileFollowUpDraft(personId, index) {
+    function copyProfileFollowUpDraft(personId, index, returnFocusDescriptor = null) {
       const result = buildLocalProfileFollowUp(personId);
       const draft = result?.drafts?.[Math.max(0, Number(index) || 0)];
-      copyPlainText(draft?.text || "", "Draft copied. Nothing was sent or completed.", "Follow-up draft:");
+      return copyPlainText(draft?.text || "", "Draft copied. Nothing was sent or completed.", "Follow-up draft:", returnFocusDescriptor);
     }
 
     function markProfileFollowedUp(personId) {
@@ -13554,8 +13593,45 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       `;
     }
 
+    function renderCopyTextSheet(sheet = {}) {
+      const title = String(sheet.title || "Copy text");
+      const text = String(sheet.text || "");
+      return `
+        <div class="sheet-backdrop" data-action="sheet-close">
+          <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="copy-text-sheet-title" aria-describedby="copy-text-sheet-description" data-sheet-panel>
+            <div class="sheet-head">
+              <div><div class="eyebrow">Copy manually</div><h2 id="copy-text-sheet-title">${escapeHtml(title)}</h2></div>
+              <button class="button quiet" data-action="sheet-close" aria-label="Close">Close</button>
+            </div>
+            <div class="sheet-form">
+              <div class="notice" id="copy-text-sheet-description">Automatic copying was unavailable. Select the full text, then choose Copy from your browser or device.</div>
+              <label class="field" for="copy-text-value">
+                <span class="field-label">Text to copy</span>
+                <textarea class="textarea small" id="copy-text-value" rows="6" readonly autofocus>${escapeHtml(text)}</textarea>
+              </label>
+            </div>
+            <div class="sheet-actions">
+              <button class="button quiet" data-action="sheet-close">Close</button>
+              <button class="button primary" data-action="copy-text-select">Select all text</button>
+            </div>
+          </section>
+        </div>
+      `;
+    }
+
+    function selectCopyTextSheetValue() {
+      if (view.sheet?.type !== "copy-text") return false;
+      const field = document.getElementById("copy-text-value");
+      if (!field) return false;
+      field.focus();
+      if (typeof field.setSelectionRange === "function") field.setSelectionRange(0, field.value.length);
+      showToast("Text selected. Choose Copy.");
+      return true;
+    }
+
     function renderSheet() {
       if (!view.sheet) return "";
+      if (view.sheet.type === "copy-text") return renderCopyTextSheet(view.sheet);
       if (view.sheet.type === "dictation") return renderDictationSheet(view.sheet);
       if (view.sheet.type === "prayer-action") return renderPrayerActionSheet(view.sheet);
       if (view.sheet.type === "data-safety") return renderDataSafetySheet(view.sheet);
@@ -13740,6 +13816,14 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (protectedBackupExportOwnsSheet(view.sheet)) {
         if (!options.force) return false;
         invalidateProtectedBackupExport();
+      }
+      if (view.sheet?.type === "copy-text" && view.sheet.returnSheet) {
+        const returnSheet = cloneJson(view.sheet.returnSheet);
+        const returnFocusDescriptor = view.sheet.returnFocusDescriptor ? cloneJson(view.sheet.returnFocusDescriptor) : null;
+        view.sheet = returnSheet;
+        render();
+        restoreFocusDescriptor(returnFocusDescriptor);
+        return true;
       }
       let closeMessage = "";
       if (view.sheet?.type === "ai-gate" && view.sheet?.nextAction === "quickGrabParse") {
@@ -14939,7 +15023,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return true;
     }
 
-    function copyAiDraftOption(proposalId, draftIndex) {
+    function copyAiDraftOption(proposalId, draftIndex, returnFocusDescriptor = null) {
       const proposal = aiProposalById(proposalId);
       const index = Number(draftIndex);
       const draft = Array.isArray(proposal?.result?.drafts) ? proposal.result.drafts[index] : null;
@@ -14948,14 +15032,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         showToast("That draft is no longer available.");
         return;
       }
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(text).then(() => showToast("Draft copied. Nothing was sent."));
-      } else {
-        window.prompt("Copy draft:", text);
-      }
+      return copyTextWithFallback(text, "Draft copied. Nothing was sent.", "Copy draft", returnFocusDescriptor);
     }
 
-    function copyAiDonorUpdateDraft(proposalId, field) {
+    function copyAiDonorUpdateDraft(proposalId, field, returnFocusDescriptor = null) {
       const proposal = aiProposalById(proposalId);
       const allowedFields = ["emailDraft", "shortSupporterUpdate"];
       const key = allowedFields.includes(field) ? field : "emailDraft";
@@ -14964,11 +15044,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         showToast("That donor update draft is no longer available.");
         return;
       }
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(text).then(() => showToast("Donor update draft copied. Nothing was sent."));
-      } else {
-        window.prompt("Copy donor update draft:", text);
-      }
+      return copyTextWithFallback(text, "Donor update draft copied. Nothing was sent.", "Copy donor update draft", returnFocusDescriptor);
     }
 
     function openAiProposalSource(id) {
@@ -15050,6 +15126,10 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         closeSheet();
         return;
       }
+      if (action === "copy-text-select") {
+        selectCopyTextSheetValue();
+        return;
+      }
       if (action === "edit-field-sheet-save") {
         submitEditFieldSheet();
         return;
@@ -15115,11 +15195,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         return;
       }
       if (action === "ai-draft-copy") {
-        copyAiDraftOption(id, button.dataset.draftIndex);
+        copyAiDraftOption(id, button.dataset.draftIndex, focusDescriptorFor(button));
         return;
       }
       if (action === "ai-donor-copy") {
-        copyAiDonorUpdateDraft(id, button.dataset.field);
+        copyAiDonorUpdateDraft(id, button.dataset.field, focusDescriptorFor(button));
         return;
       }
       if (action === "donor-update-build") {
@@ -15168,7 +15248,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "unlock-app") unlockApp();
       if (action === "app-update") applyAppUpdate();
       if (action === "check-update") checkForAppUpdate();
-      if (action === "copy-shortcut-url") copyShortcutUrl();
+      if (action === "copy-shortcut-url") copyShortcutUrl(focusDescriptorFor(button));
       if (action === "undo-last") undoLast();
       if (action === "lock-app") lockApp();
       if (action === "capture-submit") submitUnifiedCapture(button.dataset.source, button.dataset.personId, button.dataset.mode, button);
@@ -15216,7 +15296,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (action === "profile-brief-open") openProfileBrief(id);
       if (action === "profile-followup-open") openProfileFollowUp(id);
       if (action === "profile-followup-variant") setProfileFollowUpVariant(button.dataset.draftIndex);
-      if (action === "profile-followup-copy") copyProfileFollowUpDraft(id, button.dataset.draftIndex);
+      if (action === "profile-followup-copy") copyProfileFollowUpDraft(id, button.dataset.draftIndex, focusDescriptorFor(button));
       if (action === "profile-followup-mark") markProfileFollowedUp(id);
       if (action === "profile-history-toggle") toggleProfileHistory(id);
       if (action === "profile-history-more") showMoreProfileHistory(id);
@@ -15244,7 +15324,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         }
       }
       if (action === "prayer-steward") openPrayerStewardMockAiGate();
-      if (action === "prayer-steward-copy") copyPrayerStewardAudit();
+      if (action === "prayer-steward-copy") copyPrayerStewardAudit(focusDescriptorFor(button));
       if (action === "open-prayer-filter") {
         view.screen = "prayer";
         view.prayerFilter = button.dataset.filter;
@@ -15950,17 +16030,13 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       return task;
     }
 
-    function copyPlainText(text, successMessage, promptLabel) {
+    function copyPlainText(text, successMessage, fallbackTitle, returnFocusDescriptor = null) {
       const value = String(text || "").trim();
       if (!value) {
         showToast("Nothing helpful to copy yet.");
-        return;
+        return Promise.resolve(false);
       }
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(value).then(() => showToast(successMessage));
-      } else {
-        window.prompt(promptLabel, value);
-      }
+      return copyTextWithFallback(value, successMessage, fallbackTitle, returnFocusDescriptor);
     }
 
     function prayerStewardAuditText() {
@@ -15992,8 +16068,8 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       ].join("\n");
     }
 
-    function copyPrayerStewardAudit() {
-      copyPlainText(prayerStewardAuditText(), "Prayer Steward audit copied.", "Prayer Steward audit:");
+    function copyPrayerStewardAudit(returnFocusDescriptor = null) {
+      return copyPlainText(prayerStewardAuditText(), "Prayer Steward audit copied.", "Prayer Steward audit:", returnFocusDescriptor);
     }
 
     function markPrayerAnswered(id) {

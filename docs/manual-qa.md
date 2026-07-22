@@ -16,6 +16,13 @@ The second release-candidate audit verified the 390px and 430px layout contracts
 
 Historical v8/cache57 evidence below is preserved only as provenance and is not the current candidate. The current local candidate is named in the first version-specific section below.
 
+## `CALM-COPY-FALLBACK-66` local v42 recheck
+
+- Local candidate identity: app/package `2026.07.21-calm-os-core-v42`, cache `ruf-ministry-hub-v93-calm-os-core-v42`. It preserves exact v41 behavior and replaces only the four active clipboard-failure browser prompts with one local in-app copy sheet. It is local-only and is not committed, previewed, provider-verified, production-verified, rollback-verified, or physical-device verified. Exact v41 production/device evidence does not transfer to changed v42 bytes.
+- Use fictional multiline Unicode text in a profile follow-up draft, Prayer Steward audit, AI draft, donor-update draft, and the Shortcut URL workflow. When automatic copy succeeds, confirm the existing success message appears once and no sheet opens. Deny or block clipboard access for each workflow and confirm one dialog opens with the exact full text, a readonly field, **Select all text**, and Close controls; no browser prompt, permission request, record, proposal, storage change, Undo entry, or network request may occur.
+- With VoiceOver, confirm the dialog title and explanation are announced, focus starts inside the dialog, Tab/Shift-Tab remain contained, **Select all text** focuses and selects the entire field, Escape/backdrop/Close dismiss, and focus returns to the invoking control. Repeat in Safari and the installed Home Screen app at 390px, 430px, landscape, and largest Dynamic Type. Reopen twice after a rejected copy and confirm there is only one sheet and no duplicated or stale text.
+- Recheck genuine same-origin update and offline reopen without clearing site data. Security PIN/passphrase, encrypted-backup passphrase, reset confirmation, and custom-wording prompts are outside this slice and must behave exactly as v41. Any clipboard rejection with no sheet, successful copy that opens a sheet, stale/partial text, focus escape, hidden mutation, external request, version/cache/CSP mismatch, or regression in the v41 flow is a release blocker.
+
 ## `CALM-TRANSIENT-CAPTURE-CANCEL-58` local v41 recheck
 
 - Local candidate identity: app/package `2026.07.21-calm-os-core-v41`, cache `ruf-ministry-hub-v92-calm-os-core-v41`. It preserves the reviewed v40 person-token boundary and adds the transient Backend Quick Grab cancellation boundary. It is local-only and is not committed, previewed, provider-verified, production-verified, rollback-verified, or physical-device verified. Exact v39 Preview/device evidence does not transfer to changed v41 bytes.
