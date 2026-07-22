@@ -1738,7 +1738,7 @@
     window.addEventListener("keydown", revealSkipLinkForKeyboard, true);
 
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.22-calm-os-core-v42-ai-pilot.1";
+    const APP_VERSION = "2026.07.22-calm-os-core-v42-ai-pilot.2";
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
@@ -1904,6 +1904,8 @@
       sheet: null,
       startupHydrating: true,
       startupRecoveryError: "",
+      fictionalPilotAvailableOnThisHost: false,
+      fictionalPilotAvailabilityChecked: false,
       fictionalPilotFixtureId: "fixture-welcome",
       fictionalPilotGrantId: "",
       fictionalPilotGrantExpiresAt: 0,
@@ -1949,6 +1951,8 @@
     let toastTimer = null;
     let toastGeneration = 0;
     let globalSearchTimer = null;
+    let fictionalPilotAvailabilityPromise = null;
+    let fictionalPilotGrantExpiryTimer = null;
     let dictationSessionSequence = 0;
     let activeDictationSession = null;
     let protectedBackupExportSequence = 0;
@@ -6779,7 +6783,9 @@
       if (view.screen === "manual") return renderAppManual();
       if (view.screen === "settings") return renderMore();
       if (view.screen === "advancedSettings") return renderAdvancedSettings();
-      if (view.screen === "fictionalPilot") return renderFictionalQuickGrabPilot();
+      if (view.screen === "fictionalPilot") {
+        return view.fictionalPilotAvailableOnThisHost ? renderFictionalQuickGrabPilot() : renderMore();
+      }
       if (view.screen === "autopilot") return renderAutopilot();
       return renderToday();
     }
@@ -7700,6 +7706,48 @@
       `;
     }
 
+    function refreshFictionalPilotAvailability() {
+      if (view.fictionalPilotAvailabilityChecked) return Promise.resolve(view.fictionalPilotAvailableOnThisHost);
+      if (fictionalPilotAvailabilityPromise) return fictionalPilotAvailabilityPromise;
+      if (typeof fetch !== "function") {
+        view.fictionalPilotAvailableOnThisHost = false;
+        view.fictionalPilotAvailabilityChecked = true;
+        return Promise.resolve(false);
+      }
+      fictionalPilotAvailabilityPromise = fetch("/api/ai/health", {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Accept": "application/json" }
+      })
+        .then(async response => {
+          const result = await response.json().catch(() => ({}));
+          return response.ok
+            && result.ok === true
+            && result.fictionalQuickGrabPilot?.availableOnThisHost === true;
+        })
+        .catch(() => false)
+        .then(available => {
+          view.fictionalPilotAvailableOnThisHost = available;
+          view.fictionalPilotAvailabilityChecked = true;
+          if (!available) {
+            clearFictionalPilotGrant();
+            view.fictionalPilotProposal = null;
+            view.fictionalPilotError = "";
+            if (view.screen === "fictionalPilot") view.screen = "settings";
+          }
+          if (!view.startupHydrating && !view.startupRecoveryError
+            && (view.screen === "settings" || view.screen === "fictionalPilot")) {
+            render({ mutationEffects: false });
+          }
+          return available;
+        })
+        .finally(() => {
+          fictionalPilotAvailabilityPromise = null;
+        });
+      return fictionalPilotAvailabilityPromise;
+    }
+
     function fictionalPilotFixture() {
       return FICTIONAL_QUICK_GRAB_PILOT_FIXTURES.find(fixture => fixture.id === view.fictionalPilotFixtureId)
         || FICTIONAL_QUICK_GRAB_PILOT_FIXTURES[0];
@@ -7753,6 +7801,7 @@
     }
 
     async function fictionalPilotPost(payload) {
+      if (!view.fictionalPilotAvailableOnThisHost) throw new Error("The fictional pilot is unavailable on this host.");
       const response = await fetch("/api/ai/quick-grab", {
         method: "POST",
         credentials: "same-origin",
@@ -7771,15 +7820,49 @@
     function selectFictionalPilotFixture(fixtureId) {
       if (!FICTIONAL_QUICK_GRAB_PILOT_FIXTURES.some(fixture => fixture.id === fixtureId)) return;
       view.fictionalPilotFixtureId = fixtureId;
-      view.fictionalPilotGrantId = "";
-      view.fictionalPilotGrantExpiresAt = 0;
+      clearFictionalPilotGrant();
       view.fictionalPilotProposal = null;
       view.fictionalPilotError = "";
       render({ mutationEffects: false });
     }
 
+    function clearFictionalPilotGrant() {
+      if (fictionalPilotGrantExpiryTimer) {
+        window.clearTimeout(fictionalPilotGrantExpiryTimer);
+        fictionalPilotGrantExpiryTimer = null;
+      }
+      view.fictionalPilotGrantId = "";
+      view.fictionalPilotGrantExpiresAt = 0;
+    }
+
+    function expireFictionalPilotGrant() {
+      clearFictionalPilotGrant();
+      view.fictionalPilotError = "The two-minute approval expired. Approve this fictional fixture again to continue.";
+      if (view.screen === "fictionalPilot") render({ mutationEffects: false });
+    }
+
+    function scheduleFictionalPilotGrantExpiry() {
+      if (fictionalPilotGrantExpiryTimer) window.clearTimeout(fictionalPilotGrantExpiryTimer);
+      fictionalPilotGrantExpiryTimer = null;
+      if (!view.fictionalPilotGrantId) return;
+      const remaining = Number(view.fictionalPilotGrantExpiresAt) - Date.now();
+      if (remaining <= 0) {
+        expireFictionalPilotGrant();
+        return;
+      }
+      fictionalPilotGrantExpiryTimer = window.setTimeout(() => {
+        fictionalPilotGrantExpiryTimer = null;
+        if (!view.fictionalPilotGrantId) return;
+        if (Number(view.fictionalPilotGrantExpiresAt) > Date.now()) {
+          scheduleFictionalPilotGrantExpiry();
+          return;
+        }
+        expireFictionalPilotGrant();
+      }, remaining + 25);
+    }
+
     async function requestFictionalPilotGrant() {
-      if (view.fictionalPilotBusy) return;
+      if (view.fictionalPilotBusy || !view.fictionalPilotAvailableOnThisHost) return;
       view.fictionalPilotBusy = true;
       view.fictionalPilotError = "";
       render({ mutationEffects: false });
@@ -7787,9 +7870,9 @@
         const result = await fictionalPilotPost({ pilotAction: "request_grant", policyVersion: FICTIONAL_QUICK_GRAB_PILOT_POLICY_VERSION, fixtureId: fictionalPilotFixture().id });
         view.fictionalPilotGrantId = result.grantId;
         view.fictionalPilotGrantExpiresAt = Number(result.expiresAt) || 0;
+        scheduleFictionalPilotGrantExpiry();
       } catch (error) {
-        view.fictionalPilotGrantId = "";
-        view.fictionalPilotGrantExpiresAt = 0;
+        clearFictionalPilotGrant();
         view.fictionalPilotError = error.message;
       } finally {
         view.fictionalPilotBusy = false;
@@ -7798,7 +7881,11 @@
     }
 
     async function runFictionalPilot() {
-      if (view.fictionalPilotBusy || !view.fictionalPilotGrantId || Number(view.fictionalPilotGrantExpiresAt) <= Date.now()) return;
+      if (view.fictionalPilotBusy || !view.fictionalPilotAvailableOnThisHost || !view.fictionalPilotGrantId) return;
+      if (Number(view.fictionalPilotGrantExpiresAt) <= Date.now()) {
+        expireFictionalPilotGrant();
+        return;
+      }
       view.fictionalPilotBusy = true;
       view.fictionalPilotError = "";
       view.fictionalPilotProposal = null;
@@ -7809,16 +7896,14 @@
       } catch (error) {
         view.fictionalPilotError = error.message;
       } finally {
-        view.fictionalPilotGrantId = "";
-        view.fictionalPilotGrantExpiresAt = 0;
+        clearFictionalPilotGrant();
         view.fictionalPilotBusy = false;
         render({ mutationEffects: false });
       }
     }
 
     function discardFictionalPilot() {
-      view.fictionalPilotGrantId = "";
-      view.fictionalPilotGrantExpiresAt = 0;
+      clearFictionalPilotGrant();
       view.fictionalPilotProposal = null;
       view.fictionalPilotError = "";
       render({ mutationEffects: false });
@@ -12088,7 +12173,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                   <button class="more-link" data-action="nav" data-screen="review"><strong>Unprocessed captures</strong><span>Work through one saved thought at a time.</span></button>
                   <button class="more-link" data-action="nav" data-screen="aiReview"><strong>Suggested updates</strong><span>Approve, edit, or reject proposals before saving.</span></button>
                   <button class="more-link" data-action="nav" data-screen="coach"><strong>App Coach</strong><span>Review optional local improvement suggestions.</span></button>
-                  <button class="more-link" data-action="nav" data-screen="fictionalPilot"><strong>Fictional Quick Grab Pilot</strong><span>Preview-only, checked-in fictional examples with no record changes.</span></button>
+                  ${view.fictionalPilotAvailableOnThisHost ? `<button class="more-link" data-action="nav" data-screen="fictionalPilot"><strong>Fictional Quick Grab Pilot</strong><span>Preview-only, checked-in fictional examples with no record changes.</span></button>` : ""}
                 </div>
               </details>
               <details class="more-group">
@@ -15379,12 +15464,16 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	      if (action === "unlock-vault") unlockVault();
       if (action === "nav") {
         if (view.screen === "aiConfirmActions") clearActiveWorkflowRecovery(view.aiConfirmProposalId);
-        view.screen = button.dataset.screen;
+        const requestedScreen = button.dataset.screen;
+        view.screen = requestedScreen === "fictionalPilot" && !view.fictionalPilotAvailableOnThisHost
+          ? "settings"
+          : requestedScreen;
         view.quickGrabId = null;
         view.sheet = null;
         if (view.screen === "review") view.reviewIndex = 0;
         requestPageHeadingFocus();
         render(invalidatedProtectedExport ? { mutationEffects: false } : {});
+        if (view.screen === "settings") refreshFictionalPilotAvailability();
       }
       if (action === "ai-review-filter") {
         view.aiReviewFilter = button.dataset.filter || "Pending";
@@ -16658,7 +16747,9 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     importQuickGrabFromCurrentFragment();
     registerServiceWorker();
-    bootstrapLocalState();
+    bootstrapLocalState().then(() => {
+      if (view.screen === "settings") refreshFictionalPilotAvailability();
+    });
     if (typeof window !== "undefined") {
       window.addEventListener("pageshow", importQuickGrabFromCurrentFragment);
       window.addEventListener("focus", importQuickGrabFromCurrentFragment);
