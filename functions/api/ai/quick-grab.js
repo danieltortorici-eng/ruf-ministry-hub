@@ -454,12 +454,19 @@ async function constantTimeEqual(left, right) {
   return diff === 0;
 }
 
+function canonicalAccessTeamDomain(value) {
+  const raw = safeString(value, 240).replace(/\/+$/, "");
+  const candidate = /^https:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/i.test(candidate)
+    ? candidate.toLowerCase()
+    : "";
+}
+
 function accessConfiguration(env) {
-  const teamDomain = safeString(env.CF_ACCESS_TEAM_DOMAIN, 240).replace(/\/+$/, "");
+  const teamDomain = canonicalAccessTeamDomain(env.CF_ACCESS_TEAM_DOMAIN);
   const audience = safeString(env.CF_ACCESS_AUD, 240);
-  const validTeamDomain = /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/i.test(teamDomain);
   return {
-    configured: Boolean(teamDomain && audience && validTeamDomain),
+    configured: Boolean(teamDomain && audience),
     teamDomain,
     audience
   };

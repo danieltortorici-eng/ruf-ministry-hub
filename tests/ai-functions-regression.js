@@ -142,6 +142,33 @@ async function testHealthEndpoint() {
   assert(blockedResponse.status === 503 && blocked.ok === false && blocked.effectiveMode === "blocked" && blocked.realModeBlocked === true, "health endpoint reports unhealthy blocked real mode when safety bindings are missing");
   assert(blocked.configurationIssues.includes("authentication_not_configured"), "health endpoint reports missing authentication");
   assert(blocked.configurationIssues.includes("rate_limit_not_configured"), "health endpoint reports missing durable limiter");
+
+  const bareTeamDomainResponse = await health.onRequestGet({
+    env: realEnv({
+      RUF_HUB_AI_ACCESS_TOKEN: undefined,
+      CF_ACCESS_TEAM_DOMAIN: "ruf-hub-test.cloudflareaccess.com",
+      CF_ACCESS_AUD: "synthetic-access-audience"
+    })
+  });
+  const bareTeamDomain = await jsonFrom(bareTeamDomainResponse);
+  assert(bareTeamDomain.accessProtected === true, "health endpoint canonicalizes an exact bare Cloudflare Access team domain");
+
+  for (const invalidTeamDomain of [
+    "http://ruf-hub-test.cloudflareaccess.com",
+    "ruf-hub-test.cloudflareaccess.com:443",
+    "ruf-hub-test.cloudflareaccess.com/cdn-cgi/access",
+    "ruf-hub-test.cloudflareaccess.com.evil.test"
+  ]) {
+    const invalidTeamDomainResponse = await health.onRequestGet({
+      env: realEnv({
+        RUF_HUB_AI_ACCESS_TOKEN: undefined,
+        CF_ACCESS_TEAM_DOMAIN: invalidTeamDomain,
+        CF_ACCESS_AUD: "synthetic-access-audience"
+      })
+    });
+    const invalidTeamDomainHealth = await jsonFrom(invalidTeamDomainResponse);
+    assert(invalidTeamDomainHealth.accessProtected === false, `health endpoint rejects invalid Access team domain: ${invalidTeamDomain}`);
+  }
 }
 
 function quickGrabRequest(body, headers = {}) {
@@ -468,11 +495,11 @@ async function testQuickGrabCloudflareAccessAuthentication() {
     request,
     env: realEnv({
       RUF_HUB_AI_ACCESS_TOKEN: undefined,
-      CF_ACCESS_TEAM_DOMAIN: access.teamDomain,
+      CF_ACCESS_TEAM_DOMAIN: access.teamDomain.replace("https://", ""),
       CF_ACCESS_AUD: access.audience
     })
   });
-  assert(response.status === 200, "quick-grab accepts a valid Cloudflare Access browser assertion");
+  assert(response.status === 200, "quick-grab accepts a valid Cloudflare Access assertion with the exact bare team-domain readback");
   assert(openAiCalls === 1, "valid Cloudflare Access authentication reaches OpenAI once");
 
   const wrongAudience = await quickGrab.onRequestPost({
@@ -482,12 +509,26 @@ async function testQuickGrabCloudflareAccessAuthentication() {
     }),
     env: realEnv({
       RUF_HUB_AI_ACCESS_TOKEN: undefined,
-      CF_ACCESS_TEAM_DOMAIN: access.teamDomain,
+      CF_ACCESS_TEAM_DOMAIN: access.teamDomain.replace("https://", ""),
       CF_ACCESS_AUD: "wrong-synthetic-audience"
     })
   });
   assert(wrongAudience.status === 401, "quick-grab rejects a validly signed Access JWT for the wrong application audience");
   assert(openAiCalls === 1, "rejected Access assertions do not call OpenAI");
+
+  const lookalikeDomain = await quickGrab.onRequestPost({
+    request: quickGrabRequest(validQuickGrabBody(), {
+      "X-RUF-HUB-AI-Token": "",
+      "Cf-Access-Jwt-Assertion": access.token
+    }),
+    env: realEnv({
+      RUF_HUB_AI_ACCESS_TOKEN: undefined,
+      CF_ACCESS_TEAM_DOMAIN: "ruf-hub-test.cloudflareaccess.com.evil.test",
+      CF_ACCESS_AUD: access.audience
+    })
+  });
+  assert(lookalikeDomain.status === 503, "quick-grab treats a lookalike Cloudflare Access team domain as unconfigured authentication");
+  assert(openAiCalls === 1, "lookalike Access domains do not call OpenAI");
 }
 
 async function testQuickGrabBackendPayloadCompatibility() {
