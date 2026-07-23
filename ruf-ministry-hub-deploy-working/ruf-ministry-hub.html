@@ -1738,7 +1738,8 @@
     window.addEventListener("keydown", revealSkipLinkForKeyboard, true);
 
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.21-calm-os-core-v42";
+    const APP_VERSION = "2026.07.22-calm-os-core-v42-ai-pilot.4";
+    const FICTIONAL_PILOT_AVAILABILITY_RECHECK_MS = 30 * 1000;
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
@@ -1783,6 +1784,14 @@
     const AI_REVIEW_FILTERS = ["Pending", "Approved", "Rejected", "Archived", "High Sensitivity", "Low Confidence"];
     const AI_PRIVACY_TIERS = ["Normal", "Private", "Sensitive", "Highly Sensitive", "Do Not Send to AI"];
     const AI_CONTEXT_SCOPES = ["minimal"];
+    const FICTIONAL_QUICK_GRAB_PILOT_POLICY_VERSION = "2026-07-22.1";
+    const FICTIONAL_QUICK_GRAB_PILOT_FIXTURES = Object.freeze([
+      Object.freeze({ id: "fixture-welcome", title: "Welcome follow-up", rawContent: "Fictional example: Avery Example visited the welcome table. Suggest a kind follow-up for tomorrow.", todayISO: "2026-07-22", tags: ["Follow-up"], urgency: "Soon" }),
+      Object.freeze({ id: "fixture-prayer", title: "Prayer reminder", rawContent: "Fictional example: Jordan Sample asked for prayer about a practice presentation next week.", todayISO: "2026-07-22", tags: ["Prayer"], urgency: "Normal" }),
+      Object.freeze({ id: "fixture-meeting", title: "Meeting recap", rawContent: "Fictional example: The Sample Team discussed an August welcome night and needs a simple next-step summary.", todayISO: "2026-07-22", tags: ["Meeting"], urgency: "Normal" }),
+      Object.freeze({ id: "fixture-task", title: "Supply task", rawContent: "Fictional example: Pick up name tags and markers for the sample welcome event by Friday.", todayISO: "2026-07-22", tags: ["Task"], urgency: "Soon" }),
+      Object.freeze({ id: "fixture-note", title: "Conversation note", rawContent: "Fictional example: Riley Placeholder enjoys hiking and is interested in the sample small group.", todayISO: "2026-07-22", tags: ["Note"], urgency: "Normal" })
+    ]);
     const DEFAULT_SETTINGS = {
       calmMode: true,
       autopilotMode: true,
@@ -1895,7 +1904,15 @@
       expandedPrayerIds: [],
       sheet: null,
       startupHydrating: true,
-      startupRecoveryError: ""
+      startupRecoveryError: "",
+      fictionalPilotAvailableOnThisHost: false,
+      fictionalPilotAvailabilityChecked: false,
+      fictionalPilotFixtureId: "fixture-welcome",
+      fictionalPilotGrantId: "",
+      fictionalPilotGrantExpiresAt: 0,
+      fictionalPilotBusy: false,
+      fictionalPilotProposal: null,
+      fictionalPilotError: ""
     };
     let undoStack = [];
     let vaultPassphrase = "";
@@ -1935,6 +1952,9 @@
     let toastTimer = null;
     let toastGeneration = 0;
     let globalSearchTimer = null;
+    let fictionalPilotAvailabilityPromise = null;
+    let fictionalPilotAvailabilityRefreshTimer = null;
+    let fictionalPilotGrantExpiryTimer = null;
     let dictationSessionSequence = 0;
     let activeDictationSession = null;
     let protectedBackupExportSequence = 0;
@@ -6671,7 +6691,7 @@
         ? "people"
         : ["snooze", "review", "aiReview", "aiConfirmActions"].includes(view.screen)
           ? "quick"
-          : ["search", "autopilot", "minutes", "weekly", "coach", "duplicates", "readiness", "manual", "advancedSettings"].includes(view.screen)
+        : ["search", "autopilot", "minutes", "weekly", "coach", "duplicates", "readiness", "manual", "advancedSettings", "fictionalPilot"].includes(view.screen)
             ? "settings"
             : view.screen;
       const navHtml = NAV.map(([key, label]) =>
@@ -6765,6 +6785,9 @@
       if (view.screen === "manual") return renderAppManual();
       if (view.screen === "settings") return renderMore();
       if (view.screen === "advancedSettings") return renderAdvancedSettings();
+      if (view.screen === "fictionalPilot") {
+        return view.fictionalPilotAvailableOnThisHost ? renderFictionalQuickGrabPilot() : renderMore();
+      }
       if (view.screen === "autopilot") return renderAutopilot();
       return renderToday();
     }
@@ -7683,6 +7706,232 @@
           </section>
         ` : ""}
       `;
+    }
+
+    function clearFictionalPilotAvailabilityRefresh() {
+      if (fictionalPilotAvailabilityRefreshTimer && typeof window !== "undefined") {
+        window.clearTimeout(fictionalPilotAvailabilityRefreshTimer);
+      }
+      fictionalPilotAvailabilityRefreshTimer = null;
+    }
+
+    function scheduleFictionalPilotAvailabilityRefresh() {
+      clearFictionalPilotAvailabilityRefresh();
+      if (!view.fictionalPilotAvailableOnThisHost
+        || !["settings", "fictionalPilot"].includes(view.screen)
+        || typeof window === "undefined"
+        || typeof window.setTimeout !== "function") return;
+      fictionalPilotAvailabilityRefreshTimer = window.setTimeout(() => {
+        fictionalPilotAvailabilityRefreshTimer = null;
+        view.fictionalPilotAvailabilityChecked = false;
+        return refreshFictionalPilotAvailability({ force: true });
+      }, FICTIONAL_PILOT_AVAILABILITY_RECHECK_MS);
+    }
+
+    function refreshFictionalPilotAvailability(options = {}) {
+      if (options.force === true) view.fictionalPilotAvailabilityChecked = false;
+      if (view.fictionalPilotAvailabilityChecked) return Promise.resolve(view.fictionalPilotAvailableOnThisHost);
+      if (fictionalPilotAvailabilityPromise) return fictionalPilotAvailabilityPromise;
+      if (typeof fetch !== "function") {
+        view.fictionalPilotAvailableOnThisHost = false;
+        view.fictionalPilotAvailabilityChecked = true;
+        clearFictionalPilotAvailabilityRefresh();
+        return Promise.resolve(false);
+      }
+      fictionalPilotAvailabilityPromise = fetch("/api/ai/health", {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Accept": "application/json" }
+      })
+        .then(async response => {
+          const result = await response.json().catch(() => ({}));
+          return response.ok
+            && result.ok === true
+            && result.fictionalQuickGrabPilot?.availableOnThisHost === true;
+        })
+        .catch(() => false)
+        .then(available => {
+          view.fictionalPilotAvailableOnThisHost = available;
+          view.fictionalPilotAvailabilityChecked = true;
+          if (!available) {
+            clearFictionalPilotGrant();
+            view.fictionalPilotProposal = null;
+            view.fictionalPilotError = "";
+            if (view.screen === "fictionalPilot") view.screen = "settings";
+          }
+          if (!view.startupHydrating && !view.startupRecoveryError
+            && (view.screen === "settings" || view.screen === "fictionalPilot")) {
+            render({ mutationEffects: false });
+          }
+          scheduleFictionalPilotAvailabilityRefresh();
+          return available;
+        })
+        .finally(() => {
+          fictionalPilotAvailabilityPromise = null;
+        });
+      return fictionalPilotAvailabilityPromise;
+    }
+
+    function fictionalPilotFixture() {
+      return FICTIONAL_QUICK_GRAB_PILOT_FIXTURES.find(fixture => fixture.id === view.fictionalPilotFixtureId)
+        || FICTIONAL_QUICK_GRAB_PILOT_FIXTURES[0];
+    }
+
+    function renderFictionalQuickGrabPilot() {
+      const selected = fictionalPilotFixture();
+      const proposal = view.fictionalPilotProposal;
+      const grantActive = Boolean(view.fictionalPilotGrantId) && Number(view.fictionalPilotGrantExpiresAt) > Date.now();
+      return `
+        ${renderTopbar("Fictional Quick Grab Pilot", "Preview-only experiment. Nothing here can change ministry records.")}
+        <div class="profile-back-row"><button class="button quiet small" data-action="nav" data-screen="settings">Back to More</button></div>
+        <section class="section">
+          <div class="notice secure">Only five checked-in fictional examples are available. There is no free-form text, import, existing-record access, automatic save, or provider call without a fresh two-minute approval.</div>
+        </section>
+        <section class="section">
+          <div class="surface">
+            <h2 class="section-title">Choose one fictional example</h2>
+            <div class="calm-list" style="margin-top:12px;">
+              ${FICTIONAL_QUICK_GRAB_PILOT_FIXTURES.map(fixture => `
+                <button class="more-link" data-action="pilot-select" data-id="${escapeHtml(fixture.id)}" ${fixture.id === selected.id ? 'aria-current="true"' : ""}>
+                  <strong>${escapeHtml(fixture.title)}</strong><span>${escapeHtml(fixture.rawContent)}</span>
+                </button>
+              `).join("")}
+            </div>
+          </div>
+        </section>
+        <section class="section">
+          <div class="surface">
+            <h2 class="section-title">Approval and transient proposal</h2>
+            <p class="page-kicker">Selected: ${escapeHtml(selected.title)}</p>
+            ${view.fictionalPilotError ? `<div class="notice" role="alert">${escapeHtml(view.fictionalPilotError)}</div>` : ""}
+            ${grantActive ? `<div class="notice secure" role="status">One-use approval is active for this fixture and expires within two minutes.</div>` : ""}
+            <div class="action-row" style="margin-top:14px;">
+              <button class="button" data-action="pilot-request-grant" ${view.fictionalPilotBusy ? "disabled" : ""}>Approve this fictional fixture for 2 minutes</button>
+              <button class="button primary" data-action="pilot-run" ${!grantActive || view.fictionalPilotBusy ? "disabled" : ""}>${view.fictionalPilotBusy ? "Working…" : "Create transient proposal"}</button>
+              <button class="button quiet" data-action="pilot-discard" ${view.fictionalPilotBusy ? "disabled" : ""}>Discard</button>
+            </div>
+            ${proposal ? `
+              <article class="item compact focus-card" style="margin-top:16px;">
+                <div class="item-title">Transient proposal — not saved</div>
+                <p class="item-preview">${escapeHtml(proposal.summary)}</p>
+                <div class="meta">${escapeHtml(proposal.category)} · ${escapeHtml(proposal.confidence)} confidence</div>
+                <div class="next-step-line"><span class="pill green">Review</span><strong>${escapeHtml(proposal.suggestedNextStep)}</strong></div>
+                ${proposal.warnings?.length ? `<ul>${proposal.warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}
+              </article>
+            ` : `<div class="meta" style="margin-top:16px;">No proposal is held in memory.</div>`}
+          </div>
+        </section>
+      `;
+    }
+
+    async function fictionalPilotPost(payload) {
+      if (!view.fictionalPilotAvailableOnThisHost) throw new Error("The fictional pilot is unavailable on this host.");
+      const response = await fetch("/api/ai/quick-grab", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "X-RUF-HUB-AI-Pilot": FICTIONAL_QUICK_GRAB_PILOT_POLICY_VERSION
+        },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ok !== true) throw new Error("The fictional pilot is unavailable or the approval expired.");
+      return result;
+    }
+
+    function selectFictionalPilotFixture(fixtureId) {
+      if (!FICTIONAL_QUICK_GRAB_PILOT_FIXTURES.some(fixture => fixture.id === fixtureId)) return;
+      view.fictionalPilotFixtureId = fixtureId;
+      clearFictionalPilotGrant();
+      view.fictionalPilotProposal = null;
+      view.fictionalPilotError = "";
+      render({ mutationEffects: false });
+    }
+
+    function clearFictionalPilotGrant() {
+      if (fictionalPilotGrantExpiryTimer) {
+        window.clearTimeout(fictionalPilotGrantExpiryTimer);
+        fictionalPilotGrantExpiryTimer = null;
+      }
+      view.fictionalPilotGrantId = "";
+      view.fictionalPilotGrantExpiresAt = 0;
+    }
+
+    function expireFictionalPilotGrant() {
+      clearFictionalPilotGrant();
+      view.fictionalPilotError = "The two-minute approval expired. Approve this fictional fixture again to continue.";
+      if (view.screen === "fictionalPilot") render({ mutationEffects: false });
+    }
+
+    function scheduleFictionalPilotGrantExpiry() {
+      if (fictionalPilotGrantExpiryTimer) window.clearTimeout(fictionalPilotGrantExpiryTimer);
+      fictionalPilotGrantExpiryTimer = null;
+      if (!view.fictionalPilotGrantId) return;
+      const remaining = Number(view.fictionalPilotGrantExpiresAt) - Date.now();
+      if (remaining <= 0) {
+        expireFictionalPilotGrant();
+        return;
+      }
+      fictionalPilotGrantExpiryTimer = window.setTimeout(() => {
+        fictionalPilotGrantExpiryTimer = null;
+        if (!view.fictionalPilotGrantId) return;
+        if (Number(view.fictionalPilotGrantExpiresAt) > Date.now()) {
+          scheduleFictionalPilotGrantExpiry();
+          return;
+        }
+        expireFictionalPilotGrant();
+      }, remaining + 25);
+    }
+
+    async function requestFictionalPilotGrant() {
+      if (view.fictionalPilotBusy || !view.fictionalPilotAvailableOnThisHost) return;
+      view.fictionalPilotBusy = true;
+      view.fictionalPilotError = "";
+      render({ mutationEffects: false });
+      try {
+        const result = await fictionalPilotPost({ pilotAction: "request_grant", policyVersion: FICTIONAL_QUICK_GRAB_PILOT_POLICY_VERSION, fixtureId: fictionalPilotFixture().id });
+        view.fictionalPilotGrantId = result.grantId;
+        view.fictionalPilotGrantExpiresAt = Number(result.expiresAt) || 0;
+        scheduleFictionalPilotGrantExpiry();
+      } catch (error) {
+        clearFictionalPilotGrant();
+        view.fictionalPilotError = error.message;
+      } finally {
+        view.fictionalPilotBusy = false;
+        render({ mutationEffects: false });
+      }
+    }
+
+    async function runFictionalPilot() {
+      if (view.fictionalPilotBusy || !view.fictionalPilotAvailableOnThisHost || !view.fictionalPilotGrantId) return;
+      if (Number(view.fictionalPilotGrantExpiresAt) <= Date.now()) {
+        expireFictionalPilotGrant();
+        return;
+      }
+      view.fictionalPilotBusy = true;
+      view.fictionalPilotError = "";
+      view.fictionalPilotProposal = null;
+      render({ mutationEffects: false });
+      try {
+        const result = await fictionalPilotPost({ pilotAction: "run", policyVersion: FICTIONAL_QUICK_GRAB_PILOT_POLICY_VERSION, fixtureId: fictionalPilotFixture().id, grantId: view.fictionalPilotGrantId });
+        view.fictionalPilotProposal = result.proposal;
+      } catch (error) {
+        view.fictionalPilotError = error.message;
+      } finally {
+        clearFictionalPilotGrant();
+        view.fictionalPilotBusy = false;
+        render({ mutationEffects: false });
+      }
+    }
+
+    function discardFictionalPilot() {
+      clearFictionalPilotGrant();
+      view.fictionalPilotProposal = null;
+      view.fictionalPilotError = "";
+      render({ mutationEffects: false });
     }
 
     function renderReviewQueue() {
@@ -11949,6 +12198,7 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
                   <button class="more-link" data-action="nav" data-screen="review"><strong>Unprocessed captures</strong><span>Work through one saved thought at a time.</span></button>
                   <button class="more-link" data-action="nav" data-screen="aiReview"><strong>Suggested updates</strong><span>Approve, edit, or reject proposals before saving.</span></button>
                   <button class="more-link" data-action="nav" data-screen="coach"><strong>App Coach</strong><span>Review optional local improvement suggestions.</span></button>
+                  ${view.fictionalPilotAvailableOnThisHost ? `<button class="more-link" data-action="nav" data-screen="fictionalPilot"><strong>Fictional Quick Grab Pilot</strong><span>Preview-only, checked-in fictional examples with no record changes.</span></button>` : ""}
                 </div>
               </details>
               <details class="more-group">
@@ -15194,6 +15444,22 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         submitCareCadenceSheet();
         return;
       }
+      if (action === "pilot-select") {
+        selectFictionalPilotFixture(id);
+        return;
+      }
+      if (action === "pilot-request-grant") {
+        requestFictionalPilotGrant();
+        return;
+      }
+      if (action === "pilot-run") {
+        runFictionalPilot();
+        return;
+      }
+      if (action === "pilot-discard") {
+        discardFictionalPilot();
+        return;
+      }
       if (action === "ai-draft-copy") {
         copyAiDraftOption(id, button.dataset.draftIndex, focusDescriptorFor(button));
         return;
@@ -15223,12 +15489,20 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 	      if (action === "unlock-vault") unlockVault();
       if (action === "nav") {
         if (view.screen === "aiConfirmActions") clearActiveWorkflowRecovery(view.aiConfirmProposalId);
-        view.screen = button.dataset.screen;
+        const requestedScreen = button.dataset.screen;
+        view.screen = requestedScreen === "fictionalPilot" && !view.fictionalPilotAvailableOnThisHost
+          ? "settings"
+          : requestedScreen;
         view.quickGrabId = null;
         view.sheet = null;
         if (view.screen === "review") view.reviewIndex = 0;
         requestPageHeadingFocus();
         render(invalidatedProtectedExport ? { mutationEffects: false } : {});
+        if (view.screen === "settings" || view.screen === "fictionalPilot") {
+          refreshFictionalPilotAvailability({ force: true });
+        } else {
+          clearFictionalPilotAvailabilityRefresh();
+        }
       }
       if (action === "ai-review-filter") {
         view.aiReviewFilter = button.dataset.filter || "Pending";
@@ -16502,15 +16776,31 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
 
     importQuickGrabFromCurrentFragment();
     registerServiceWorker();
-    bootstrapLocalState();
+    bootstrapLocalState().then(() => {
+      if (view.screen === "settings") refreshFictionalPilotAvailability();
+    });
     if (typeof window !== "undefined") {
-      window.addEventListener("pageshow", importQuickGrabFromCurrentFragment);
-      window.addEventListener("focus", importQuickGrabFromCurrentFragment);
+      window.addEventListener("pageshow", () => {
+        void importQuickGrabFromCurrentFragment();
+        if (view.screen === "settings" || view.screen === "fictionalPilot") {
+          refreshFictionalPilotAvailability({ force: true });
+        }
+      });
+      window.addEventListener("focus", () => {
+        void importQuickGrabFromCurrentFragment();
+        if (view.screen === "settings" || view.screen === "fictionalPilot") {
+          refreshFictionalPilotAvailability({ force: true });
+        }
+      });
       window.addEventListener("pagehide", flushRecoveryState);
     }
     if (typeof document !== "undefined") {
       document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "hidden") flushRecoveryState();
+        if (document.visibilityState === "hidden") {
+          flushRecoveryState();
+        } else if (view.screen === "settings" || view.screen === "fictionalPilot") {
+          refreshFictionalPilotAvailability({ force: true });
+        }
       });
       document.addEventListener("freeze", flushRecoveryState);
     }

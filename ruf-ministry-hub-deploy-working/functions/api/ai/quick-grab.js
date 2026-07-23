@@ -1,3 +1,11 @@
+import {
+  QUICK_GRAB_PILOT_FIXTURES,
+  QUICK_GRAB_PILOT_POLICY,
+  QUICK_GRAB_PILOT_SCHEMA,
+  quickGrabPilotConfiguration,
+  quickGrabPilotFixture
+} from "./quick-grab-pilot-policy.js";
+
 const DEFAULT_MODEL = "gpt-5.6";
 const DEFAULT_REASONING_EFFORT = "low";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -446,12 +454,19 @@ async function constantTimeEqual(left, right) {
   return diff === 0;
 }
 
+function canonicalAccessTeamDomain(value) {
+  const raw = safeString(value, 240).replace(/\/+$/, "");
+  const candidate = /^https:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/i.test(candidate)
+    ? candidate.toLowerCase()
+    : "";
+}
+
 function accessConfiguration(env) {
-  const teamDomain = safeString(env.CF_ACCESS_TEAM_DOMAIN, 240).replace(/\/+$/, "");
+  const teamDomain = canonicalAccessTeamDomain(env.CF_ACCESS_TEAM_DOMAIN);
   const audience = safeString(env.CF_ACCESS_AUD, 240);
-  const validTeamDomain = /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/i.test(teamDomain);
   return {
-    configured: Boolean(teamDomain && audience && validTeamDomain),
+    configured: Boolean(teamDomain && audience),
     teamDomain,
     audience
   };
@@ -1179,7 +1194,126 @@ async function callOpenAI(env, input) {
   });
 }
 
+function pilotRequestBody(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, code: "pilot_body_invalid" };
+  const keys = Object.keys(value);
+  const allowed = new Set(["pilotAction", "policyVersion", "fixtureId", "grantId"]);
+  if (keys.some(key => !allowed.has(key))) return { ok: false, code: "pilot_fields_not_allowed" };
+  const pilotAction = safeString(value.pilotAction, 30);
+  const policyVersion = safeString(value.policyVersion, 60);
+  const fixtureId = safeString(value.fixtureId, 80);
+  const grantId = safeString(value.grantId, 160);
+  if (!["request_grant", "run"].includes(pilotAction)) return { ok: false, code: "pilot_action_invalid" };
+  if (policyVersion !== QUICK_GRAB_PILOT_POLICY.version) return { ok: false, code: "pilot_policy_mismatch" };
+  if (!quickGrabPilotFixture(fixtureId)) return { ok: false, code: "pilot_fixture_invalid" };
+  if (pilotAction === "run" && !grantId) return { ok: false, code: "pilot_grant_required" };
+  return { ok: true, pilotAction, policyVersion, fixtureId, grantId };
+}
+
+async function pilotLimiterStub(env) {
+  if (!env.AI_RATE_LIMITER) return null;
+  if (typeof env.AI_RATE_LIMITER.getByName === "function") {
+    return env.AI_RATE_LIMITER.getByName("quick-grab-fictional-pilot-budget-v1");
+  }
+  if (typeof env.AI_RATE_LIMITER.idFromName === "function" && typeof env.AI_RATE_LIMITER.get === "function") {
+    return env.AI_RATE_LIMITER.get(env.AI_RATE_LIMITER.idFromName("quick-grab-fictional-pilot-budget-v1"));
+  }
+  return null;
+}
+
+function normalizePilotProposal(value) {
+  const categories = QUICK_GRAB_PILOT_SCHEMA.properties.category.enum;
+  const confidenceLevels = QUICK_GRAB_PILOT_SCHEMA.properties.confidence.enum;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const proposal = {
+    summary: sanitizeText(value.summary, 600),
+    category: safeString(value.category, 30),
+    suggestedNextStep: sanitizeText(value.suggestedNextStep, 500),
+    confidence: safeString(value.confidence, 20),
+    warnings: Array.isArray(value.warnings) ? value.warnings.map(item => sanitizeText(item, 240)).filter(Boolean).slice(0, 3) : []
+  };
+  if (!proposal.summary || !proposal.suggestedNextStep || !categories.includes(proposal.category) || !confidenceLevels.includes(proposal.confidence)) return null;
+  return proposal;
+}
+
+async function callPilotOpenAI(env, fixture) {
+  const requestBody = {
+    model: QUICK_GRAB_PILOT_POLICY.model,
+    store: false,
+    max_output_tokens: QUICK_GRAB_PILOT_POLICY.maxOutputTokens,
+    reasoning: { effort: QUICK_GRAB_PILOT_POLICY.reasoningEffort },
+    tools: [],
+    instructions: "Classify only this checked-in fictional Quick Grab. Return a transient proposal for human review. Do not claim to save, contact, schedule, or mutate anything. Return strict JSON only.",
+    input: [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(fixture) }] }],
+    text: { format: { type: "json_schema", name: "fictional_quick_grab_pilot_proposal", strict: true, schema: QUICK_GRAB_PILOT_SCHEMA } }
+  };
+  let response;
+  try {
+    response = await fetchWithTimeout(OPENAI_RESPONSES_URL, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody)
+    }, configuredTimeoutMs(env));
+  } catch (error) {
+    throw { code: error?.name === "AbortError" ? "pilot_timeout" : "pilot_network_error", status: 502 };
+  }
+  if (!response.ok) throw { code: "pilot_upstream_error", status: 502 };
+  const bounded = await readBoundedText(response, MAX_OPENAI_RESPONSE_BYTES);
+  if (!bounded.ok) throw { code: "pilot_response_unreadable", status: 502 };
+  let responseJson;
+  try { responseJson = JSON.parse(bounded.text); } catch { throw { code: "pilot_response_invalid", status: 502 }; }
+  const extracted = extractResponseTextAndRefusal(responseJson);
+  if (extracted.refusal || !extracted.text) throw { code: extracted.refusal ? "pilot_refusal" : "pilot_response_empty", status: 502 };
+  let parsed;
+  try { parsed = JSON.parse(extracted.text); } catch { throw { code: "pilot_schema_invalid", status: 502 }; }
+  const proposal = normalizePilotProposal(parsed);
+  if (!proposal) throw { code: "pilot_schema_invalid", status: 502 };
+  return proposal;
+}
+
+async function handlePilotRequest(request, env) {
+  const configuration = quickGrabPilotConfiguration(request, env);
+  if (!configuration.available) return problem(404, "pilot_not_found", "Not found.", false);
+  const authorization = await authorizeRequest(request, env);
+  if (authorization.unavailable) return problem(503, "pilot_authentication_unavailable", "Authentication is temporarily unavailable.", false);
+  if (!authorization.ok || authorization.method !== "cloudflare_access") return problem(401, "pilot_unauthorized", "Unauthorized.", false);
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  const body = pilotRequestBody(parsed.value);
+  if (!body.ok) return problem(400, body.code, "The fictional pilot request was rejected.", false);
+  const stub = await pilotLimiterStub(env);
+  if (!stub) return problem(503, "pilot_limiter_unavailable", "The fictional pilot is unavailable.", false);
+  const principalHash = await digestHex(`pilot:${authorization.principal}`);
+  if (body.pilotAction === "request_grant") {
+    if (typeof stub.issuePilotGrant !== "function") return problem(503, "pilot_limiter_unavailable", "The fictional pilot is unavailable.", false);
+    const grant = await stub.issuePilotGrant(principalHash, body.policyVersion, body.fixtureId, QUICK_GRAB_PILOT_POLICY.grantTtlSeconds);
+    return json({ ok: true, pilot: true, policyVersion: body.policyVersion, grantId: grant.grantId, expiresAt: grant.expiresAt, storedServerSide: false });
+  }
+  if (!env.OPENAI_API_KEY) return problem(503, "pilot_provider_unavailable", "The fictional pilot is unavailable.", false);
+  if (typeof stub.consumePilotGrantAndReserve !== "function") return problem(503, "pilot_limiter_unavailable", "The fictional pilot is unavailable.", false);
+  const reservation = await stub.consumePilotGrantAndReserve(body.grantId, principalHash, body.policyVersion, body.fixtureId, QUICK_GRAB_PILOT_POLICY);
+  if (!reservation?.ok) return problem(reservation?.code === "pilot_grant_invalid" ? 400 : 429, reservation?.code || "pilot_limit_reached", "The approval expired or the pilot limit was reached.", false);
+  try {
+    const proposal = await callPilotOpenAI(env, quickGrabPilotFixture(body.fixtureId));
+    return json({
+      ok: true,
+      pilot: true,
+      policyVersion: body.policyVersion,
+      model: QUICK_GRAB_PILOT_POLICY.model,
+      externalDataSent: true,
+      storedServerSide: false,
+      proposalOnly: true,
+      proposal
+    });
+  } catch (error) {
+    return problem(error?.status || 502, error?.code || "pilot_upstream_error", "The fictional pilot could not produce a proposal.", true);
+  }
+}
+
 export async function onRequestPost({ request, env = {} }) {
+  if (request.headers.get("X-RUF-HUB-AI-Pilot") === QUICK_GRAB_PILOT_POLICY.version) {
+    return handlePilotRequest(request, env);
+  }
   const shouldMock = env.AI_MOCK_MODE !== "false" || !env.OPENAI_API_KEY;
   const authConfiguration = authenticationConfiguration(env);
   if (!shouldMock && !authConfiguration.configured) {

@@ -1,0 +1,10 @@
+{
+  "policyVersion": "2026-07-22.1",
+  "fixtures": [
+    { "id": "fixture-welcome", "title": "Welcome follow-up", "rawContent": "Fictional example: Avery Example visited the welcome table. Suggest a kind follow-up for tomorrow.", "todayISO": "2026-07-22", "tags": ["Follow-up"], "urgency": "Soon" },
+    { "id": "fixture-prayer", "title": "Prayer reminder", "rawContent": "Fictional example: Jordan Sample asked for prayer about a practice presentation next week.", "todayISO": "2026-07-22", "tags": ["Prayer"], "urgency": "Normal" },
+    { "id": "fixture-meeting", "title": "Meeting recap", "rawContent": "Fictional example: The Sample Team discussed an August welcome night and needs a simple next-step summary.", "todayISO": "2026-07-22", "tags": ["Meeting"], "urgency": "Normal" },
+    { "id": "fixture-task", "title": "Supply task", "rawContent": "Fictional example: Pick up name tags and markers for the sample welcome event by Friday.", "todayISO": "2026-07-22", "tags": ["Task"], "urgency": "Soon" },
+    { "id": "fixture-note", "title": "Conversation note", "rawContent": "Fictional example: Riley Placeholder enjoys hiking and is interested in the sample small group.", "todayISO": "2026-07-22", "tags": ["Note"], "urgency": "Normal" }
+  ]
+}

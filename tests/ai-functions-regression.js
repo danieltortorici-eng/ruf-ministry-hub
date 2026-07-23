@@ -14,13 +14,19 @@ function assert(condition, label) {
 
 function loadPagesFunction(relativePath, overrides = {}) {
   const filePath = path.resolve(appDir, relativePath);
-  const source = fs.readFileSync(filePath, "utf8");
+  let source = fs.readFileSync(filePath, "utf8");
   const exportNames = Array.from(source.matchAll(/export\s+(?:async\s+)?function\s+([A-Za-z0-9_]+)/g)).map(match => match[1]);
-  const runnable = source.replace(/export\s+/g, "");
+  let policySource = "";
+  if (source.includes("./quick-grab-pilot-policy.js")) {
+    policySource = fs.readFileSync(path.resolve(appDir, "functions/api/ai/quick-grab-pilot-policy.js"), "utf8").replace(/export\s+/g, "");
+    source = source.replace(/import\s*\{[\s\S]*?\}\s*from\s*"\.\/quick-grab-pilot-policy\.js";\s*/, "");
+  }
+  const runnable = `${policySource}\n${source.replace(/export\s+/g, "")}`;
   const context = {
     console,
     Request,
     Response,
+    URL,
     TextEncoder,
     TextDecoder,
     AbortController,
@@ -112,6 +118,8 @@ async function testHealthEndpoint() {
   assert(mock.model === "gpt-5.6", "health endpoint reports default GPT-5.6 model");
   assert(mock.reasoningEffort === "low", "health endpoint reports default reasoning effort");
   assert(mock.storedServerSide === false, "health endpoint reports no server-side storage");
+  assert(mock.fictionalQuickGrabPilot.defaultOff === true, "health endpoint reports fictional pilot default off");
+  assert(mock.fictionalQuickGrabPilot.mutatesRecords === false, "health endpoint reports fictional pilot cannot mutate records");
 
   const realResponse = await health.onRequestGet({
     env: realEnv({
@@ -134,6 +142,33 @@ async function testHealthEndpoint() {
   assert(blockedResponse.status === 503 && blocked.ok === false && blocked.effectiveMode === "blocked" && blocked.realModeBlocked === true, "health endpoint reports unhealthy blocked real mode when safety bindings are missing");
   assert(blocked.configurationIssues.includes("authentication_not_configured"), "health endpoint reports missing authentication");
   assert(blocked.configurationIssues.includes("rate_limit_not_configured"), "health endpoint reports missing durable limiter");
+
+  const bareTeamDomainResponse = await health.onRequestGet({
+    env: realEnv({
+      RUF_HUB_AI_ACCESS_TOKEN: undefined,
+      CF_ACCESS_TEAM_DOMAIN: "ruf-hub-test.cloudflareaccess.com",
+      CF_ACCESS_AUD: "synthetic-access-audience"
+    })
+  });
+  const bareTeamDomain = await jsonFrom(bareTeamDomainResponse);
+  assert(bareTeamDomain.accessProtected === true, "health endpoint canonicalizes an exact bare Cloudflare Access team domain");
+
+  for (const invalidTeamDomain of [
+    "http://ruf-hub-test.cloudflareaccess.com",
+    "ruf-hub-test.cloudflareaccess.com:443",
+    "ruf-hub-test.cloudflareaccess.com/cdn-cgi/access",
+    "ruf-hub-test.cloudflareaccess.com.evil.test"
+  ]) {
+    const invalidTeamDomainResponse = await health.onRequestGet({
+      env: realEnv({
+        RUF_HUB_AI_ACCESS_TOKEN: undefined,
+        CF_ACCESS_TEAM_DOMAIN: invalidTeamDomain,
+        CF_ACCESS_AUD: "synthetic-access-audience"
+      })
+    });
+    const invalidTeamDomainHealth = await jsonFrom(invalidTeamDomainResponse);
+    assert(invalidTeamDomainHealth.accessProtected === false, `health endpoint rejects invalid Access team domain: ${invalidTeamDomain}`);
+  }
 }
 
 function quickGrabRequest(body, headers = {}) {
@@ -460,11 +495,11 @@ async function testQuickGrabCloudflareAccessAuthentication() {
     request,
     env: realEnv({
       RUF_HUB_AI_ACCESS_TOKEN: undefined,
-      CF_ACCESS_TEAM_DOMAIN: access.teamDomain,
+      CF_ACCESS_TEAM_DOMAIN: access.teamDomain.replace("https://", ""),
       CF_ACCESS_AUD: access.audience
     })
   });
-  assert(response.status === 200, "quick-grab accepts a valid Cloudflare Access browser assertion");
+  assert(response.status === 200, "quick-grab accepts a valid Cloudflare Access assertion with the exact bare team-domain readback");
   assert(openAiCalls === 1, "valid Cloudflare Access authentication reaches OpenAI once");
 
   const wrongAudience = await quickGrab.onRequestPost({
@@ -474,12 +509,26 @@ async function testQuickGrabCloudflareAccessAuthentication() {
     }),
     env: realEnv({
       RUF_HUB_AI_ACCESS_TOKEN: undefined,
-      CF_ACCESS_TEAM_DOMAIN: access.teamDomain,
+      CF_ACCESS_TEAM_DOMAIN: access.teamDomain.replace("https://", ""),
       CF_ACCESS_AUD: "wrong-synthetic-audience"
     })
   });
   assert(wrongAudience.status === 401, "quick-grab rejects a validly signed Access JWT for the wrong application audience");
   assert(openAiCalls === 1, "rejected Access assertions do not call OpenAI");
+
+  const lookalikeDomain = await quickGrab.onRequestPost({
+    request: quickGrabRequest(validQuickGrabBody(), {
+      "X-RUF-HUB-AI-Token": "",
+      "Cf-Access-Jwt-Assertion": access.token
+    }),
+    env: realEnv({
+      RUF_HUB_AI_ACCESS_TOKEN: undefined,
+      CF_ACCESS_TEAM_DOMAIN: "ruf-hub-test.cloudflareaccess.com.evil.test",
+      CF_ACCESS_AUD: access.audience
+    })
+  });
+  assert(lookalikeDomain.status === 503, "quick-grab treats a lookalike Cloudflare Access team domain as unconfigured authentication");
+  assert(openAiCalls === 1, "lookalike Access domains do not call OpenAI");
 }
 
 async function testQuickGrabBackendPayloadCompatibility() {
@@ -691,7 +740,8 @@ function testNoApiKeyInFrontendOrRepo() {
 function testRootAndDeployFunctionCopiesMatch() {
   [
     "functions/api/ai/health.js",
-    "functions/api/ai/quick-grab.js"
+    "functions/api/ai/quick-grab.js",
+    "functions/api/ai/quick-grab-pilot-policy.js"
   ].forEach(relativePath => {
     const rootSource = fs.readFileSync(path.resolve(repoRoot, relativePath), "utf8");
     const deploySource = fs.readFileSync(path.resolve(appDir, relativePath), "utf8");
