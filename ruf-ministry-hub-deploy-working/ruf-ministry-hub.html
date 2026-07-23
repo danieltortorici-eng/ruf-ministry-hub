@@ -1738,7 +1738,8 @@
     window.addEventListener("keydown", revealSkipLinkForKeyboard, true);
 
     const STORAGE_KEY = "ruf_ministry_hub_smart_quick_grab_v1";
-    const APP_VERSION = "2026.07.22-calm-os-core-v42-ai-pilot.3";
+    const APP_VERSION = "2026.07.22-calm-os-core-v42-ai-pilot.4";
+    const FICTIONAL_PILOT_AVAILABILITY_RECHECK_MS = 30 * 1000;
     const DATA_SCHEMA_VERSION = 3;
     const DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks", "aiProposals"];
     const CORE_DATA_COLLECTIONS = ["people", "quickGrabs", "notes", "meetingNotes", "prayerRequests", "tasks"];
@@ -1952,6 +1953,7 @@
     let toastGeneration = 0;
     let globalSearchTimer = null;
     let fictionalPilotAvailabilityPromise = null;
+    let fictionalPilotAvailabilityRefreshTimer = null;
     let fictionalPilotGrantExpiryTimer = null;
     let dictationSessionSequence = 0;
     let activeDictationSession = null;
@@ -7706,12 +7708,34 @@
       `;
     }
 
-    function refreshFictionalPilotAvailability() {
+    function clearFictionalPilotAvailabilityRefresh() {
+      if (fictionalPilotAvailabilityRefreshTimer && typeof window !== "undefined") {
+        window.clearTimeout(fictionalPilotAvailabilityRefreshTimer);
+      }
+      fictionalPilotAvailabilityRefreshTimer = null;
+    }
+
+    function scheduleFictionalPilotAvailabilityRefresh() {
+      clearFictionalPilotAvailabilityRefresh();
+      if (!view.fictionalPilotAvailableOnThisHost
+        || !["settings", "fictionalPilot"].includes(view.screen)
+        || typeof window === "undefined"
+        || typeof window.setTimeout !== "function") return;
+      fictionalPilotAvailabilityRefreshTimer = window.setTimeout(() => {
+        fictionalPilotAvailabilityRefreshTimer = null;
+        view.fictionalPilotAvailabilityChecked = false;
+        return refreshFictionalPilotAvailability({ force: true });
+      }, FICTIONAL_PILOT_AVAILABILITY_RECHECK_MS);
+    }
+
+    function refreshFictionalPilotAvailability(options = {}) {
+      if (options.force === true) view.fictionalPilotAvailabilityChecked = false;
       if (view.fictionalPilotAvailabilityChecked) return Promise.resolve(view.fictionalPilotAvailableOnThisHost);
       if (fictionalPilotAvailabilityPromise) return fictionalPilotAvailabilityPromise;
       if (typeof fetch !== "function") {
         view.fictionalPilotAvailableOnThisHost = false;
         view.fictionalPilotAvailabilityChecked = true;
+        clearFictionalPilotAvailabilityRefresh();
         return Promise.resolve(false);
       }
       fictionalPilotAvailabilityPromise = fetch("/api/ai/health", {
@@ -7740,6 +7764,7 @@
             && (view.screen === "settings" || view.screen === "fictionalPilot")) {
             render({ mutationEffects: false });
           }
+          scheduleFictionalPilotAvailabilityRefresh();
           return available;
         })
         .finally(() => {
@@ -15473,7 +15498,11 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
         if (view.screen === "review") view.reviewIndex = 0;
         requestPageHeadingFocus();
         render(invalidatedProtectedExport ? { mutationEffects: false } : {});
-        if (view.screen === "settings") refreshFictionalPilotAvailability();
+        if (view.screen === "settings" || view.screen === "fictionalPilot") {
+          refreshFictionalPilotAvailability({ force: true });
+        } else {
+          clearFictionalPilotAvailabilityRefresh();
+        }
       }
       if (action === "ai-review-filter") {
         view.aiReviewFilter = button.dataset.filter || "Pending";
@@ -16751,13 +16780,27 @@ Thank you for praying and supporting this ministry. I will keep reviewing detail
       if (view.screen === "settings") refreshFictionalPilotAvailability();
     });
     if (typeof window !== "undefined") {
-      window.addEventListener("pageshow", importQuickGrabFromCurrentFragment);
-      window.addEventListener("focus", importQuickGrabFromCurrentFragment);
+      window.addEventListener("pageshow", () => {
+        void importQuickGrabFromCurrentFragment();
+        if (view.screen === "settings" || view.screen === "fictionalPilot") {
+          refreshFictionalPilotAvailability({ force: true });
+        }
+      });
+      window.addEventListener("focus", () => {
+        void importQuickGrabFromCurrentFragment();
+        if (view.screen === "settings" || view.screen === "fictionalPilot") {
+          refreshFictionalPilotAvailability({ force: true });
+        }
+      });
       window.addEventListener("pagehide", flushRecoveryState);
     }
     if (typeof document !== "undefined") {
       document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "hidden") flushRecoveryState();
+        if (document.visibilityState === "hidden") {
+          flushRecoveryState();
+        } else if (view.screen === "settings" || view.screen === "fictionalPilot") {
+          refreshFictionalPilotAvailability({ force: true });
+        }
       });
       document.addEventListener("freeze", flushRecoveryState);
     }
