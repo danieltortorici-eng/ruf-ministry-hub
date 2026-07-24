@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 
 const SENSITIVE_PATH = /(^|\/)\.env(?:\.[^/]+)?(?:\/|$)|(^|\/)(?:\.dev\.vars|\.wrangler|node_modules|backups?|exports?|browser(?:-data)?|credentials?|secrets?|cookies?|real-data)(?:\/|$)|(^|\/)\.(?:ai|mock|person|prayer|follow-up)-|\.(?:pem|key|p12|sqlite|db|zip|log)$/i;
@@ -68,33 +68,40 @@ function parsePorcelainZ(text) {
 }
 
 function loadDeclaredSensitiveWorktrees(repo) {
-  const ledger = readFileSync(resolve(repo, 'docs/build-operations.md'), 'utf8');
+  const ledgerPath = resolve(repo, 'docs/build-operations.md');
+  if (!existsSync(ledgerPath)) {
+    return { identifiers: new Set(), governanceLedgerRead: false };
+  }
+  const ledger = readFileSync(ledgerPath, 'utf8');
   const identifiers = new Set();
   for (const line of ledger.split('\n')) {
     if (!line.includes('SENSITIVE_STOP')) continue;
     for (const match of line.matchAll(/`([^`]+)`/g)) identifiers.add(match[1]);
   }
-  return identifiers;
+  return { identifiers, governanceLedgerRead: true };
 }
 
 function inventoryRepository(repo) {
   const root = resolve(repo);
-  const declaredSensitive = loadDeclaredSensitiveWorktrees(root);
+  const { identifiers: declaredSensitive, governanceLedgerRead } = loadDeclaredSensitiveWorktrees(root);
   const worktrees = parseWorktreeList(git(['worktree', 'list', '--porcelain'], root));
-  return worktrees.map((worktree) => {
-    const prunable = worktree.prunable === true;
-    return {
-      ...worktree,
-      declaredSensitive: declaredSensitive.has(worktree.id)
-      || declaredSensitive.has(worktree.branch)
-      || declaredSensitive.has(worktree.path)
-      || declaredSensitive.has(basename(worktree.path)),
-      gitStatusRead: !prunable,
-      changedPaths: prunable
-        ? []
-        : parsePorcelainZ(git(['status', '--porcelain=v1', '-z', '-uall', '--ignore-submodules=all'], worktree.path))
-    };
-  });
+  return {
+    governanceLedgerRead,
+    worktrees: worktrees.map((worktree) => {
+      const prunable = worktree.prunable === true;
+      return {
+        ...worktree,
+        declaredSensitive: declaredSensitive.has(worktree.id)
+        || declaredSensitive.has(worktree.branch)
+        || declaredSensitive.has(worktree.path)
+        || declaredSensitive.has(basename(worktree.path)),
+        gitStatusRead: !prunable,
+        changedPaths: prunable
+          ? []
+          : parsePorcelainZ(git(['status', '--porcelain=v1', '-z', '-uall', '--ignore-submodules=all'], worktree.path))
+      };
+    })
+  };
 }
 
 function loadFixture(source) {
@@ -160,7 +167,7 @@ function connectedComponents(nodes, edges) {
   return components;
 }
 
-export function buildMatrix(rawWorktrees, mode = 'git-metadata') {
+export function buildMatrix(rawWorktrees, mode = 'git-metadata', governanceLedgerRead = mode === 'git-metadata') {
   const worktrees = rawWorktrees.map((worktree) => {
     const prunable = worktree.prunable === true;
     const changedPaths = prunable ? [] : [...new Set(worktree.changedPaths || [])].sort();
@@ -222,7 +229,7 @@ export function buildMatrix(rawWorktrees, mode = 'git-metadata') {
     mode,
     readOnly: true,
     candidateContentRead: false,
-    governanceLedgerRead: mode === 'git-metadata',
+    governanceLedgerRead,
     outputContainsFileContents: false,
     stateMachine: ['DETECTED', 'STOPPED', 'INVENTORIED', 'MAPPED', 'WORK_ORDERED', 'RECONCILING', 'FROZEN', 'REVIEWED', 'INTEGRATED_LOCAL', 'EXTERNAL_GATE'],
     summary: {
@@ -256,8 +263,14 @@ function renderSummary(matrix) {
 
 try {
   const args = parseArgs(process.argv.slice(2));
-  const worktrees = args.fixture ? loadFixture(args.fixture) : inventoryRepository(args.repo);
-  const matrix = buildMatrix(worktrees, args.fixture ? 'synthetic-fixture' : 'git-metadata');
+  const inventory = args.fixture
+    ? { worktrees: loadFixture(args.fixture), governanceLedgerRead: false }
+    : inventoryRepository(args.repo);
+  const matrix = buildMatrix(
+    inventory.worktrees,
+    args.fixture ? 'synthetic-fixture' : 'git-metadata',
+    inventory.governanceLedgerRead
+  );
   process.stdout.write(`${args.summary ? renderSummary(matrix) : JSON.stringify(matrix, null, 2)}\n`);
 } catch (error) {
   fail(error instanceof Error ? error.message : String(error));
