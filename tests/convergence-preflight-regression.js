@@ -20,6 +20,15 @@ function runFixture(fixture) {
   return { raw: result.stdout, report: JSON.parse(result.stdout) };
 }
 
+function runRealRepository() {
+  const result = spawnSync(process.execPath, [scriptPath, '--repo', repoRoot, '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf8'
+  });
+  assert(result.status === 0, 'real convergence preflight exits zero without an optional governance ledger');
+  return JSON.parse(result.stdout);
+}
+
 const fixture = {
   worktrees: [
     {
@@ -131,5 +140,13 @@ assert(source.includes("'status', '--porcelain=v1', '-z', '-uall'"), 'preflight 
 assert(source.includes('Boolean(fields.prunable)'), 'preflight recognizes Git porcelain prunable detail text');
 assert(source.includes('SENSITIVE_STOP'), 'preflight contains a sensitive stop state');
 assert(source.includes('PRUNABLE_METADATA_ONLY'), 'preflight contains an explicit prunable metadata-only state');
+
+const realReport = runRealRepository();
+assert(realReport.mode === 'git-metadata', 'real repository evidence is labeled git metadata');
+assert(
+  realReport.governanceLedgerRead === fs.existsSync(path.join(repoRoot, 'docs/build-operations.md')),
+  'real report truthfully records whether the optional governance ledger was read'
+);
+assert(realReport.outputContainsFileContents === false, 'real report excludes file contents');
 
 console.log('All convergence preflight regression checks passed.');
