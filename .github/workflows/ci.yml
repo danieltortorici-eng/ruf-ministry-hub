@@ -38,6 +38,10 @@ jobs:
           set -o pipefail
           npm test 2>&1 | tee artifacts/ci/npm-test.log
 
+      - name: Run convergence preflight regression
+        shell: bash
+        run: node tests/convergence-preflight-regression.js
+
       - name: Retain failure log
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
